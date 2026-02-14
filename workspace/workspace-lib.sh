@@ -362,7 +362,7 @@ workspace_bootstrap() {
 }
 
 # Central archive location
-WORKSPACE_ARCHIVE_BASE="$HOME/scratch_archive"
+WORKSPACE_ARCHIVE_BASE="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}"
 
 # Archive scratch directory to central location
 # Usage: workspace_archive [scratch_source] [project_name] [branch_name]

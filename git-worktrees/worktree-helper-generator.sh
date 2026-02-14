@@ -986,7 +986,7 @@ ${prefix}r() {
     local branch_name="\$1"
     local worktree_dir="\$${WORKTREE_BASE_VAR}/\$branch_name"
     local scratch_source="\$worktree_dir/scratch"
-    local scratch_backup_base="\$HOME/scratch_archive/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local scratch_backup_base="\${SCRATCH_ARCHIVE_BASE:-\$HOME/scratch_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
 
     if [ "\$2" != "-f" ] && [ "\$2" != "--force" ]; then
         echo "Are you sure you want to delete worktree '\$branch_name'? (y/N)"
@@ -1110,7 +1110,7 @@ ${prefix}rn() {
     fi
 
     # migrate scratch archives
-    local scratch_archive_base="\$HOME/scratch_archive/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local scratch_archive_base="\${SCRATCH_ARCHIVE_BASE:-\$HOME/scratch_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
     local old_archive="\$scratch_archive_base/\$old_name"
     local new_archive="\$scratch_archive_base/\$new_name"
     if [ -d "\$old_archive" ]; then
@@ -1306,7 +1306,7 @@ ${prefix}bs() {
     local worktree_dir="\$(git rev-parse --show-toplevel)"
     local worktree_name="\$(basename "\$worktree_dir")"
     local scratch_source="\$worktree_dir/scratch"
-    local scratch_backup_base="\$HOME/scratch_archive/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local scratch_backup_base="\${SCRATCH_ARCHIVE_BASE:-\$HOME/scratch_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
 
     if [ -d "\$scratch_source" ]; then
         local branch_backup_dir="\$scratch_backup_base/\$worktree_name"
@@ -1332,7 +1332,7 @@ ${prefix}bs() {
 
 # List scratch backups
 ${prefix}sl() {
-    local scratch_dir="\$HOME/scratch_archive/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local scratch_dir="\${SCRATCH_ARCHIVE_BASE:-\$HOME/scratch_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
 
     if [ ! -d "\$scratch_dir" ]; then
         echo "No scratch backups found"
@@ -1384,7 +1384,7 @@ ${prefix}sb() {
 
     local worktree_dir="\$${WORKTREE_BASE_VAR}/\$branch_name"
     local scratch_source="\$worktree_dir/scratch"
-    local scratch_backup_base="\$HOME/scratch_archive/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local scratch_backup_base="\${SCRATCH_ARCHIVE_BASE:-\$HOME/scratch_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
 
     if [ ! -d "\$worktree_dir" ]; then
         echo "Error: Worktree '\$branch_name' not found"
@@ -1423,7 +1423,7 @@ ${prefix}so() {
         return 1
     fi
 
-    local scratch_dir="\$HOME/scratch_archive/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local scratch_dir="\${SCRATCH_ARCHIVE_BASE:-\$HOME/scratch_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
     local branch_dir="\$scratch_dir/\$1"
 
     if [ ! -d "\$branch_dir" ]; then

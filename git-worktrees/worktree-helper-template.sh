@@ -546,7 +546,7 @@ wtr() {
     local branch_name="$1"
     local worktree_dir="$WORKTREE_BASE/$branch_name"
     local scratch_source="$worktree_dir/scratch"
-    local scratch_backup_base="$HOME/scratch_archive/$(basename "$WORKTREE_BASE")"
+    local scratch_backup_base="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
     
     # Confirmation prompt (unless force flag is used)
     if [ "$2" != "-f" ] && [ "$2" != "--force" ]; then
@@ -687,7 +687,7 @@ wtrn() {
     fi
 
     # migrate scratch archives
-    local scratch_archive_base="$HOME/scratch_archive/$(basename "$WORKTREE_BASE")"
+    local scratch_archive_base="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
     local old_archive="$scratch_archive_base/$old_name"
     local new_archive="$scratch_archive_base/$new_name"
     if [ -d "$old_archive" ]; then
@@ -803,7 +803,7 @@ _wt_complete_all_branches() {
 
 # List scratch backups
 wtsl() {
-    local scratch_dir="$HOME/scratch_archive/$(basename "$WORKTREE_BASE")"
+    local scratch_dir="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
     
     if [ ! -d "$scratch_dir" ]; then
         echo "No scratch backups found"
@@ -870,7 +870,7 @@ wtsb() {
     
     local worktree_dir="$WORKTREE_BASE/$branch_name"
     local scratch_source="$worktree_dir/scratch"
-    local scratch_backup_base="$HOME/scratch_archive/$(basename "$WORKTREE_BASE")"
+    local scratch_backup_base="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
     
     # Check if worktree exists
     if [ ! -d "$worktree_dir" ]; then
@@ -922,7 +922,7 @@ wtso() {
         return 1
     fi
     
-    local scratch_dir="$HOME/scratch_archive/$(basename "$WORKTREE_BASE")"
+    local scratch_dir="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
     local branch_dir="$scratch_dir/$1"
     
     # Check if branch has any backups
