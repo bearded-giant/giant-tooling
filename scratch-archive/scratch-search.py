@@ -74,7 +74,9 @@ def resolve_latest_timestamps(archive_base):
 
 
 def parse_archive_path(filepath, archive_base):
-    """extract project/branch/timestamp/dir_type from archive filepath"""
+    """extract project/branch/timestamp/dir_type from archive filepath.
+    handles branches with slashes (e.g. feat/responsive-toolbar) by scanning
+    for the timestamp pattern instead of assuming a fixed position."""
     rel = filepath.relative_to(archive_base)
     parts = rel.parts
 
@@ -82,17 +84,26 @@ def parse_archive_path(filepath, archive_base):
         return None
 
     project = parts[0]
-    branch = parts[1]
-    timestamp = parts[2]
 
-    if not TIMESTAMP_RE.match(timestamp):
+    # find timestamp part — branch may contain slashes (feat/foo)
+    ts_idx = None
+    for i in range(1, len(parts)):
+        if TIMESTAMP_RE.match(parts[i]):
+            ts_idx = i
+            break
+
+    if ts_idx is None or ts_idx < 2:
         return None
+
+    branch = "/".join(parts[1:ts_idx])
+    timestamp = parts[ts_idx]
 
     # dir_type is the folder right after timestamp, if it matches known types
     dir_type = None
-    if len(parts) > 3 and parts[3] in VALID_TYPES:
-        dir_type = parts[3]
-    elif len(parts) > 3:
+    after_ts = ts_idx + 1
+    if len(parts) > after_ts and parts[after_ts] in VALID_TYPES:
+        dir_type = parts[after_ts]
+    elif len(parts) > after_ts:
         dir_type = "root"
 
     return {
