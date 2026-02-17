@@ -17,7 +17,7 @@ DB_PATH = ARCHIVE_BASE / "archives.db"
 
 SKIP_FILES = {".scratch-index", ".DS_Store"}
 SKIP_DIRS = {".git"}
-VALID_TYPES = {"plans", "context", "research", "reviews", "filebox", "history", "prompts", "features"}
+VALID_TYPES = {"plans", "context", "research", "reviews", "filebox", "history", "prompts", "features", "domains"}
 TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")
 
 
@@ -103,6 +103,101 @@ def parse_archive_path(filepath, archive_base):
     }
 
 
+def flatten_domain_json(data):
+    """flatten a domain json into fts-friendly searchable text"""
+    lines = []
+
+    lines.append(f"domain: {data.get('domain', '')}")
+    lines.append(f"description: {data.get('description', '')}")
+
+    for feat in data.get("explored_for_features", []):
+        lines.append(f"feature: {feat}")
+
+    for ep in data.get("entry_points", []):
+        lines.append(f"entry_point: {ep.get('path', '')} ({ep.get('type', '')}) {ep.get('description', '')}")
+
+    for kf in data.get("key_files", []):
+        lines.append(f"key_file: {kf.get('path', '')} -- {kf.get('purpose', '')}")
+        for export in kf.get("exports", []):
+            lines.append(f"  export: {export}")
+        for pattern in kf.get("patterns", []):
+            lines.append(f"  pattern: {pattern}")
+        for dep in kf.get("dependencies", []):
+            lines.append(f"  depends_on: {dep}")
+
+    arch = data.get("architecture", {})
+    if arch:
+        layers = arch.get("layers", [])
+        if layers:
+            lines.append(f"layers: {' -> '.join(layers)}")
+        flow = arch.get("data_flow", "")
+        if flow:
+            lines.append(f"data_flow: {flow}")
+        for p in arch.get("patterns", []):
+            lines.append(f"architecture_pattern: {p}")
+        for d in arch.get("key_decisions", []):
+            lines.append(f"key_decision: {d}")
+
+    dm = data.get("data_models", {})
+    for table in dm.get("tables", []):
+        lines.append(f"table: {table}")
+    for ck in dm.get("cache_keys", []):
+        lines.append(f"cache_key: {ck}")
+
+    deps = data.get("dependencies", {})
+    for d in deps.get("internal", []):
+        lines.append(f"internal_dep: {d}")
+    for d in deps.get("external", []):
+        lines.append(f"external_dep: {d}")
+
+    for g in data.get("gotchas", []):
+        lines.append(f"gotcha: {g}")
+
+    return "\n".join(lines)
+
+
+def _ingest_file(db, filepath, parsed, is_latest, now):
+    """insert a single file into documents + fts. returns (success, error)."""
+    try:
+        content = filepath.read_text(errors="replace")
+    except (OSError, PermissionError):
+        return False, True
+
+    # flatten domain json for better fts indexing
+    if filepath.suffix == ".json" and parsed.get("dir_type") == "domains":
+        try:
+            import json as _json
+            data = _json.loads(content)
+            content = flatten_domain_json(data)
+        except (ValueError, KeyError):
+            pass  # index raw json if parsing fails
+
+    try:
+        db.execute(
+            """INSERT INTO documents
+               (project, branch, timestamp, dir_type, filepath, filename, is_latest, indexed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                parsed["project"],
+                parsed["branch"],
+                parsed["timestamp"],
+                parsed["dir_type"],
+                str(filepath),
+                filepath.name,
+                is_latest,
+                now,
+            ),
+        )
+        doc_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
+        db.execute(
+            "INSERT INTO documents_fts (rowid, content) VALUES (?, ?)",
+            (doc_id, content),
+        )
+        return True, False
+    except sqlite3.IntegrityError:
+        return False, True
+
+
 def do_ingest(args):
     archive_base = ARCHIVE_BASE
     if not archive_base.exists():
@@ -140,6 +235,7 @@ def do_ingest(args):
     count = 0
     errors = 0
 
+    # index markdown files
     for md_file in scan_root.rglob("*.md"):
         if md_file.name in SKIP_FILES:
             continue
@@ -150,41 +246,34 @@ def do_ingest(args):
         if not parsed:
             continue
 
-        # check if this file's timestamp dir is a latest target
         ts_dir = archive_base / parsed["project"] / parsed["branch"] / parsed["timestamp"]
         is_latest = 1 if str(ts_dir) in latest_dirs else 0
 
-        try:
-            content = md_file.read_text(errors="replace")
-        except (OSError, PermissionError):
+        ok, err = _ingest_file(db, md_file, parsed, is_latest, now)
+        if ok:
+            count += 1
+        if err:
             errors += 1
+
+    # index domain json files (scratch/domains/*.json)
+    for json_file in scan_root.rglob("domains/*.json"):
+        if json_file.name.startswith(".") or json_file.name in SKIP_FILES:
+            continue
+        if any(skip in json_file.parts for skip in SKIP_DIRS):
             continue
 
-        try:
-            db.execute(
-                """INSERT INTO documents
-                   (project, branch, timestamp, dir_type, filepath, filename, is_latest, indexed_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    parsed["project"],
-                    parsed["branch"],
-                    parsed["timestamp"],
-                    parsed["dir_type"],
-                    str(md_file),
-                    md_file.name,
-                    is_latest,
-                    now,
-                ),
-            )
-            doc_id = db.execute("SELECT last_insert_rowid()").fetchone()[0]
-            db.execute(
-                "INSERT INTO documents_fts (rowid, content) VALUES (?, ?)",
-                (doc_id, content),
-            )
-            count += 1
-        except sqlite3.IntegrityError:
-            errors += 1
+        parsed = parse_archive_path(json_file, archive_base)
+        if not parsed:
             continue
+
+        ts_dir = archive_base / parsed["project"] / parsed["branch"] / parsed["timestamp"]
+        is_latest = 1 if str(ts_dir) in latest_dirs else 0
+
+        ok, err = _ingest_file(db, json_file, parsed, is_latest, now)
+        if ok:
+            count += 1
+        if err:
+            errors += 1
 
     db.commit()
     db.close()

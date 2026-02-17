@@ -1,0 +1,559 @@
+#!/usr/bin/env python3
+# domains - browse and search the code domain knowledge base
+#
+# usage:
+#   domains list                        show all indexed domains
+#   domains show <name>                 pretty-print a domain
+#   domains search <query>              search live workspace domain JSONs
+#   domains search <query> --section    restrict to a section (key_files, architecture, gotchas, etc)
+#   domains archive <query>             search archived domains across all projects (sqlite fts5)
+#   domains archive <query> -p proj     filter archive search to a project
+#   domains archive <query> --show      show full domain details for matches
+#   domains export <name>               dump domain as shareable markdown
+#   domains export <name> -o file.md    write markdown to file
+#   domains fzf                         interactive domain picker (requires fzf)
+#
+# options:
+#   -p, --path PATH     path to scratch/domains/ (default: scratch/domains)
+
+import argparse
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+from datetime import datetime, timedelta
+from pathlib import Path
+
+ARCHIVE_BASE = Path(os.environ.get("SCRATCH_ARCHIVE_BASE", Path.home() / "scratch_archive"))
+ARCHIVE_DB = ARCHIVE_BASE / "archives.db"
+
+
+def find_domains_dir(explicit_path=None):
+    if explicit_path:
+        p = Path(explicit_path)
+        if p.exists():
+            return p
+        print(f"not found: {explicit_path}", file=sys.stderr)
+        sys.exit(1)
+
+    # walk up from cwd looking for scratch/domains
+    cwd = Path.cwd()
+    for parent in [cwd, *cwd.parents]:
+        candidate = parent / "scratch" / "domains"
+        if candidate.exists():
+            return candidate
+    print("no scratch/domains/ found in current or parent directories", file=sys.stderr)
+    print("pass --path explicitly or cd into a project with a scratch dir", file=sys.stderr)
+    sys.exit(1)
+
+
+def load_index(domains_dir):
+    index_path = domains_dir / "_index.json"
+    if not index_path.exists():
+        print("no _index.json found. run /plan-feature to create domain explorations.", file=sys.stderr)
+        sys.exit(1)
+    with open(index_path) as f:
+        return json.load(f)
+
+
+def load_domain(domains_dir, name):
+    path = domains_dir / f"{name}.json"
+    if not path.exists():
+        print(f"domain not found: {name}", file=sys.stderr)
+        print(f"looked at: {path}", file=sys.stderr)
+        sys.exit(1)
+    with open(path) as f:
+        return json.load(f)
+
+
+def days_ago(date_str):
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        delta = datetime.now() - d
+        if delta.days == 0:
+            return "today"
+        if delta.days == 1:
+            return "1 day ago"
+        return f"{delta.days} days ago"
+    except (ValueError, TypeError):
+        return "unknown"
+
+
+def is_stale(date_str, threshold=7):
+    try:
+        d = datetime.strptime(date_str, "%Y-%m-%d")
+        return (datetime.now() - d) > timedelta(days=threshold)
+    except (ValueError, TypeError):
+        return True
+
+
+# -- commands --
+
+def cmd_list(args, domains_dir):
+    index = load_index(domains_dir)
+    domains = index.get("domains", {})
+    if not domains:
+        print("no domains indexed yet")
+        return
+
+    repo = index.get("repo", "")
+    if repo:
+        print(f"repo: {repo}")
+    print(f"domains: {len(domains)} indexed\n")
+
+    rows = []
+    for name, meta in sorted(domains.items()):
+        desc = meta.get("description", "")[:50]
+        explored = meta.get("last_explored", "n/a")
+        age = days_ago(explored)
+        stale = " [STALE]" if is_stale(explored) else ""
+        features = ", ".join(meta.get("features", []))[:40]
+        rows.append((name, desc, f"{explored} ({age}){stale}", features))
+
+    # column widths
+    headers = ("Domain", "Description", "Explored", "Features")
+    widths = [max(len(h), max((len(r[i]) for r in rows), default=0)) + 2
+              for i, h in enumerate(headers)]
+
+    def row_str(vals):
+        return "| " + " | ".join(v.ljust(w - 2) for v, w in zip(vals, widths)) + " |"
+
+    sep = "+" + "+".join("-" * w for w in widths) + "+"
+    print(sep)
+    print(row_str(headers))
+    print(sep)
+    for r in rows:
+        print(row_str(r))
+    print(sep)
+
+
+def cmd_show(args, domains_dir):
+    domain = load_domain(domains_dir, args.name)
+
+    def section(title, content):
+        print(f"\n\033[1m{title}\033[0m")
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict):
+                    first_key = next(iter(item), None)
+                    if first_key == "path":
+                        print(f"  {item['path']}")
+                        for k, v in item.items():
+                            if k != "path":
+                                print(f"    {k}: {v}")
+                    else:
+                        for k, v in item.items():
+                            print(f"  {k}: {v}")
+                else:
+                    print(f"  - {item}")
+        elif isinstance(content, dict):
+            for k, v in content.items():
+                if isinstance(v, list):
+                    print(f"  {k}: {', '.join(str(i) for i in v)}")
+                elif isinstance(v, dict):
+                    print(f"  {k}:")
+                    for sk, sv in v.items():
+                        print(f"    {sk}: {sv}")
+                else:
+                    print(f"  {k}: {v}")
+        elif content:
+            print(f"  {content}")
+
+    name = domain.get("domain", args.name)
+    desc = domain.get("description", "")
+    explored = domain.get("last_explored", "unknown")
+    features = domain.get("explored_for_features", [])
+
+    print(f"\033[1;36m{name}\033[0m - {desc}")
+    print(f"explored: {explored} ({days_ago(explored)})")
+    if features:
+        print(f"features: {', '.join(features)}")
+
+    section("Entry Points", domain.get("entry_points", []))
+    section("Key Files", domain.get("key_files", []))
+    section("Architecture", domain.get("architecture", {}))
+    section("Data Models", domain.get("data_models", {}))
+    section("Dependencies", domain.get("dependencies", {}))
+
+    gotchas = domain.get("gotchas", [])
+    if gotchas:
+        section("Gotchas", gotchas)
+
+
+def cmd_search(args, domains_dir):
+    index = load_index(domains_dir)
+    domains = index.get("domains", {})
+    query = args.query.lower()
+    section_filter = args.section
+
+    results = {}
+
+    for name in domains:
+        domain_path = domains_dir / f"{name}.json"
+        if not domain_path.exists():
+            continue
+        with open(domain_path) as f:
+            domain = json.load(f)
+
+        matches = search_domain(domain, query, section_filter)
+        if matches:
+            results[name] = matches
+
+    if not results:
+        print(f'no matches for "{args.query}"')
+        print("\ntry:")
+        print("  domains list              see what's indexed")
+        print("  domains search <broader>  widen the search")
+        return
+
+    print(f'search: "{args.query}"\n')
+    for name, matches in sorted(results.items()):
+        desc = domains.get(name, {}).get("description", "")
+        print(f"\033[1;36m{name}\033[0m ({domains_dir / name}.json)")
+        if desc:
+            print(f"  {desc}")
+        for section, hits in matches.items():
+            for hit in hits:
+                print(f"  \033[33m{section}\033[0m: {hit}")
+        print()
+
+    print(f"{len(results)} domain(s) matched")
+
+
+def search_domain(domain, query, section_filter=None):
+    matches = {}
+
+    def check(section_name, text):
+        if section_filter and section_filter.lower() != section_name.lower():
+            return
+        if isinstance(text, str) and query in text.lower():
+            matches.setdefault(section_name, []).append(text[:120])
+        elif isinstance(text, list):
+            for item in text:
+                if isinstance(item, str) and query in item.lower():
+                    matches.setdefault(section_name, []).append(item[:120])
+                elif isinstance(item, dict):
+                    for v in item.values():
+                        if isinstance(v, str) and query in v.lower():
+                            matches.setdefault(section_name, []).append(
+                                f"{item.get('path', item.get('type', ''))}: {v}"[:120]
+                            )
+                        elif isinstance(v, list):
+                            for sv in v:
+                                if isinstance(sv, str) and query in sv.lower():
+                                    matches.setdefault(section_name, []).append(sv[:120])
+
+    check("description", domain.get("description", ""))
+    check("entry_points", domain.get("entry_points", []))
+    check("key_files", domain.get("key_files", []))
+
+    arch = domain.get("architecture", {})
+    for k, v in arch.items():
+        check(f"architecture.{k}", v)
+
+    data = domain.get("data_models", {})
+    for k, v in data.items():
+        check(f"data_models.{k}", v)
+
+    deps = domain.get("dependencies", {})
+    for k, v in deps.items():
+        check(f"dependencies.{k}", v)
+
+    check("gotchas", domain.get("gotchas", []))
+
+    return matches
+
+
+def cmd_export(args, domains_dir):
+    domain = load_domain(domains_dir, args.name)
+    md = domain_to_markdown(domain, args.name)
+
+    if args.output:
+        with open(args.output, "w") as f:
+            f.write(md)
+        print(f"exported to {args.output}")
+    else:
+        print(md)
+
+
+def domain_to_markdown(domain, fallback_name):
+    name = domain.get("domain", fallback_name)
+    desc = domain.get("description", "")
+    explored = domain.get("last_explored", "unknown")
+    features = domain.get("explored_for_features", [])
+
+    lines = [f"# {name}", ""]
+    if desc:
+        lines += [desc, ""]
+    lines += [f"explored: {explored}"]
+    if features:
+        lines += [f"features: {', '.join(features)}"]
+    lines += [""]
+
+    # entry points
+    eps = domain.get("entry_points", [])
+    if eps:
+        lines += ["## Entry Points", ""]
+        lines += ["| Path | Type | Description |", "|------|------|-------------|"]
+        for ep in eps:
+            lines.append(f"| `{ep.get('path', '')}` | {ep.get('type', '')} | {ep.get('description', '')} |")
+        lines += [""]
+
+    # key files
+    kf = domain.get("key_files", [])
+    if kf:
+        lines += ["## Key Files", ""]
+        for f in kf:
+            lines.append(f"**`{f.get('path', '')}`** - {f.get('purpose', '')}")
+            exports = f.get("exports", [])
+            if exports:
+                lines.append(f"  exports: `{'`, `'.join(exports)}`")
+            patterns = f.get("patterns", [])
+            if patterns:
+                lines.append(f"  patterns: {', '.join(patterns)}")
+            deps = f.get("dependencies", [])
+            if deps:
+                lines.append(f"  depends on: {', '.join(deps)}")
+            lines.append("")
+
+    # architecture
+    arch = domain.get("architecture", {})
+    if arch:
+        lines += ["## Architecture", ""]
+        for k, v in arch.items():
+            if isinstance(v, list):
+                lines.append(f"**{k}:** {', '.join(str(i) for i in v)}")
+            else:
+                lines.append(f"**{k}:** {v}")
+        lines += [""]
+
+    # data models
+    data = domain.get("data_models", {})
+    if data and any(v for v in data.values()):
+        lines += ["## Data Models", ""]
+        for k, v in data.items():
+            if v:
+                if isinstance(v, list):
+                    lines.append(f"**{k}:** {', '.join(f'`{i}`' for i in v)}")
+                elif isinstance(v, dict) and v:
+                    lines.append(f"**{k}:**")
+                    for sk, sv in v.items():
+                        lines.append(f"  {sk}: {sv}")
+        lines += [""]
+
+    # dependencies
+    deps = domain.get("dependencies", {})
+    if deps:
+        lines += ["## Dependencies", ""]
+        internal = deps.get("internal", [])
+        external = deps.get("external", [])
+        if internal:
+            lines.append(f"**internal:** {', '.join(internal)}")
+        if external:
+            lines.append(f"**external:** {', '.join(external)}")
+        lines += [""]
+
+    # gotchas
+    gotchas = domain.get("gotchas", [])
+    if gotchas:
+        lines += ["## Gotchas", ""]
+        for g in gotchas:
+            lines.append(f"- {g}")
+        lines += [""]
+
+    return "\n".join(lines)
+
+
+def cmd_fzf(args, domains_dir):
+    index = load_index(domains_dir)
+    domains = index.get("domains", {})
+    if not domains:
+        print("no domains indexed yet")
+        return
+
+    # build fzf input: name | description | explored
+    items = []
+    for name, meta in sorted(domains.items()):
+        desc = meta.get("description", "")[:60]
+        explored = meta.get("last_explored", "n/a")
+        items.append(f"{name}\t{desc}\t{explored}")
+
+    fzf_input = "\n".join(items)
+
+    try:
+        result = subprocess.run(
+            ["fzf", "--header=Select a domain", "--delimiter=\t",
+             "--with-nth=1,2", "--tabstop=30",
+             "--preview", f"python3 {__file__} show {{1}} -p {domains_dir}",
+             "--preview-window=right:60%:wrap"],
+            input=fzf_input, capture_output=True, text=True
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            selected = result.stdout.strip().split("\t")[0]
+            cmd_show(argparse.Namespace(name=selected), domains_dir)
+    except FileNotFoundError:
+        print("fzf not installed. install with: brew install fzf", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_archive(args, domains_dir=None):
+    """search archived domains across all projects via sqlite fts5"""
+    if not ARCHIVE_DB.exists():
+        print(f"no archive database at {ARCHIVE_DB}", file=sys.stderr)
+        print("run: scratch-archive archive && scratch-search.py ingest", file=sys.stderr)
+        sys.exit(1)
+
+    db = sqlite3.connect(str(ARCHIVE_DB))
+    query = args.query
+
+    where = ["d.dir_type = 'domains'"]
+    params = [query]
+
+    if hasattr(args, "project") and args.project:
+        where.append("d.project = ?")
+        params.append(args.project)
+    if hasattr(args, "latest") and args.latest:
+        where.append("d.is_latest = 1")
+
+    where_clause = " AND ".join(where)
+
+    sql = f"""
+        SELECT d.filepath, d.project, d.branch, d.timestamp, d.filename, rank
+        FROM documents_fts f
+        JOIN documents d ON d.id = f.rowid
+        WHERE documents_fts MATCH ? AND {where_clause}
+        ORDER BY rank
+        LIMIT ?
+    """
+    params.append(args.n if hasattr(args, "n") else 20)
+
+    try:
+        rows = db.execute(sql, params).fetchall()
+    except sqlite3.OperationalError as e:
+        print(f"search error: {e}", file=sys.stderr)
+        db.close()
+        return
+
+    db.close()
+
+    if not rows:
+        print(f'no archived domains match "{query}"')
+        return
+
+    print(f'archive search: "{query}" ({len(rows)} domain file(s) matched)\n')
+
+    show_full = hasattr(args, "show") and args.show
+
+    for filepath, project, branch, timestamp, filename, rank in rows:
+        domain_name = filename.replace(".json", "")
+        score = abs(rank)
+
+        # try to load and parse the actual json for structured output
+        domain_data = None
+        try:
+            with open(filepath) as f:
+                domain_data = json.load(f)
+        except (OSError, json.JSONDecodeError):
+            pass
+
+        if domain_data and show_full:
+            # full structured display
+            print(f"\033[1;36m{domain_name}\033[0m  [{project}/{branch} {timestamp}]  score: {score:.1f}")
+            desc = domain_data.get("description", "")
+            if desc:
+                print(f"  {desc}")
+            explored = domain_data.get("last_explored", "")
+            features = domain_data.get("explored_for_features", [])
+            if explored:
+                print(f"  explored: {explored}")
+            if features:
+                print(f"  features: {', '.join(features)}")
+
+            # show matching sections
+            matches = search_domain(domain_data, query.lower().replace('"', ''))
+            for section, hits in matches.items():
+                for hit in hits:
+                    print(f"  \033[33m{section}\033[0m: {hit}")
+
+            print(f"  source: {filepath}")
+            print()
+
+        elif domain_data:
+            # compact: domain name, description, matching sections
+            desc = domain_data.get("description", "")[:60]
+            print(f"\033[1;36m{domain_name}\033[0m  [{project}/{branch}]  {desc}")
+            matches = search_domain(domain_data, query.lower().replace('"', ''))
+            for section, hits in matches.items():
+                for hit in hits[:2]:
+                    print(f"  \033[33m{section}\033[0m: {hit}")
+            print()
+
+        else:
+            # fallback: can't read json, show filepath
+            print(f"{domain_name}  [{project}/{branch} {timestamp}]")
+            print(f"  {filepath}")
+            print()
+
+    if not show_full:
+        print(f"use --show for full domain details")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="domains",
+        description="browse and search the code domain knowledge base"
+    )
+    parser.add_argument("-p", "--path", help="path to scratch/domains/")
+
+    sub = parser.add_subparsers(dest="command")
+
+    sub.add_parser("list", aliases=["ls"], help="show all indexed domains")
+
+    show_p = sub.add_parser("show", aliases=["cat"], help="pretty-print a domain")
+    show_p.add_argument("name", help="domain name")
+
+    search_p = sub.add_parser("search", aliases=["s", "grep"], help="search live workspace domain JSONs")
+    search_p.add_argument("query", help="search term")
+    search_p.add_argument("--section", help="restrict to a section (key_files, architecture, gotchas, etc)")
+
+    archive_p = sub.add_parser("archive", aliases=["a", "arc"], help="search archived domains (sqlite fts5)")
+    archive_p.add_argument("query", help="search term")
+    archive_p.add_argument("-p", "--project", help="filter to a specific project")
+    archive_p.add_argument("-l", "--latest", action="store_true", help="latest archives only")
+    archive_p.add_argument("-n", type=int, default=20, help="max results (default: 20)")
+    archive_p.add_argument("--show", action="store_true", help="show full domain details for each match")
+
+    export_p = sub.add_parser("export", help="export domain as markdown")
+    export_p.add_argument("name", help="domain name")
+    export_p.add_argument("-o", "--output", help="output file path")
+
+    sub.add_parser("fzf", help="interactive domain picker (requires fzf)")
+
+    args = parser.parse_args()
+
+    if not args.command:
+        parser.print_help()
+        sys.exit(0)
+
+    # archive command doesn't need a local domains dir
+    if args.command in ("archive", "a", "arc"):
+        cmd_archive(args)
+        return
+
+    domains_dir = find_domains_dir(args.path)
+
+    cmd_map = {
+        "list": cmd_list, "ls": cmd_list,
+        "show": cmd_show, "cat": cmd_show,
+        "search": cmd_search, "s": cmd_search, "grep": cmd_search,
+        "export": cmd_export,
+        "fzf": cmd_fzf,
+    }
+
+    cmd_map[args.command](args, domains_dir)
+
+
+if __name__ == "__main__":
+    main()

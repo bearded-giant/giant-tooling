@@ -12,10 +12,10 @@ build_index() {
     local archive_dir="$1"
     local index_file="$archive_dir/$SCRATCH_INDEX_FILE"
 
-    # index all .md files: filepath:line:content
+    # index .md files and domain .json files: filepath:line:content
     # --no-ignore: don't respect gitignore (archives are outside repos)
     # pattern "." matches any character (i.e., non-empty lines)
-    rg -n --no-ignore --glob "*.md" "." "$archive_dir" 2>/dev/null > "$index_file" || true
+    rg -n --no-ignore --glob "*.md" --glob "domains/*.json" "." "$archive_dir" 2>/dev/null > "$index_file" || true
 
     local count=$(wc -l < "$index_file" | tr -d ' ')
     echo "Indexed: $count lines"
@@ -35,7 +35,7 @@ Commands:
 
 Search flags:
   -p <project>   Filter by project
-  -t <type>      Filter by type: plans|context|research|reviews|filebox|history|prompts
+  -t <type>      Filter by type: plans|context|research|reviews|filebox|history|prompts|features|domains
   -d <path>      Search specific dir (e.g., master/20251220_143022)
   -l             Search only "latest" archives
   -C <n>         Context lines in preview (default: 5)
@@ -324,10 +324,10 @@ do_search() {
 
     if [ -n "$type" ]; then
         case "$type" in
-            plans|context|research|reviews|filebox|history|prompts) ;;
+            plans|context|research|reviews|filebox|history|prompts|features|domains) ;;
             *)
                 echo "Invalid type: $type"
-                echo "Valid types: plans, context, research, reviews, filebox, history, prompts"
+                echo "Valid types: plans, context, research, reviews, filebox, history, prompts, features, domains"
                 return 1
                 ;;
         esac
