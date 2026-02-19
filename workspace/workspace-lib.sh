@@ -427,8 +427,8 @@ workspace_archive() {
     local backup_dir="$branch_backup_dir/$timestamp"
 
     echo "Archiving .giantmem to: $backup_dir"
-    if cp -r "$scratch_source" "$backup_dir"; then
-        echo "Workspace archived successfully"
+    if mv "$scratch_source" "$backup_dir"; then
+        echo "Workspace archived and cleaned from working dir"
 
         # Update latest symlink
         local latest_link="$branch_backup_dir/latest"
