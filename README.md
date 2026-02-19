@@ -8,25 +8,25 @@ These tools were extracted from a private utility repo where they evolved over m
 
 ### workspace/
 
-Manages `scratch/` directories that live inside any project repo. The scratch dir is a structured workspace for plans, features, research, context, and session history that Claude Code reads and writes during sessions.
+Manages `.giantmem/` directories that live inside any project repo. The .giantmem dir is a structured workspace for plans, features, research, context, and session history that Claude Code reads and writes during sessions.
 
-The system has two parts. `workspace-lib.sh` provides shell functions (`ws`, `wsb`, `wst`, `wsa`, etc.) for creating, migrating, and inspecting scratch dirs from your terminal. Two Python hooks integrate with Claude Code directly: `workspace_session_hook.py` runs at session start to bootstrap scratch and inject context, and `workspace_session_end.py` parses the JSONL transcript at session end to extract discoveries and create session summaries.
+The system has two parts. `workspace-lib.sh` provides shell functions (`ws`, `wsb`, `wst`, `wsa`, etc.) for creating, migrating, and inspecting .giantmem dirs from your terminal. Two Python hooks integrate with Claude Code directly: `workspace_session_hook.py` runs at session start to bootstrap .giantmem/ and inject context, and `workspace_session_end.py` parses the JSONL transcript at session end to extract discoveries and create session summaries.
 
-Also includes feature tracking -- `scratch/features/` directories with specs, facts, and metadata that persist across sessions, plus a migration tool (`workspace-migrate-features.py`) for converting legacy plan files into the feature structure.
+Also includes feature tracking -- `.giantmem/features/` directories with specs, facts, and metadata that persist across sessions, plus a migration tool (`workspace-migrate-features.py`) for converting legacy plan files into the feature structure.
 
 See [workspace/README.md](workspace/README.md) for shell and Claude commands, directory structure, and feature workflow. Design docs in [workspace/docs/](workspace/docs/).
 
 ### git-worktrees/
 
-Interactive wizard (`worktree-helper-generator.sh`) that generates a self-contained bash script for managing git worktrees in a specific project. You run the wizard once per project, answer prompts (project name, command prefix, stack type, etc.), and it outputs a config file that creates shell functions like `{prefix}` (switch/create worktree), `{prefix}l` (list), `{prefix}r` (remove with scratch backup), and a dozen more.
+Interactive wizard (`worktree-helper-generator.sh`) that generates a self-contained bash script for managing git worktrees in a specific project. You run the wizard once per project, answer prompts (project name, command prefix, stack type, etc.), and it outputs a config file that creates shell functions like `{prefix}` (switch/create worktree), `{prefix}l` (list), `{prefix}r` (remove with .giantmem backup), and a dozen more.
 
-Generated scripts use a bare repo layout (`.bare/` alongside worktree directories), auto-bootstrap `scratch/` in new worktrees, back up scratch to `~/scratch_archive/` on worktree removal, and handle stack-specific setup for python/node/go/rust/ruby.
+Generated scripts use a bare repo layout (`.bare/` alongside worktree directories), auto-bootstrap `.giantmem/` in new worktrees, back up .giantmem/ to `~/giantmem_archive/` on worktree removal, and handle stack-specific setup for python/node/go/rust/ruby.
 
 See [git-worktrees/README.md](git-worktrees/README.md) for the full command reference, setup walkthrough, and directory layout. Architecture details in [git-worktrees/docs/](git-worktrees/docs/).
 
 ### scratch-archive/
 
-Archives scratch directories to `~/scratch_archive/{project}/{branch}/{timestamp}/` and makes them searchable. Two scripts work together: `scratch-archive.sh` handles the file copy, builds a ripgrep-based `.scratch-index`, manages `latest` symlinks, and triggers FTS5 ingestion. `scratch-search.py` maintains a SQLite FTS5 database (`archives.db`) with ranked full-text search, fzf interactive picker with bat-highlighted previews, and project/branch/type filtering.
+Archives .giantmem/ directories to `~/giantmem_archive/{project}/{branch}/{timestamp}/` and makes them searchable. Two scripts work together: `scratch-archive.sh` handles the file copy, builds a ripgrep-based `.scratch-index`, manages `latest` symlinks, and triggers FTS5 ingestion. `scratch-search.py` maintains a SQLite FTS5 database (`archives.db`) with ranked full-text search, fzf interactive picker with bat-highlighted previews, and project/branch/type filtering.
 
 Indexes `.md` files and `domains/*.json` files. Domain JSONs get flattened into searchable text (entry points, key files, architecture patterns, gotchas) before indexing.
 

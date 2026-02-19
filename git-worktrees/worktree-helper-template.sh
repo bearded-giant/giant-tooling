@@ -26,7 +26,7 @@
 # Example: WORKTREE_BASE="$HOME/dev/myproject-worktree"
 WORKTREE_BASE="$HOME/dev/YOUR-PROJECT-worktree"
 
-# Source workspace library (for scratch/ workspace management)
+# Source workspace library (for .giantmem/ workspace management)
 WORKSPACE_LIB="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
 [ -f "$WORKSPACE_LIB" ] && source "$WORKSPACE_LIB"
 WORKTREE_LAST_FILE="$WORKTREE_BASE/.last-branch"
@@ -169,7 +169,7 @@ _wt_setup_worktree() {
     # Add your own custom setup steps here!
     # =====================================================
 
-    # Initialize workspace (creates scratch/ with structure)
+    # Initialize workspace (creates .giantmem/ with structure)
     if type workspace_init &>/dev/null; then
         workspace_init "$target_dir" "$branch"
     fi
@@ -545,9 +545,10 @@ wtr() {
     
     local branch_name="$1"
     local worktree_dir="$WORKTREE_BASE/$branch_name"
-    local scratch_source="$worktree_dir/scratch"
-    local scratch_backup_base="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
-    
+    local workspace_source="$worktree_dir/.giantmem"
+    [ ! -d "$workspace_source" ] && workspace_source="$worktree_dir/scratch"
+    local workspace_backup_base="${GIANTMEM_ARCHIVE_BASE:-${SCRATCH_ARCHIVE_BASE:-$HOME/giantmem_archive}}/$(basename "$WORKTREE_BASE")"
+
     # Confirmation prompt (unless force flag is used)
     if [ "$2" != "-f" ] && [ "$2" != "--force" ]; then
         echo "Are you sure you want to delete worktree '$branch_name'? (y/N)"
@@ -557,23 +558,19 @@ wtr() {
             return 0
         fi
     fi
-    
-    # Check if the worktree has a scratch directory to backup
-    if [ -d "$scratch_source" ]; then
-        # Create the backup base and branch directories if they don't exist
-        local branch_backup_dir="$scratch_backup_base/$branch_name"
+
+    # Check if the worktree has a workspace directory to backup
+    if [ -d "$workspace_source" ]; then
+        local branch_backup_dir="$workspace_backup_base/$branch_name"
         mkdir -p "$branch_backup_dir"
-        
-        # Create a timestamped backup directory name
+
         local timestamp=$(date '+%Y%m%d_%H%M%S')
         local backup_dir="$branch_backup_dir/$timestamp"
-        
-        echo "Backing up scratch directory to: $backup_dir"
-        if cp -r "$scratch_source" "$backup_dir"; then
-            echo "✓ Scratch directory backed up successfully"
-            
-            # Create/update a symlink called 'latest' within the branch directory
-            # This allows multiple backups per branch with easy access to most recent
+
+        echo "Backing up workspace directory to: $backup_dir"
+        if cp -r "$workspace_source" "$backup_dir"; then
+            echo "✓ Workspace directory backed up successfully"
+
             local latest_link="$branch_backup_dir/latest"
             if [ -L "$latest_link" ]; then
                 rm "$latest_link"
@@ -585,7 +582,7 @@ wtr() {
             local search_script="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/scratch-archive/scratch-search.py"
             [ -f "$search_script" ] && python3 "$search_script" ingest --project "$(basename "$WORKTREE_BASE")" 2>/dev/null &
         else
-            echo "❌ ERROR: Failed to backup scratch directory"
+            echo "❌ ERROR: Failed to backup workspace directory"
             echo "Worktree removal cancelled to preserve your work"
             return 1
         fi
@@ -686,16 +683,16 @@ wtrn() {
         fi
     fi
 
-    # migrate scratch archives
-    local scratch_archive_base="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
-    local old_archive="$scratch_archive_base/$old_name"
-    local new_archive="$scratch_archive_base/$new_name"
+    # migrate workspace archives
+    local workspace_archive_base="${GIANTMEM_ARCHIVE_BASE:-${SCRATCH_ARCHIVE_BASE:-$HOME/giantmem_archive}}/$(basename "$WORKTREE_BASE")"
+    local old_archive="$workspace_archive_base/$old_name"
+    local new_archive="$workspace_archive_base/$new_name"
     if [ -d "$old_archive" ]; then
         if [ -d "$new_archive" ]; then
-            echo "Warning: Scratch archive '$new_name' already exists, skipping archive migration"
+            echo "Warning: Workspace archive '$new_name' already exists, skipping archive migration"
         else
             mv "$old_archive" "$new_archive"
-            echo "✓ Migrated scratch archives: $old_name -> $new_name"
+            echo "✓ Migrated workspace archives: $old_name -> $new_name"
         fi
     fi
 
@@ -779,7 +776,7 @@ _wt_complete() {
             if [ -d "$dir" ]; then
                 local basename=$(basename "$dir")
                 case "$basename" in
-                    .bare|.last-branch|bootstrap|scratch)
+                    .bare|.last-branch|bootstrap|.giantmem|scratch)
                         # Skip these directories
                         ;;
                     *)
@@ -801,40 +798,37 @@ _wt_complete_all_branches() {
     COMPREPLY=($(compgen -W "$branches" -- "$cur"))
 }
 
-# List scratch backups
+# List workspace backups
 wtsl() {
-    local scratch_dir="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
-    
-    if [ ! -d "$scratch_dir" ]; then
-        echo "No scratch backups found"
+    local workspace_dir="${GIANTMEM_ARCHIVE_BASE:-${SCRATCH_ARCHIVE_BASE:-$HOME/giantmem_archive}}/$(basename "$WORKTREE_BASE")"
+
+    if [ ! -d "$workspace_dir" ]; then
+        echo "No workspace backups found"
         return 0
     fi
-    
-    echo "Scratch backups in $scratch_dir:"
+
+    echo "Workspace backups in $workspace_dir:"
     echo "────────────────────────────────────"
     
     # List each branch that has backups
-    for branch_dir in "$scratch_dir"/*; do
+    for branch_dir in "$workspace_dir"/*; do
         if [ -d "$branch_dir" ] && [ ! -L "$branch_dir" ]; then
             local branch_name=$(basename "$branch_dir")
             echo ""
             echo "  $branch_name:"
-            
-            # List timestamped backups for this branch
+
             for backup in "$branch_dir"/*; do
                 if [ -d "$backup" ] && [[ "$(basename "$backup")" =~ ^[0-9]{8}_[0-9]{6}$ ]]; then
                     local timestamp=$(basename "$backup")
                     local size=$(du -sh "$backup" 2>/dev/null | cut -f1)
-                    
-                    # Format the timestamp
+
                     local date_part=${timestamp%_*}
                     local time_part=${timestamp#*_}
                     local formatted_date="${date_part:0:4}-${date_part:4:2}-${date_part:6:2}"
                     local formatted_time="${time_part:0:2}:${time_part:2:2}:${time_part:4:2}"
-                    
+
                     echo "    - $formatted_date $formatted_time ($size)"
-                    
-                    # Check if this is the latest
+
                     if [ -L "$branch_dir/latest" ]; then
                         local link_target=$(readlink "$branch_dir/latest")
                         if [ "$link_target" = "$timestamp" ]; then
@@ -845,89 +839,81 @@ wtsl() {
             done
         fi
     done
-    
-    # Show total count
-    local total_backups=$(find "$scratch_dir" -mindepth 2 -maxdepth 2 -type d -name "[0-9]*_[0-9]*" | wc -l | tr -d ' ')
+
+    local total_backups=$(find "$workspace_dir" -mindepth 2 -maxdepth 2 -type d -name "[0-9]*_[0-9]*" | wc -l | tr -d ' ')
     echo ""
     echo "Total backups: $total_backups"
 }
 
-# Manually backup scratch directory
+# Manually backup workspace directory
 wtsb() {
     if [ -z "$1" ]; then
-        # If no argument, try to backup current worktree
         if _wt_in_worktree; then
             local branch_name=$(basename "$PWD")
         else
             echo "Usage: wtsb [branch-name]"
-            echo "  Backs up the scratch directory for a worktree"
+            echo "  Backs up the workspace directory for a worktree"
             echo "  If no branch specified and in a worktree, uses current branch"
             return 1
         fi
     else
         local branch_name="$1"
     fi
-    
+
     local worktree_dir="$WORKTREE_BASE/$branch_name"
-    local scratch_source="$worktree_dir/scratch"
-    local scratch_backup_base="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
-    
-    # Check if worktree exists
+    local workspace_source="$worktree_dir/.giantmem"
+    [ ! -d "$workspace_source" ] && workspace_source="$worktree_dir/scratch"
+    local workspace_backup_base="${GIANTMEM_ARCHIVE_BASE:-${SCRATCH_ARCHIVE_BASE:-$HOME/giantmem_archive}}/$(basename "$WORKTREE_BASE")"
+
     if [ ! -d "$worktree_dir" ]; then
         echo "Error: Worktree '$branch_name' not found"
         return 1
     fi
-    
-    # Check if scratch directory exists
-    if [ ! -d "$scratch_source" ]; then
-        echo "No scratch directory found in '$branch_name'"
+
+    if [ ! -d "$workspace_source" ]; then
+        echo "No workspace directory found in '$branch_name'"
         return 1
     fi
-    
-    # Create the backup base and branch directories if they don't exist
-    local branch_backup_dir="$scratch_backup_base/$branch_name"
+
+    local branch_backup_dir="$workspace_backup_base/$branch_name"
     mkdir -p "$branch_backup_dir"
-    
-    # Create a timestamped backup directory name
+
     local timestamp=$(date '+%Y%m%d_%H%M%S')
     local backup_dir="$branch_backup_dir/$timestamp"
-    
-    echo "Backing up scratch directory to: $backup_dir"
-    if cp -r "$scratch_source" "$backup_dir"; then
-        echo "✓ Scratch directory backed up successfully"
-        
-        # Create/update a symlink called 'latest' within the branch directory
+
+    echo "Backing up workspace directory to: $backup_dir"
+    if cp -r "$workspace_source" "$backup_dir"; then
+        echo "✓ Workspace directory backed up successfully"
+
         local latest_link="$branch_backup_dir/latest"
         if [ -L "$latest_link" ]; then
             rm "$latest_link"
         fi
         ln -s "$timestamp" "$latest_link"
         echo "✓ Created symlink: $latest_link -> $timestamp"
-        
-        # Show size of backup
+
         local size=$(du -sh "$backup_dir" 2>/dev/null | cut -f1)
         echo "✓ Backup size: $size"
     else
-        echo "❌ ERROR: Failed to backup scratch directory"
+        echo "❌ ERROR: Failed to backup workspace directory"
         return 1
     fi
 }
 
-# Open/browse a scratch backup
+# Open/browse a workspace backup
 wtso() {
     if [ -z "$1" ]; then
         echo "Usage: wtso <branch-name> [timestamp]"
-        echo "  Opens the scratch backup directory for a branch"
+        echo "  Opens the workspace backup directory for a branch"
         echo "  If no timestamp specified, opens the latest (symlink)"
         return 1
     fi
-    
-    local scratch_dir="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}/$(basename "$WORKTREE_BASE")"
-    local branch_dir="$scratch_dir/$1"
-    
-    # Check if branch has any backups
+
+    local workspace_dir="${GIANTMEM_ARCHIVE_BASE:-${SCRATCH_ARCHIVE_BASE:-$HOME/giantmem_archive}}/$(basename "$WORKTREE_BASE")"
+    local branch_dir="$workspace_dir/$1"
+
     if [ ! -d "$branch_dir" ]; then
-        echo "Error: No scratch backups found for branch '$1'"
+        echo "Error: No workspace backups found for branch '$1'"
         echo "Hint: Use 'wtsl' to see available backups"
         return 1
     fi
@@ -955,7 +941,7 @@ wtso() {
         cd "$target_dir"
         echo "➜ $(pwd)"
     else
-        echo "Error: Scratch backup not found for '$1' with timestamp '$2'"
+        echo "Error: Workspace backup not found for '$1' with timestamp '$2'"
         echo "Hint: Use 'wtsl' to see available backups"
         return 1
     fi

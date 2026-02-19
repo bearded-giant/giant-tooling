@@ -15,7 +15,7 @@ Input (JSON on stdin):
 Output: Workspace context injected into session via stdout.
 
 Workflow:
-1. Check if scratch/ exists in cwd
+1. Check if .giantmem/ (or legacy scratch/) exists in cwd
 2. If not, bootstrap via workspace-lib.sh
 3. Read WORKSPACE.md and discoveries.md
 4. Output context for Claude to use
@@ -39,9 +39,12 @@ def bootstrap_workspace(cwd: str) -> bool:
     Bootstrap workspace structure using workspace-lib.sh.
     Returns True if bootstrap was performed.
     """
-    scratch_dir = Path(cwd) / "scratch"
-
-    if scratch_dir.exists():
+    workspace_dir = Path(cwd) / ".giantmem"
+    if workspace_dir.exists():
+        return False
+    # fallback: check for legacy scratch dir
+    legacy_dir = Path(cwd) / "scratch"
+    if legacy_dir.exists():
         return False
 
     if not WORKSPACE_LIB.exists():
@@ -61,12 +64,12 @@ def bootstrap_workspace(cwd: str) -> bool:
         return False
 
 
-def read_recent_sessions(scratch_dir: Path, limit: int = 3) -> list:
+def read_recent_sessions(workspace_dir: Path, limit: int = 3) -> list:
     """
     Read recent session summaries for context injection.
     Returns list of (filename, topic, brief) tuples.
     """
-    sessions_dir = scratch_dir / "history" / "sessions"
+    sessions_dir = workspace_dir / "history" / "sessions"
     if not sessions_dir.exists():
         return []
 
@@ -103,7 +106,9 @@ def read_workspace_context(cwd: str) -> dict:
     Read workspace context files.
     Returns dict with available context.
     """
-    scratch_dir = Path(cwd) / "scratch"
+    workspace_dir = Path(cwd) / ".giantmem"
+    if not workspace_dir.exists():
+        workspace_dir = Path(cwd) / "scratch"
     context = {
         "workspace_md": None,
         "discoveries": None,
@@ -113,11 +118,11 @@ def read_workspace_context(cwd: str) -> dict:
         "bootstrapped": False
     }
 
-    if not scratch_dir.exists():
+    if not workspace_dir.exists():
         return context
 
     # read WORKSPACE.md
-    workspace_file = scratch_dir / "WORKSPACE.md"
+    workspace_file = workspace_dir / "WORKSPACE.md"
     if workspace_file.exists():
         try:
             context["workspace_md"] = workspace_file.read_text()[:2000]
@@ -125,7 +130,7 @@ def read_workspace_context(cwd: str) -> dict:
             pass
 
     # read discoveries
-    discoveries_file = scratch_dir / "context" / "discoveries.md"
+    discoveries_file = workspace_dir / "context" / "discoveries.md"
     if discoveries_file.exists():
         try:
             content = discoveries_file.read_text()
@@ -136,7 +141,7 @@ def read_workspace_context(cwd: str) -> dict:
             pass
 
     # read tree (truncated)
-    tree_file = scratch_dir / "context" / "tree.md"
+    tree_file = workspace_dir / "context" / "tree.md"
     if tree_file.exists():
         try:
             content = tree_file.read_text()
@@ -147,7 +152,7 @@ def read_workspace_context(cwd: str) -> dict:
             pass
 
     # read current plan if exists
-    plan_file = scratch_dir / "plans" / "current.md"
+    plan_file = workspace_dir / "plans" / "current.md"
     if plan_file.exists():
         try:
             context["current_plan"] = plan_file.read_text()[:1500]
@@ -155,7 +160,7 @@ def read_workspace_context(cwd: str) -> dict:
             pass
 
     # read recent sessions
-    recent = read_recent_sessions(scratch_dir)
+    recent = read_recent_sessions(workspace_dir)
     if recent:
         context["recent_sessions"] = recent
 
@@ -172,7 +177,7 @@ def format_context_output(context: dict, cwd: str, bootstrapped: bool) -> str:
 
     if bootstrapped:
         parts.append(f"[Workspace bootstrapped for {project_name}]")
-        parts.append("Created scratch/ with: context/, plans/, history/, prompts/, research/, reviews/, filebox/")
+        parts.append("Created .giantmem/ with: context/, plans/, history/, prompts/, research/, reviews/, filebox/")
         parts.append("")
 
     if context.get("workspace_md"):
@@ -201,7 +206,7 @@ def format_context_output(context: dict, cwd: str, bootstrapped: bool) -> str:
 
     if parts:
         parts.append("---")
-        parts.append("Remember: Save findings to scratch/context/discoveries.md, plans to scratch/plans/")
+        parts.append("Remember: Save findings to .giantmem/context/discoveries.md, plans to .giantmem/plans/")
 
     return "\n".join(parts) if parts else ""
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-# list-features - show feature status table from scratch/features/
+# list-features - show feature status table from .giantmem/features/
 
 set -euo pipefail
 
@@ -13,8 +13,8 @@ while [[ $# -gt 0 ]]; do
       ;;
     -h|--help)
       echo "usage: list-features [--dir <path>]"
-      echo "  default: ./scratch/features"
-      echo "  --dir appends /scratch/features if not already present"
+      echo "  default: ./.giantmem/features"
+      echo "  --dir appends /.giantmem/features if not already present"
       return 0 2>/dev/null || exit 0
       ;;
     *)
@@ -25,13 +25,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [ -z "$features_dir" ]; then
-  features_dir="$(pwd)/scratch/features"
+  features_dir="$(pwd)/.giantmem/features"
 else
-  # append scratch/features if the path doesn't already end with it
+  # append .giantmem/features if the path doesn't already end with it
   case "$features_dir" in
-    */scratch/features) ;;
-    */scratch/features/) ;;
-    *) features_dir="${features_dir%/}/scratch/features" ;;
+    */.giantmem/features) ;;
+    */.giantmem/features/) ;;
+    *) features_dir="${features_dir%/}/.giantmem/features" ;;
   esac
 fi
 

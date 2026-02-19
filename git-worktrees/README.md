@@ -20,7 +20,7 @@ The wizard prompts for:
 | CLAUDE.md source branch | `main` | Branch to symlink CLAUDE.md from |
 | Env files | `.env` or `.env.local` | Copied from wt-bootstrap/ to new worktrees |
 | Use direnv? | `n` | Whether to copy .envrc and run `direnv allow` |
-| Archive name | `edgerouter-wt` | Directory name in ~/scratch_archive/ |
+| Archive name | `edgerouter-wt` | Directory name in ~/giantmem_archive/ |
 | Version file | `.python-version` | Created in each new worktree |
 | Version content | `3.11.12` | Written to version file (empty = copy from bootstrap) |
 | Package hint | `Run 'posh'...` | Shown after worktree creation |
@@ -45,7 +45,7 @@ Or just run `edgewt master` - if the bare repo doesn't exist, you'll be prompted
 2. Detaches HEAD so no branch is blocked
 3. Creates first worktree for the default branch
 4. Creates `wt-bootstrap/` directory
-5. Runs setup (version file, scratch/, .claude/)
+5. Runs setup (version file, .giantmem/, .claude/)
 
 After init, populate `wt-bootstrap/` with files you want copied to every new worktree (.env, CLAUDE.md, docker-compose.override.yml, etc.).
 
@@ -61,7 +61,7 @@ All commands use your chosen prefix. Examples below use `edgewt`.
 | `edgewtl` | List all worktrees with status |
 | `edgewtb` | List local and remote branches |
 | `edgewta <branch> [base]` | Add worktree explicitly |
-| `edgewtr <branch>` | Remove worktree (backs up scratch/) |
+| `edgewtr <branch>` | Remove worktree (backs up .giantmem/) |
 | `edgewts` | Current worktree status |
 | `edgewtp` | Pull (fast-forward only) |
 | `edgewtpr [branch]` | Pull with rebase |
@@ -70,18 +70,18 @@ All commands use your chosen prefix. Examples below use `edgewt`.
 | `edgewtprune` | Prune stale worktree references |
 | `edgewtrepair` | Repair worktrees after directory moves |
 
-### Scratch Backup Commands
+### Workspace Backup Commands
 
-Scratch directories are automatically backed up when removing worktrees.
+Workspace directories are automatically backed up when removing worktrees.
 
 | Command | Description |
 |---------|-------------|
-| `edgewtbs` | Backup current worktree's scratch/ |
-| `edgewtsb [branch]` | Backup any worktree's scratch/ |
-| `edgewtsl` | List all scratch backups |
-| `edgewtso <branch>` | Open/cd to scratch backup |
+| `edgewtbs` | Backup current worktree's .giantmem/ |
+| `edgewtsb [branch]` | Backup any worktree's .giantmem/ |
+| `edgewtsl` | List all workspace backups |
+| `edgewtso <branch>` | Open/cd to workspace backup |
 
-Backups go to `~/scratch_archive/{archive_name}/{branch}/{timestamp}/` with a `latest` symlink.
+Backups go to `~/giantmem_archive/{archive_name}/{branch}/{timestamp}/` with a `latest` symlink.
 
 ### Workspace Commands
 
@@ -136,7 +136,7 @@ edgewtr pr-123           # clean up when done (scratch backed up)
 │   ├── CLAUDE.md
 │   └── ...
 ├── master/             # worktree: master branch
-│   └── scratch/        # workspace (created by setup)
+│   └── .giantmem/      # workspace (created by setup)
 ├── feature-auth/       # worktree: feature branch
 └── bugfix-123/         # worktree: bugfix branch
 ```
@@ -194,4 +194,4 @@ edgewtrepair  # re-links orphaned worktrees
 ## Related Files
 
 - `worktree-core.sh` - shared library (in `~/dotfiles/shell/scripts/worktrees/`)
-- `../workspace/workspace-lib.sh` - workspace functions (scratch/, session tracking)
+- `../workspace/workspace-lib.sh` - workspace functions (.giantmem/, session tracking)

@@ -19,9 +19,9 @@ Session Lifecycle:
        v
   SessionStart hook
        |
-       +-- scratch/ exists? --> inject context + recent sessions
+       +-- .giantmem/ exists? --> inject context + recent sessions
        |
-       +-- scratch/ missing? --> bootstrap via workspace_init
+       +-- .giantmem/ missing? --> bootstrap via workspace_init
        |                         then inject context
        v
   [Claude session runs]
@@ -32,12 +32,12 @@ Session Lifecycle:
        +-- read transcript JSONL
        +-- extract topic from full session content
        +-- extract user prompts, tool usage with file paths
-       +-- create scratch/history/sessions/{timestamp}_{id}.md
-       +-- update scratch/history/sessions.md index
+       +-- create .giantmem/history/sessions/{timestamp}_{id}.md
+       +-- update .giantmem/history/sessions.md index
        +-- extract discoveries (patterns, gotchas, architecture)
        +-- extract plans (numbered lists, TODOs)
-       +-- append to scratch/context/discoveries.md
-       +-- update scratch/plans/current.md
+       +-- append to .giantmem/context/discoveries.md
+       +-- update .giantmem/plans/current.md
        |
        v
   session ends
@@ -115,14 +115,14 @@ Workspace hooks run first, then memory hooks.
 
 | Condition | Action |
 |-----------|--------|
-| `source: startup` + no scratch/ | Run `workspace_init` via workspace-lib.sh |
-| `source: startup` + scratch/ exists | Read and inject context |
+| `source: startup` + no .giantmem/ | Run `workspace_init` via workspace-lib.sh |
+| `source: startup` + .giantmem/ exists | Read and inject context |
 | `source: resume` | Read and inject context (no bootstrap) |
 
 **Output** (stdout, injected into session):
 ```
 [Workspace bootstrapped for project-name]
-Created scratch/ with: context/, plans/, history/, prompts/, research/, reviews/, filebox/
+Created .giantmem/ with: context/, plans/, history/, prompts/, research/, reviews/, filebox/
 
 === WORKSPACE CONTEXT ===
 # Workspace: project-name
@@ -131,13 +131,13 @@ Status: [ ] In Progress  [ ] Complete
 ...
 
 === ACTIVE PLAN ===
-(if scratch/plans/current.md exists)
+(if .giantmem/plans/current.md exists)
 
 === RECENT DISCOVERIES ===
-(last 20 lines of scratch/context/discoveries.md)
+(last 20 lines of .giantmem/context/discoveries.md)
 
 ---
-Remember: Save findings to scratch/context/discoveries.md, plans to scratch/plans/
+Remember: Save findings to .giantmem/context/discoveries.md, plans to .giantmem/plans/
 ```
 
 **Configuration**:
@@ -158,7 +158,7 @@ WORKSPACE_LIB = Path.home() / "dev/giant-tooling/workspace/workspace-lib.sh"
 
 **Behavior**:
 
-1. Skip if no `scratch/` directory
+1. Skip if no `.giantmem/` directory
 2. Read transcript JSONL file
 3. Extract assistant message content
 4. Pattern-match for discoveries and plans
@@ -188,12 +188,12 @@ Searches for patterns indicating codebase learnings:
 
 | File | Content |
 |------|---------|
-| `scratch/history/sessions/{ts}_{id}.md` | Individual session summary with full details |
-| `scratch/history/sessions.md` | Index with one-liner per session |
-| `scratch/context/discoveries.md` | Appended: `- YYYY-MM-DD HH:MM: [category] finding` |
-| `scratch/plans/current.md` | Updated with extracted steps |
+| `.giantmem/history/sessions/{ts}_{id}.md` | Individual session summary with full details |
+| `.giantmem/history/sessions.md` | Index with one-liner per session |
+| `.giantmem/context/discoveries.md` | Appended: `- YYYY-MM-DD HH:MM: [category] finding` |
+| `.giantmem/plans/current.md` | Updated with extracted steps |
 
-**Individual Session File Format** (`scratch/history/sessions/20250106_143022_abc123ef.md`):
+**Individual Session File Format** (`.giantmem/history/sessions/20250106_143022_abc123ef.md`):
 
 ```markdown
 # Session: 2025-01-06 14:30 - 15:22
@@ -236,7 +236,7 @@ Brief: Investigated JWT refresh flow and added endpoint
 - Generated: 2025-01-06 15:22:45
 ```
 
-**Session Index Format** (`scratch/history/sessions.md`):
+**Session Index Format** (`.giantmem/history/sessions.md`):
 
 ```
 - 2025-01-06 14:30: [auth] abc123ef - Investigated JWT refresh flow... (4 edits, 2 discoveries)
@@ -319,9 +319,9 @@ Claude: I discovered that the auth middleware is in src/middleware/auth.py
 Workspace: session:20250106_103522_abc123ef.md, 2 discoveries, plans
 ```
 
-**Result in scratch/**:
+**Result in .giantmem/**:
 
-`scratch/history/sessions/20250106_103522_abc123ef.md`:
+`.giantmem/history/sessions/20250106_103522_abc123ef.md`:
 ```markdown
 # Session: 2025-01-06 10:30 - 10:35
 
@@ -353,12 +353,12 @@ Brief: Add refresh token endpoint
 - Generated: 2025-01-06 10:35:22
 ```
 
-`scratch/history/sessions.md`:
+`.giantmem/history/sessions.md`:
 ```
 - 2025-01-06 10:35: [auth] abc123ef - Add refresh token endpoint (2 edits, 2 discoveries)
 ```
 
-`scratch/context/discoveries.md`:
+`.giantmem/context/discoveries.md`:
 ```
 - 2025-01-06 10:35: [architecture] auth middleware is in src/middleware/auth.py
 - 2025-01-06 10:35: [config] JWT tokens stored in Redis with a 24h TTL
@@ -375,7 +375,7 @@ workspace-lib.sh          Shell functions for manual workspace ops
        v
 workspace_session_hook.py    Bootstrap + inject context + recent sessions (SessionStart)
        |
-       +-- reads scratch/history/sessions/*.md for recent session context
+       +-- reads .giantmem/history/sessions/*.md for recent session context
        |
        v
 [Claude session]
@@ -384,7 +384,7 @@ workspace_session_hook.py    Bootstrap + inject context + recent sessions (Sessi
 workspace_session_end.py     Create session file + extract + persist (SessionEnd)
        |
        v
-scratch/                     Persistent workspace state
+.giantmem/                     Persistent workspace state
 ├── WORKSPACE.md
 ├── context/
 │   ├── discoveries.md       <-- End hook appends here
@@ -406,7 +406,7 @@ scratch/                     Persistent workspace state
 | Bootstrap workspace | `wsi` / `workspace_init` | SessionStart hook |
 | Generate tree | `wst` / `workspace_tree` | SessionStart hook |
 | Add discovery | `wsd "note"` | SessionEnd hook (extracted) |
-| Update plan | Edit `scratch/plans/current.md` | SessionEnd hook (extracted) |
+| Update plan | Edit `.giantmem/plans/current.md` | SessionEnd hook (extracted) |
 | Mark complete | `wsc` / `workspace_complete` | Manual only |
 | View status | `ws` / `workspace_status` | Manual only |
 
@@ -445,7 +445,7 @@ echo '{"session_id":"test","cwd":"/tmp/test","source":"startup"}' | \
 # The transcript_path must point to valid JSONL
 
 # Test extraction manually (need real transcript)
-echo '{"session_id":"test","cwd":"/path/with/scratch","transcript_path":"~/.claude/projects/.../session.jsonl"}' | \
+echo '{"session_id":"test","cwd":"/path/with/.giantmem","transcript_path":"~/.claude/projects/.../session.jsonl"}' | \
   python3 ~/.claude/hooks/workspace_session_end.py
 ```
 

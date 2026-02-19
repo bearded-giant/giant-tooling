@@ -1,8 +1,8 @@
 # scratch-archive
 
-Archive and search scratch directories.
+Archive and search .giantmem/ directories.
 
-Archive location: `~/scratch_archive/{project}/{branch}/{timestamp}/`
+Archive location: `~/giantmem_archive/{project}/{branch}/{timestamp}/`
 
 ## Requirements
 
@@ -15,30 +15,30 @@ Archive location: `~/scratch_archive/{project}/{branch}/{timestamp}/`
 
 ### archive
 
-Archive a scratch directory.
+Archive a .giantmem/ directory.
 
 ```bash
 scratch-archive.sh archive [--clean] [--project <name>] [src]
 ```
 
 Defaults:
-- source: `./scratch`
+- source: `./.giantmem`
 - project: auto-detected from directory (see below)
 - branch: current git branch
 
 Project name detection:
 - **worktree** (`.git` is a file): parent dir of worktree root (e.g., `edgerouter-wt`)
-- **regular repo** (`.git` is a dir): dir containing scratch (e.g., `edgerouter`)
+- **regular repo** (`.git` is a dir): dir containing .giantmem (e.g., `edgerouter`)
 - **`--project`**: overrides auto-detection
 
 ```bash
-saa                                    # archive ./scratch, auto-detect project+branch
-saa --clean                            # archive and remove ./scratch
+saa                                    # archive ./.giantmem, auto-detect project+branch
+saa --clean                            # archive and remove ./.giantmem
 saa --project cc-wt                    # force project name
-sa archive ~/path/to/scratch           # explicit source
+sa archive ~/path/to/.giantmem         # explicit source
 ```
 
-Creates: `~/scratch_archive/{project}/{branch}/{timestamp}/`
+Creates: `~/giantmem_archive/{project}/{branch}/{timestamp}/`
 Updates: `latest` symlink in branch directory
 Builds: `.scratch-index` for fast searching
 Updates: `archives.db` FTS5 database (background, additive per-project)
@@ -103,7 +103,7 @@ saq search "jwt"                   # search (same as sas)
 saq stats                          # show counts by project/type
 ```
 
-Database: `~/scratch_archive/archives.db`
+Database: `~/giantmem_archive/archives.db`
 
 ### index
 
@@ -168,5 +168,5 @@ Quick reference:
 | `sas "auth" -p cc-wt -l` | search with filters |
 | `saq ingest` | rebuild FTS5 database |
 | `saq stats` | show indexed doc counts |
-| `saa` | archive current scratch/ |
+| `saa` | archive current .giantmem/ |
 | `sal` | list archives |

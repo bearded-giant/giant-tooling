@@ -1,6 +1,6 @@
 # Workspace Management System
 
-Scripts and hooks for managing Claude Code workspaces with scratch directories and feature tracking.
+Scripts and hooks for managing Claude Code workspaces with .giantmem directories and feature tracking.
 
 ## Setup
 
@@ -21,7 +21,7 @@ source ~/dev/giant-tooling/workspace/workspace-lib.sh
 | `wsc` | Complete | Mark workspace complete | |
 | `wssync` | Sync | Refresh tree + git log | |
 | `wsf` | Features | List features index | Reads _index.md |
-| `wsa` | Archive | Archive scratch to ~/scratch_archive | |
+| `wsa` | Archive | Archive .giantmem to ~/giantmem_archive | |
 | `wsal [project]` | Archive List | List archives | Omit project to list all |
 | `wsao <proj> [branch]` | Archive Open | Open archive in Finder | Uses `latest` if no timestamp |
 | `ws-init [name]` | Init | Initialize new workspace | Name defaults to dir name |
@@ -41,7 +41,7 @@ Run these inside Claude Code sessions:
 ## Directory Structure
 
 ```
-scratch/
+.giantmem/
 ├── WORKSPACE.md           # Project overview
 ├── features/
 │   ├── _index.md          # Feature registry (Claude-maintained)
@@ -97,6 +97,6 @@ ws-migrate-features /path/to/worktree
 
 ## Archive Location
 
-Archives stored at: `~/scratch_archive/{project}/{branch}/{timestamp}/`
+Archives stored at: `~/giantmem_archive/{project}/{branch}/{timestamp}/`
 
 Each archive includes a `latest` symlink to the most recent backup.

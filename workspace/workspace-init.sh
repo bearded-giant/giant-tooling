@@ -13,8 +13,8 @@ echo "Initializing workspace for: $PROJECT_NAME"
 workspace_init "$PWD" "$PROJECT_NAME"
 
 # Create sample prompt template
-if [ ! -f "scratch/prompts/research-template.md" ]; then
-    cat > "scratch/prompts/research-template.md" << 'EOF'
+if [ ! -f ".giantmem/prompts/research-template.md" ]; then
+    cat > ".giantmem/prompts/research-template.md" << 'EOF'
 # Research: {TOPIC}
 
 ## Goal
@@ -41,7 +41,7 @@ Avoid: {outdated sources}
 ## Findings
 {To be filled in during research}
 EOF
-    echo "Created scratch/prompts/research-template.md"
+    echo "Created .giantmem/prompts/research-template.md"
 fi
 
 # Create .claude/commands/workspace/ if .claude exists or user wants it
@@ -56,9 +56,9 @@ if [ -d ".claude" ] || [ -f "CLAUDE.md" ] || [ -f ".claude/CLAUDE.md" ]; then
         cat > ".claude/commands/workspace/discover.md" << 'EOF'
 Explore the codebase and document findings.
 
-1. Read scratch/context/tree.md for structure overview
+1. Read .giantmem/context/tree.md for structure overview
 2. Search for key patterns: entry points, config files, main modules
-3. Append discoveries to scratch/context/discoveries.md in format:
+3. Append discoveries to .giantmem/context/discoveries.md in format:
    - YYYY-MM-DD HH:MM: [category] finding description
 
 Categories: architecture, pattern, gotcha, dependency, convention
@@ -68,9 +68,9 @@ EOF
         cat > ".claude/commands/workspace/plan.md" << 'EOF'
 Create or update implementation plan.
 
-1. Read scratch/WORKSPACE.md for project/branch purpose
-2. Read scratch/context/discoveries.md for context
-3. Create/update scratch/plans/current.md with:
+1. Read .giantmem/WORKSPACE.md for project/branch purpose
+2. Read .giantmem/context/discoveries.md for context
+3. Create/update .giantmem/plans/current.md with:
    - Goal summary
    - Step-by-step implementation plan
    - Files to modify
@@ -81,9 +81,9 @@ EOF
         cat > ".claude/commands/workspace/sync.md" << 'EOF'
 Refresh workspace context files.
 
-1. Generate fresh tree to scratch/context/tree.md (exclude node_modules, venv, __pycache__, .git, scratch)
-2. If git repo, add recent commits summary to scratch/context/git-log.md:
-   git log --oneline -20 > scratch/context/git-log.md
+1. Generate fresh tree to .giantmem/context/tree.md (exclude node_modules, venv, __pycache__, .git, .giantmem, scratch)
+2. If git repo, add recent commits summary to .giantmem/context/git-log.md:
+   git log --oneline -20 > .giantmem/context/git-log.md
 3. Report what was updated
 EOF
 
@@ -91,8 +91,8 @@ EOF
         cat > ".claude/commands/workspace/archive.md" << 'EOF'
 Prepare workspace for completion.
 
-1. Update scratch/WORKSPACE.md - change Status to [x] Complete
-2. Create scratch/history/summary.md with:
+1. Update .giantmem/WORKSPACE.md - change Status to [x] Complete
+2. Create .giantmem/history/summary.md with:
    - What was accomplished
    - Key decisions made
    - Files changed
@@ -111,9 +111,9 @@ else
         cat > ".claude/commands/workspace/discover.md" << 'EOF'
 Explore the codebase and document findings.
 
-1. Read scratch/context/tree.md for structure overview
+1. Read .giantmem/context/tree.md for structure overview
 2. Search for key patterns: entry points, config files, main modules
-3. Append discoveries to scratch/context/discoveries.md in format:
+3. Append discoveries to .giantmem/context/discoveries.md in format:
    - YYYY-MM-DD HH:MM: [category] finding description
 
 Categories: architecture, pattern, gotcha, dependency, convention
@@ -122,9 +122,9 @@ EOF
         cat > ".claude/commands/workspace/plan.md" << 'EOF'
 Create or update implementation plan.
 
-1. Read scratch/WORKSPACE.md for project/branch purpose
-2. Read scratch/context/discoveries.md for context
-3. Create/update scratch/plans/current.md with:
+1. Read .giantmem/WORKSPACE.md for project/branch purpose
+2. Read .giantmem/context/discoveries.md for context
+3. Create/update .giantmem/plans/current.md with:
    - Goal summary
    - Step-by-step implementation plan
    - Files to modify
@@ -134,17 +134,17 @@ EOF
         cat > ".claude/commands/workspace/sync.md" << 'EOF'
 Refresh workspace context files.
 
-1. Generate fresh tree to scratch/context/tree.md (exclude node_modules, venv, __pycache__, .git, scratch)
-2. If git repo, add recent commits summary to scratch/context/git-log.md:
-   git log --oneline -20 > scratch/context/git-log.md
+1. Generate fresh tree to .giantmem/context/tree.md (exclude node_modules, venv, __pycache__, .git, .giantmem, scratch)
+2. If git repo, add recent commits summary to .giantmem/context/git-log.md:
+   git log --oneline -20 > .giantmem/context/git-log.md
 3. Report what was updated
 EOF
 
         cat > ".claude/commands/workspace/archive.md" << 'EOF'
 Prepare workspace for completion.
 
-1. Update scratch/WORKSPACE.md - change Status to [x] Complete
-2. Create scratch/history/summary.md with:
+1. Update .giantmem/WORKSPACE.md - change Status to [x] Complete
+2. Create .giantmem/history/summary.md with:
    - What was accomplished
    - Key decisions made
    - Files changed

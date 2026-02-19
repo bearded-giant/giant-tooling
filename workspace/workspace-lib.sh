@@ -8,7 +8,7 @@
 # Functions:
 #   workspace_init [dir] [name]   - Initialize workspace structure
 #   workspace_bootstrap           - Smart init: creates, migrates, or syncs
-#   workspace_migrate             - Move loose scratch files to subdirs
+#   workspace_migrate             - Move loose .giantmem files to subdirs
 #   workspace_tree [dir]          - Generate tree.md
 #   workspace_discover "note"     - Add discovery note
 #   workspace_session_note [note] - Add session marker/note
@@ -16,25 +16,53 @@
 #   workspace_status              - Show workspace status
 #   workspace_sync                - Refresh tree + git log
 #   workspace_gitlog              - Update git-log.md
-#   workspace_archive [src] [proj] [branch] - Archive to ~/scratch_archive/
+#   workspace_archive [src] [proj] [branch] - Archive to ~/giantmem_archive/
 #   workspace_archive_list [proj] - List archives
 #   workspace_archive_open <proj> [branch] [ts] - Open archive in Finder
 #   list-features [--dir <path>]  - Show feature status table
 #
-# Archive location: ~/scratch_archive/{project}/{branch}/{timestamp}/
+# Archive location: ~/giantmem_archive/{project}/{branch}/{timestamp}/
 #
 # Aliases (add to .bashrc):
 #   alias wsb='workspace_bootstrap'  # Smart bootstrap mid-session
 #   alias wsm='workspace_migrate'    # Migrate loose files
-#   alias wsa='workspace_archive'    # Archive current scratch
+#   alias wsa='workspace_archive'    # Archive current .giantmem
 #   alias wsal='workspace_archive_list' # List archives
 #   alias wsf='workspace_features'   # List features
+
+# Migrate scratch/ to .giantmem/ if needed
+workspace_migrate_dir() {
+    local target_dir="${1:-$PWD}"
+    local old_dir="$target_dir/scratch"
+    local new_dir="$target_dir/.giantmem"
+
+    # only migrate if scratch/ exists as a real dir and .giantmem/ does not exist
+    [ -d "$old_dir" ] && [ ! -L "$old_dir" ] && [ ! -d "$new_dir" ] || return 0
+
+    echo "Migrating scratch/ -> .giantmem/ ..."
+    mv "$old_dir" "$new_dir"
+    ln -s .giantmem "$old_dir"
+    echo "  moved scratch -> .giantmem (symlink left for compat)"
+
+    # update .gitignore if it has a scratch/ entry
+    local gitignore="$target_dir/.gitignore"
+    if [ -f "$gitignore" ] && grep -q '^scratch/' "$gitignore"; then
+        if ! grep -q '^\.giantmem/' "$gitignore"; then
+            sed -i.bak '/^scratch\//a\
+.giantmem/' "$gitignore" && rm -f "$gitignore.bak"
+            echo "  added .giantmem/ to .gitignore"
+        fi
+    fi
+}
 
 # Initialize workspace structure in a directory
 workspace_init() {
     local target_dir="${1:-$PWD}"
     local name="${2:-$(basename "$target_dir")}"
-    local scratch_dir="$target_dir/scratch"
+    local scratch_dir="$target_dir/.giantmem"
+
+    # migrate scratch -> .giantmem if needed
+    workspace_migrate_dir "$target_dir"
 
     # Create workspace structure
     mkdir -p "$scratch_dir"/{context,plans,history,filebox,prompts,research,reviews,features}
@@ -55,7 +83,7 @@ Status: [ ] In Progress  [ ] Complete
 ## Notes
 <!-- Session notes, decisions, context -->
 EOF
-        echo "Created scratch/WORKSPACE.md"
+        echo "Created .giantmem/WORKSPACE.md"
     fi
 
     # Create features/_index.md if missing
@@ -74,7 +102,7 @@ EOF
 
 <!-- beta flags, config keys, etc. added as features are created -->
 EOF
-        echo "Created scratch/features/_index.md"
+        echo "Created .giantmem/features/_index.md"
     fi
 
     # Generate initial tree
@@ -86,29 +114,30 @@ EOF
 # Generate tree structure
 workspace_tree() {
     local target_dir="${1:-$PWD}"
-    local context_dir="$target_dir/scratch/context"
+    local context_dir="$target_dir/.giantmem/context"
     mkdir -p "$context_dir"
 
     if command -v tree &>/dev/null; then
-        tree "$target_dir" -I 'node_modules|venv|__pycache__|.git|scratch|.bare|*.pyc|.venv|.tox|dist|build|*.egg-info' -L 4 --dirsfirst > "$context_dir/tree.md" 2>/dev/null
-        echo "Updated scratch/context/tree.md"
+        tree "$target_dir" -I 'node_modules|venv|__pycache__|.git|.giantmem|scratch|.bare|*.pyc|.venv|.tox|dist|build|*.egg-info' -L 4 --dirsfirst > "$context_dir/tree.md" 2>/dev/null
+        echo "Updated .giantmem/context/tree.md"
     else
         # Fallback to find
         find "$target_dir" -maxdepth 4 -type f \
             -not -path '*/.git/*' \
+            -not -path '*/.giantmem/*' \
             -not -path '*/scratch/*' \
             -not -path '*/node_modules/*' \
             -not -path '*/__pycache__/*' \
             -not -path '*/.venv/*' \
             -not -path '*/venv/*' \
             > "$context_dir/tree.md"
-        echo "Updated scratch/context/tree.md (using find)"
+        echo "Updated .giantmem/context/tree.md (using find)"
     fi
 }
 
 # Add a discovery note
 workspace_discover() {
-    local scratch_dir="${PWD}/scratch"
+    local scratch_dir="${PWD}/.giantmem"
     local discoveries="$scratch_dir/context/discoveries.md"
 
     if [ -z "$1" ]; then
@@ -123,7 +152,7 @@ workspace_discover() {
 
 # Add a session note to history
 workspace_session_note() {
-    local scratch_dir="${PWD}/scratch"
+    local scratch_dir="${PWD}/.giantmem"
     local history_file="$scratch_dir/history/sessions.md"
 
     mkdir -p "$(dirname "$history_file")"
@@ -142,7 +171,7 @@ workspace_session_note() {
 
 # Mark workspace as complete
 workspace_complete() {
-    local scratch_dir="${PWD}/scratch"
+    local scratch_dir="${PWD}/.giantmem"
     local workspace_file="$scratch_dir/WORKSPACE.md"
 
     if [ -f "$workspace_file" ]; then
@@ -161,7 +190,7 @@ workspace_complete() {
 
 # Show workspace status
 workspace_status() {
-    local scratch_dir="${PWD}/scratch"
+    local scratch_dir="${PWD}/.giantmem"
 
     if [ ! -d "$scratch_dir" ]; then
         echo "No workspace found in current directory"
@@ -191,7 +220,7 @@ workspace_status() {
 
 # List features from index
 workspace_features() {
-    local scratch_dir="${PWD}/scratch"
+    local scratch_dir="${PWD}/.giantmem"
     local index="$scratch_dir/features/_index.md"
 
     if [ -f "$index" ]; then
@@ -204,7 +233,7 @@ workspace_features() {
 
 # Generate git log context
 workspace_gitlog() {
-    local scratch_dir="${PWD}/scratch"
+    local scratch_dir="${PWD}/.giantmem"
     local context_dir="$scratch_dir/context"
 
     if ! git rev-parse --is-inside-work-tree &>/dev/null; then
@@ -214,7 +243,7 @@ workspace_gitlog() {
 
     mkdir -p "$context_dir"
     git log --oneline -20 > "$context_dir/git-log.md"
-    echo "Updated scratch/context/git-log.md"
+    echo "Updated .giantmem/context/git-log.md"
 }
 
 # Sync all context (tree + git log)
@@ -225,22 +254,22 @@ workspace_sync() {
     fi
 }
 
-# Migrate existing scratch files to workspace structure
+# Migrate existing .giantmem files to workspace structure
 # Moves loose files into appropriate subdirectories
 workspace_migrate() {
-    local scratch_dir="${PWD}/scratch"
+    local scratch_dir="${PWD}/.giantmem"
     local migrated=0
     local skipped=0
 
     if [ ! -d "$scratch_dir" ]; then
-        echo "No scratch/ directory found. Run workspace_init first."
+        echo "No .giantmem/ directory found. Run workspace_init first."
         return 1
     fi
 
     # Create structure if missing
     mkdir -p "$scratch_dir"/{context,plans,history,filebox,prompts,research,reviews,features}
 
-    # Process each file in scratch root (not in subdirs)
+    # Process each file in .giantmem root (not in subdirs)
     for file in "$scratch_dir"/*; do
         # Skip if not a file or is WORKSPACE.md
         [ ! -f "$file" ] && continue
@@ -343,15 +372,18 @@ EOF
 # Bootstrap workspace mid-session (init or migrate)
 # Use this when starting workspace in existing session
 workspace_bootstrap() {
-    local scratch_dir="${PWD}/scratch"
+    # migrate scratch -> .giantmem if needed
+    workspace_migrate_dir "$PWD"
+
+    local scratch_dir="${PWD}/.giantmem"
 
     if [ ! -d "$scratch_dir" ]; then
         # Fresh init
         echo "Initializing new workspace..."
         workspace_init
     elif [ ! -f "$scratch_dir/WORKSPACE.md" ]; then
-        # Has scratch but no structure - migrate
-        echo "Migrating existing scratch to workspace structure..."
+        # Has .giantmem but no structure - migrate
+        echo "Migrating existing .giantmem to workspace structure..."
         workspace_migrate
     else
         # Already has workspace - just sync
@@ -362,13 +394,13 @@ workspace_bootstrap() {
 }
 
 # Central archive location
-WORKSPACE_ARCHIVE_BASE="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}"
+WORKSPACE_ARCHIVE_BASE="${GIANTMEM_ARCHIVE_BASE:-${SCRATCH_ARCHIVE_BASE:-$HOME/giantmem_archive}}"
 
-# Archive scratch directory to central location
-# Usage: workspace_archive [scratch_source] [project_name] [branch_name]
-# Defaults: current scratch/, project from parent dir name, branch from git or dir name
+# Archive .giantmem directory to central location
+# Usage: workspace_archive [source] [project_name] [branch_name]
+# Defaults: current .giantmem/, project from parent dir name, branch from git or dir name
 workspace_archive() {
-    local scratch_source="${1:-$PWD/scratch}"
+    local scratch_source="${1:-$PWD/.giantmem}"
     local project_name="${2:-$(basename "$(dirname "$scratch_source")")}"
     local branch_name="${3:-}"
 
@@ -382,11 +414,11 @@ workspace_archive() {
     fi
 
     if [ ! -d "$scratch_source" ]; then
-        echo "No scratch directory found at: $scratch_source"
+        echo "No .giantmem directory found at: $scratch_source"
         return 1
     fi
 
-    # Create archive path: ~/scratch_archive/{project}/{branch}/{timestamp}/
+    # Create archive path: ~/giantmem_archive/{project}/{branch}/{timestamp}/
     local archive_base="$WORKSPACE_ARCHIVE_BASE/$project_name"
     local branch_backup_dir="$archive_base/$branch_name"
     mkdir -p "$branch_backup_dir"
@@ -394,9 +426,9 @@ workspace_archive() {
     local timestamp=$(date '+%Y%m%d_%H%M%S')
     local backup_dir="$branch_backup_dir/$timestamp"
 
-    echo "Archiving scratch to: $backup_dir"
+    echo "Archiving .giantmem to: $backup_dir"
     if cp -r "$scratch_source" "$backup_dir"; then
-        echo "Scratch archived successfully"
+        echo "Workspace archived successfully"
 
         # Update latest symlink
         local latest_link="$branch_backup_dir/latest"
@@ -414,12 +446,12 @@ workspace_archive() {
 
         return 0
     else
-        echo "ERROR: Failed to archive scratch directory"
+        echo "ERROR: Failed to archive .giantmem directory"
         return 1
     fi
 }
 
-# List scratch archives for a project
+# List workspace archives for a project
 # Usage: workspace_archive_list [project_name]
 workspace_archive_list() {
     local project_name="${1:-}"
@@ -434,7 +466,7 @@ workspace_archive_list() {
         return 0
     fi
 
-    echo "Scratch archives in $archive_dir:"
+    echo "Workspace archives in $archive_dir:"
     echo "────────────────────────────────────"
 
     if [ -n "$project_name" ]; then
@@ -466,7 +498,7 @@ workspace_archive_list() {
     fi
 }
 
-# Open/browse a scratch archive
+# Open/browse a workspace archive
 # Usage: workspace_archive_open <project> [branch] [timestamp]
 workspace_archive_open() {
     if [ -z "$1" ]; then

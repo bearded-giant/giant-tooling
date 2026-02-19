@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""sqlite fts5 search for scratch-archive"""
+"""sqlite fts5 search for giantmem-archive"""
 
 import argparse
 import os
@@ -12,7 +12,12 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-ARCHIVE_BASE = Path(os.environ.get("SCRATCH_ARCHIVE_BASE", Path.home() / "scratch_archive"))
+ARCHIVE_BASE = Path(
+    os.environ.get(
+        "GIANTMEM_ARCHIVE_BASE",
+        os.environ.get("SCRATCH_ARCHIVE_BASE", os.path.expanduser("~/giantmem_archive")),
+    )
+)
 DB_PATH = ARCHIVE_BASE / "archives.db"
 
 SKIP_FILES = {".scratch-index", ".DS_Store"}
@@ -266,7 +271,7 @@ def do_ingest(args):
         if err:
             errors += 1
 
-    # index domain json files (scratch/domains/*.json)
+    # index domain json files (.giantmem/domains/*.json)
     for json_file in scan_root.rglob("domains/*.json"):
         if json_file.name.startswith(".") or json_file.name in SKIP_FILES:
             continue
@@ -321,6 +326,8 @@ def do_search(args):
 
     where_clause = (" AND " + " AND ".join(where)) if where else ""
 
+    # fetch extra rows for re-ranking after temporal decay
+    fetch_limit = max(args.n * 5, 100)
     sql = f"""
         SELECT
             d.filepath,
@@ -337,7 +344,7 @@ def do_search(args):
         ORDER BY rank
         LIMIT ?
     """
-    params = [fts_query] + params + [args.n]
+    params = [fts_query] + params + [fetch_limit]
 
     try:
         rows = db.execute(sql, params).fetchall()
@@ -351,6 +358,19 @@ def do_search(args):
     if not rows:
         print(f"no results for: {args.pattern}")
         return 0
+
+    # apply temporal decay: newer archives rank higher
+    now = datetime.now()
+    decayed = []
+    for row in rows:
+        filepath, project, branch, ts, dir_type, filename, rank = row
+        days_old = _days_from_timestamp(ts, now)
+        decay = 1.0 / (1.0 + days_old * 0.01)
+        adjusted_rank = rank * decay
+        decayed.append((filepath, project, branch, ts, dir_type, filename, adjusted_rank))
+
+    decayed.sort(key=lambda r: r[6])
+    rows = decayed[: args.n]
 
     # fzf picker: always use when --file-name (needs interactive pick even in subshell)
     use_fzf = (sys.stdout.isatty() or args.file_name) and shutil.which("fzf") and not args.no_fzf
@@ -373,6 +393,15 @@ def do_search(args):
             print()
 
     return 0
+
+
+def _days_from_timestamp(ts, now):
+    """calculate days between archive timestamp (YYYYMMDD_HHMMSS) and now"""
+    try:
+        archive_dt = datetime.strptime(ts, "%Y%m%d_%H%M%S")
+        return max(0, (now - archive_dt).days)
+    except (ValueError, TypeError):
+        return 0
 
 
 def _find_match_line(filepath, pattern):
@@ -497,7 +526,7 @@ def do_stats(args):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="scratch-archive fts5 search")
+    parser = argparse.ArgumentParser(description="giantmem-archive fts5 search")
     sub = parser.add_subparsers(dest="command")
 
     p_ingest = sub.add_parser("ingest", help="rebuild db from file tree")

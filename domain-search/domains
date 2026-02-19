@@ -14,7 +14,7 @@
 #   domains fzf                         interactive domain picker (requires fzf)
 #
 # options:
-#   -p, --path PATH     path to scratch/domains/ (default: scratch/domains)
+#   -p, --path PATH     path to .giantmem/domains/ (default: .giantmem/domains)
 
 import argparse
 import json
@@ -26,7 +26,8 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ARCHIVE_BASE = Path(os.environ.get("SCRATCH_ARCHIVE_BASE", Path.home() / "scratch_archive"))
+ARCHIVE_BASE = Path(os.environ.get("GIANTMEM_ARCHIVE_BASE",
+                    os.environ.get("SCRATCH_ARCHIVE_BASE", Path.home() / "giantmem_archive")))
 ARCHIVE_DB = ARCHIVE_BASE / "archives.db"
 
 
@@ -38,14 +39,18 @@ def find_domains_dir(explicit_path=None):
         print(f"not found: {explicit_path}", file=sys.stderr)
         sys.exit(1)
 
-    # walk up from cwd looking for scratch/domains
+    # walk up from cwd looking for .giantmem/domains first, then scratch/domains
     cwd = Path.cwd()
+    for parent in [cwd, *cwd.parents]:
+        candidate = parent / ".giantmem" / "domains"
+        if candidate.exists():
+            return candidate
     for parent in [cwd, *cwd.parents]:
         candidate = parent / "scratch" / "domains"
         if candidate.exists():
             return candidate
-    print("no scratch/domains/ found in current or parent directories", file=sys.stderr)
-    print("pass --path explicitly or cd into a project with a scratch dir", file=sys.stderr)
+    print("no .giantmem/domains/ found in current or parent directories", file=sys.stderr)
+    print("pass --path explicitly or cd into a project with a .giantmem dir", file=sys.stderr)
     sys.exit(1)
 
 
@@ -402,7 +407,7 @@ def cmd_archive(args, domains_dir=None):
     """search archived domains across all projects via sqlite fts5"""
     if not ARCHIVE_DB.exists():
         print(f"no archive database at {ARCHIVE_DB}", file=sys.stderr)
-        print("run: scratch-archive archive && scratch-search.py ingest", file=sys.stderr)
+        print("run: giantmem-archive archive && scratch-search.py ingest", file=sys.stderr)
         sys.exit(1)
 
     db = sqlite3.connect(str(ARCHIVE_DB))
@@ -505,7 +510,7 @@ def main():
         prog="domains",
         description="browse and search the code domain knowledge base"
     )
-    parser.add_argument("-p", "--path", help="path to scratch/domains/")
+    parser.add_argument("-p", "--path", help="path to .giantmem/domains/")
 
     sub = parser.add_subparsers(dest="command")
 

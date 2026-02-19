@@ -1,6 +1,6 @@
 # Workspace Guidance for Claude Code
 
-This guidance tells Claude how to use the `scratch/` workspace structure. Include this in your global `~/.claude/CLAUDE.md` or per-project CLAUDE.md.
+This guidance tells Claude how to use the `.giantmem/` workspace structure. Include this in your global `~/.claude/CLAUDE.md` or per-project CLAUDE.md.
 
 ---
 
@@ -11,25 +11,25 @@ Add this to `~/dotfiles/claude-code/.claude/CLAUDE.md`:
 ```markdown
 ## Workspace Context System
 
-When working in a project with a `scratch/` directory, use it as persistent session context.
+When working in a project with a `.giantmem/` directory, use it as persistent session context.
 
 ### On Session Start
-1. Check if `scratch/WORKSPACE.md` exists - if so, read it for branch/project context
-2. Check `scratch/context/discoveries.md` for prior learnings about this codebase
-3. Check `scratch/plans/current.md` for any active implementation plan
+1. Check if `.giantmem/WORKSPACE.md` exists - if so, read it for branch/project context
+2. Check `.giantmem/context/discoveries.md` for prior learnings about this codebase
+3. Check `.giantmem/plans/current.md` for any active implementation plan
 
 ### During Work
-Save learnings and context to the appropriate scratch/ subdirectory:
+Save learnings and context to the appropriate .giantmem/ subdirectory:
 
 | Directory | Purpose | When to Write |
 |-----------|---------|---------------|
-| `scratch/context/` | Codebase knowledge | Discoveries about architecture, patterns, gotchas |
-| `scratch/plans/` | Implementation plans | When planning features or refactors |
-| `scratch/history/` | Session summaries | End of significant work sessions |
-| `scratch/prompts/` | Reusable prompts | Complex prompts worth saving for reuse |
-| `scratch/research/` | Research findings | Web research, documentation summaries |
-| `scratch/reviews/` | Code reviews | Review notes, feedback, analysis |
-| `scratch/filebox/` | Scratch files | Temporary files, samples, exports |
+| `.giantmem/context/` | Codebase knowledge | Discoveries about architecture, patterns, gotchas |
+| `.giantmem/plans/` | Implementation plans | When planning features or refactors |
+| `.giantmem/history/` | Session summaries | End of significant work sessions |
+| `.giantmem/prompts/` | Reusable prompts | Complex prompts worth saving for reuse |
+| `.giantmem/research/` | Research findings | Web research, documentation summaries |
+| `.giantmem/reviews/` | Code reviews | Review notes, feedback, analysis |
+| `.giantmem/filebox/` | Scratch files | Temporary files, samples, exports |
 
 ### File Conventions
 
@@ -48,28 +48,28 @@ Categories: architecture, pattern, gotcha, dependency, convention, entry, config
 ### Writing Context Files
 
 When you discover something important about the codebase:
-1. Append to `scratch/context/discoveries.md` with timestamp and category
-2. For major architectural findings, also update `scratch/WORKSPACE.md` Discoveries section
+1. Append to `.giantmem/context/discoveries.md` with timestamp and category
+2. For major architectural findings, also update `.giantmem/WORKSPACE.md` Discoveries section
 
 When creating an implementation plan:
-1. Write to `scratch/plans/current.md` (or `scratch/plans/{feature-name}.md` for multiple plans)
+1. Write to `.giantmem/plans/current.md` (or `.giantmem/plans/{feature-name}.md` for multiple plans)
 2. Include: goal, steps, files to modify, dependencies, risks
 
 When completing significant work:
-1. Append session summary to `scratch/history/sessions.md`
-2. Update `scratch/WORKSPACE.md` status if branch work is complete
+1. Append session summary to `.giantmem/history/sessions.md`
+2. Update `.giantmem/WORKSPACE.md` status if branch work is complete
 
 ### Prompt Templates
 
-Save reusable prompts to `scratch/prompts/` as markdown files:
-- `scratch/prompts/research-{topic}.md` - Research request templates
-- `scratch/prompts/review-{type}.md` - Code review checklists
-- `scratch/prompts/feature-{name}.md` - Feature implementation prompts
+Save reusable prompts to `.giantmem/prompts/` as markdown files:
+- `.giantmem/prompts/research-{topic}.md` - Research request templates
+- `.giantmem/prompts/review-{type}.md` - Code review checklists
+- `.giantmem/prompts/feature-{name}.md` - Feature implementation prompts
 
 ### Research Findings
 
-Save web research and documentation summaries to `scratch/research/`:
-- `scratch/research/{topic}.md` - Research on specific topics
+Save web research and documentation summaries to `.giantmem/research/`:
+- `.giantmem/research/{topic}.md` - Research on specific topics
 - Include sources, key findings, and relevance to current work
 ```
 
@@ -82,12 +82,12 @@ Add a reference to load workspace context:
 ```markdown
 ## Workspace
 
-This project uses scratch/ for session context. On session start, read:
-- @scratch/WORKSPACE.md - Branch purpose and status
-- @scratch/context/discoveries.md - Prior learnings (if exists)
-- @scratch/plans/current.md - Active plan (if exists)
+This project uses .giantmem/ for session context. On session start, read:
+- @.giantmem/WORKSPACE.md - Branch purpose and status
+- @.giantmem/context/discoveries.md - Prior learnings (if exists)
+- @.giantmem/plans/current.md - Active plan (if exists)
 
-Save discoveries to scratch/context/discoveries.md during work.
+Save discoveries to .giantmem/context/discoveries.md during work.
 ```
 
 ---
@@ -99,11 +99,11 @@ If you want minimal global config, just add this to `~/.claude/CLAUDE.md`:
 ```markdown
 ## Workspace
 
-If `scratch/` directory exists, use it for persistent context:
-- Read `scratch/WORKSPACE.md` at session start for project context
-- Append discoveries to `scratch/context/discoveries.md`
-- Write plans to `scratch/plans/`
-- Save reusable prompts to `scratch/prompts/`
+If `.giantmem/` directory exists, use it for persistent context:
+- Read `.giantmem/WORKSPACE.md` at session start for project context
+- Append discoveries to `.giantmem/context/discoveries.md`
+- Write plans to `.giantmem/plans/`
+- Save reusable prompts to `.giantmem/prompts/`
 ```
 
 ---
@@ -111,7 +111,7 @@ If `scratch/` directory exists, use it for persistent context:
 ## Complete Directory Reference
 
 ```
-scratch/
+.giantmem/
 ├── WORKSPACE.md              # Branch/project purpose, status, notes
 ├── context/
 │   ├── tree.md               # Project structure (auto-generated)
@@ -140,7 +140,7 @@ scratch/
 
 ## Prompt Template Example
 
-Save to `scratch/prompts/research-template.md`:
+Save to `.giantmem/prompts/research-template.md`:
 
 ```markdown
 # Research: {TOPIC}

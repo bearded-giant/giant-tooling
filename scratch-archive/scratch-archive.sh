@@ -1,11 +1,18 @@
 #!/usr/bin/env bash
-# scratch-archive.sh - standalone scratch directory archiving
-# archives scratch/ dirs to ~/scratch_archive/{project}/{branch}/{timestamp}/
+# scratch-archive.sh - standalone .giantmem directory archiving
+# archives .giantmem/ dirs to ~/giantmem_archive/{project}/{branch}/{timestamp}/
 
 set -euo pipefail
 
-SCRATCH_ARCHIVE_BASE="${SCRATCH_ARCHIVE_BASE:-$HOME/scratch_archive}"
+GIANTMEM_ARCHIVE_BASE="${GIANTMEM_ARCHIVE_BASE:-${SCRATCH_ARCHIVE_BASE:-$HOME/giantmem_archive}}"
 SCRATCH_INDEX_FILE=".scratch-index"
+
+# one-time migration: rename old archive dir and symlink for compat
+if [ -d "$HOME/scratch_archive" ] && [ ! -d "$HOME/giantmem_archive" ] && [ ! -L "$HOME/scratch_archive" ]; then
+    echo "Migrating archive: ~/scratch_archive -> ~/giantmem_archive"
+    mv "$HOME/scratch_archive" "$HOME/giantmem_archive"
+    ln -s "$HOME/giantmem_archive" "$HOME/scratch_archive"
+fi
 
 # build search index for an archive directory
 build_index() {
@@ -26,7 +33,7 @@ usage() {
 Usage: $(basename "$0") <command> [options]
 
 Commands:
-  archive [--clean] [--project <name>] [src]  Archive a scratch directory
+  archive [--clean] [--project <name>] [src]  Archive a .giantmem directory
   list [project]                    List archives (all or specific project)
   open <project> [branch] [ts]      Open archive in Finder
   search <pattern> [flags]          Search archives with fzf (interactive)
@@ -41,8 +48,8 @@ Search flags:
   -C <n>         Context lines in preview (default: 5)
 
 Examples:
-  $(basename "$0") archive                        # archive ./scratch with auto-detect
-  $(basename "$0") archive --clean                # archive and remove ./scratch
+  $(basename "$0") archive                        # archive ./.giantmem with auto-detect
+  $(basename "$0") archive --clean                # archive and remove ./.giantmem
   $(basename "$0") archive --project cc-wt        # archive under cc-wt/{branch}/
   $(basename "$0") archive --project cc-wt --clean  # worktree: archive and remove
   $(basename "$0") list                           # list all projects
@@ -52,7 +59,7 @@ Examples:
   $(basename "$0") search "replica" -p mas        # search specific project
   $(basename "$0") search "auth" -t plans -l      # search only latest, plans only
 
-Archive location: $SCRATCH_ARCHIVE_BASE/{project}/{branch}/{timestamp}/
+Archive location: $GIANTMEM_ARCHIVE_BASE/{project}/{branch}/{timestamp}/
 EOF
 }
 
@@ -69,7 +76,14 @@ do_archive() {
         esac
     done
 
-    local scratch_source="${1:-$PWD/scratch}"
+    local scratch_source="${1:-}"
+    if [ -z "$scratch_source" ]; then
+        if [ -d "$PWD/.giantmem" ]; then
+            scratch_source="$PWD/.giantmem"
+        else
+            scratch_source="$PWD/scratch"
+        fi
+    fi
     local project_name=""
     local branch_name=""
 
@@ -96,11 +110,11 @@ do_archive() {
     fi
 
     if [ ! -d "$scratch_source" ]; then
-        echo "ERROR: No scratch directory found at: $scratch_source"
+        echo "ERROR: No .giantmem directory found at: $scratch_source"
         return 1
     fi
 
-    local branch_backup_dir="$SCRATCH_ARCHIVE_BASE/$project_name/$branch_name"
+    local branch_backup_dir="$GIANTMEM_ARCHIVE_BASE/$project_name/$branch_name"
     mkdir -p "$branch_backup_dir"
 
     local timestamp=$(date '+%Y%m%d_%H%M%S')
@@ -138,7 +152,7 @@ do_archive() {
 
 do_list() {
     local project_name="${1:-}"
-    local archive_dir="$SCRATCH_ARCHIVE_BASE"
+    local archive_dir="$GIANTMEM_ARCHIVE_BASE"
 
     [ -n "$project_name" ] && archive_dir="$archive_dir/$project_name"
 
@@ -186,7 +200,7 @@ do_open() {
     local project="$1"
     local branch="${2:-}"
     local timestamp="${3:-}"
-    local target_dir="$SCRATCH_ARCHIVE_BASE/$project"
+    local target_dir="$GIANTMEM_ARCHIVE_BASE/$project"
 
     [ -n "$branch" ] && target_dir="$target_dir/$branch"
     [ -n "$timestamp" ] && target_dir="$target_dir/$timestamp"
@@ -207,7 +221,7 @@ do_open() {
 
 do_index() {
     local project="${1:-}"
-    local search_path="$SCRATCH_ARCHIVE_BASE"
+    local search_path="$GIANTMEM_ARCHIVE_BASE"
 
     [ -n "$project" ] && search_path="$search_path/$project"
 
@@ -238,7 +252,7 @@ do_index() {
 do_search() {
     local script_dir
     script_dir="$(dirname "$0")"
-    local db_path="$SCRATCH_ARCHIVE_BASE/archives.db"
+    local db_path="$GIANTMEM_ARCHIVE_BASE/archives.db"
 
     # use fts5 python search when db exists
     if [ -f "$db_path" ]; then
@@ -291,7 +305,7 @@ do_search() {
         return 1
     fi
 
-    local search_path="$SCRATCH_ARCHIVE_BASE"
+    local search_path="$GIANTMEM_ARCHIVE_BASE"
     if [ -n "$project" ]; then
         search_path="$search_path/$project"
         if [ ! -d "$search_path" ]; then

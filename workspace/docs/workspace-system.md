@@ -9,7 +9,7 @@ Context management for Claude Code sessions. Works with git worktrees or standal
 Already integrated. New worktrees automatically get workspace structure:
 
 ```bash
-mwt feature-xyz              # workspace auto-created in scratch/
+mwt feature-xyz              # workspace auto-created in .giantmem/
 # ... work ...
 mwtr feature-xyz             # workspace auto-archived
 ```
@@ -45,7 +45,7 @@ wsi() { workspace_init "$PWD" "${1:-$(basename "$PWD")}"; }
 
 ```
 project/
-└── scratch/
+└── .giantmem/
     ├── WORKSPACE.md          # Branch/project purpose, status
     ├── context/
     │   ├── tree.md           # Auto-generated project structure
@@ -67,19 +67,19 @@ Hooks automatically manage workspace lifecycle:
 
 | Event | Hook | Action |
 |-------|------|--------|
-| Session start | `workspace_session_hook.py` | Bootstrap scratch/ if missing, inject context |
+| Session start | `workspace_session_hook.py` | Bootstrap .giantmem/ if missing, inject context |
 | Session end | `workspace_session_end.py` | Extract discoveries/plans from transcript |
 
 **Automatic on session start:**
-- Creates `scratch/` structure if missing
+- Creates `.giantmem/` structure if missing
 - Injects `WORKSPACE.md` content into session
 - Injects recent discoveries for continuity
 
 **Automatic on session end:**
 - Parses transcript for codebase learnings
-- Appends to `scratch/context/discoveries.md`
-- Updates `scratch/plans/current.md` with any plans discussed
-- Logs session to `scratch/history/sessions.md`
+- Appends to `.giantmem/context/discoveries.md`
+- Updates `.giantmem/plans/current.md` with any plans discussed
+- Logs session to `.giantmem/history/sessions.md`
 
 See `WORKSPACE-CLAUDE-HOOKS.md` for full hook documentation.
 
@@ -88,7 +88,7 @@ See `WORKSPACE-CLAUDE-HOOKS.md` for full hook documentation.
 | Command | Alias | Description |
 |---------|-------|-------------|
 | `workspace_bootstrap` | `wsb` | Smart init: creates, migrates, or syncs (use mid-session) |
-| `workspace_migrate` | `wsm` | Move loose scratch files to appropriate subdirs |
+| `workspace_migrate` | `wsm` | Move loose .giantmem files to appropriate subdirs |
 | `workspace_init` | `wsi` | Initialize workspace in current dir |
 | `workspace_status` | `ws` | Show workspace status and recent discoveries |
 | `workspace_tree` | `wst` | Regenerate tree.md |
@@ -107,8 +107,8 @@ wsb                    # Smart bootstrap - handles all cases
 ```
 
 This will:
-- **No scratch/**: Create full workspace structure
-- **scratch/ with loose files**: Migrate files to subdirs, create WORKSPACE.md
+- **No .giantmem/**: Create full workspace structure
+- **.giantmem/ with loose files**: Migrate files to subdirs, create WORKSPACE.md
 - **Already structured**: Just sync context files
 
 ### Migration Logic
@@ -188,7 +188,7 @@ wsd "[pattern] All services inherit from BaseService"
 Check what you've learned:
 ```bash
 ws                           # See status + recent discoveries
-cat scratch/context/discoveries.md
+cat .giantmem/context/discoveries.md
 ```
 
 ### Quick Context Refresh
@@ -210,7 +210,7 @@ if type workspace_init &>/dev/null; then
 fi
 ```
 
-Archiving happens automatically via existing `mwtr`/`wtr` scratch backup logic.
+Archiving happens automatically via existing `mwtr`/`wtr` workspace backup logic.
 
 ## Files
 

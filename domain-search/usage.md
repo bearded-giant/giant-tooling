@@ -2,7 +2,7 @@
 
 Standalone tool for browsing and searching the code domain knowledge base. Works outside of Claude Code -- use it from any terminal for your own research, colleague conversations, or session prep.
 
-Domain JSONs are structured explorations of code areas (auth layer, payment flow, merchant API, etc.) created by `/plan-feature` inside Claude Code. They live in `scratch/domains/` and get archived into SQLite FTS5 by `scratch-archive`.
+Domain JSONs are structured explorations of code areas (auth layer, payment flow, merchant API, etc.) created by `/plan-feature` inside Claude Code. They live in `.giantmem/domains/` and get archived into SQLite FTS5 by `giantmem-archive`.
 
 
 ## Commands
@@ -87,7 +87,7 @@ domains search "session_store"
 # output:
 # search: "session_store"
 #
-# auth_session (scratch/domains/auth_session.json)
+# auth_session (.giantmem/domains/auth_session.json)
 #   Authentication and session management layer
 #   key_files: src/services/auth_session/session_store.py: Redis-backed session storage
 #   architecture.data_flow: request -> auth middleware -> session_store -> Redis
@@ -110,7 +110,7 @@ domains grep "redis"
 
 ### archive -- search across ALL projects and history
 
-Hits the SQLite FTS5 database from scratch-archive. Searches archived domain JSONs from every project and branch you've ever archived. This is where it gets powerful -- cross-project domain knowledge.
+Hits the SQLite FTS5 database from giantmem-archive. Searches archived domain JSONs from every project and branch you've ever archived. This is where it gets powerful -- cross-project domain knowledge.
 
 ```bash
 # basic archive search
@@ -233,10 +233,10 @@ Before starting a Claude session on auth work, find and note the relevant domain
 
 ```bash
 domains search "auth"
-# -> auth_session (scratch/domains/auth_session.json)
+# -> auth_session (.giantmem/domains/auth_session.json)
 
 # then in Claude Code:
-# "read scratch/domains/auth_session.json and help me add session rotation"
+# "read .giantmem/domains/auth_session.json and help me add session rotation"
 ```
 
 ### Cross-project research
@@ -261,7 +261,7 @@ domains list  # look for [STALE] markers
 
 | Flag | Scope | Description |
 |------|-------|-------------|
-| `-p, --path PATH` | global | Override scratch/domains/ location |
+| `-p, --path PATH` | global | Override .giantmem/domains/ location |
 | `--section SECTION` | search | Restrict to section: key_files, architecture, gotchas, etc |
 | `-p, --project NAME` | archive | Filter to a specific project |
 | `-l, --latest` | archive | Search only latest archived snapshots |
@@ -272,16 +272,16 @@ domains list  # look for [STALE] markers
 
 ## How domains get created
 
-1. `/plan-feature` in Claude Code explores code areas and writes domain JSONs to `scratch/domains/`
+1. `/plan-feature` in Claude Code explores code areas and writes domain JSONs to `.giantmem/domains/`
 2. `/update-domains` refreshes them after code changes
 3. `/complete-feature` auto-refreshes domains whose files were modified
-4. `scratch-archive archive` copies them to `~/scratch_archive/` and indexes into SQLite FTS5
+4. `giantmem-archive archive` copies them to `~/giantmem_archive/` and indexes into SQLite FTS5
 5. `domains archive` searches that FTS5 index with structured output
 
 
 ## Setup
 
-The script auto-detects `scratch/domains/` by walking up from cwd. For archive search, it reads `~/scratch_archive/archives.db` (set `SCRATCH_ARCHIVE_BASE` to override).
+The script auto-detects `.giantmem/domains/` by walking up from cwd. For archive search, it reads `~/giantmem_archive/archives.db` (set `GIANTMEM_ARCHIVE_BASE` to override).
 
 ```bash
 # make sure it's on your PATH (already in scripts/)

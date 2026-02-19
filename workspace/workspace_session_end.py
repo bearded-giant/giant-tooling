@@ -14,10 +14,10 @@ Input (JSON on stdin):
 }
 
 Output files:
-- scratch/history/sessions/{timestamp}_{session_id}.md  (detailed session file)
-- scratch/history/sessions.md  (index with one-liners)
-- scratch/context/discoveries.md  (appended)
-- scratch/plans/current.md  (updated if plans found)
+- .giantmem/history/sessions/{timestamp}_{session_id}.md  (detailed session file)
+- .giantmem/history/sessions.md  (index with one-liners)
+- .giantmem/context/discoveries.md  (appended)
+- .giantmem/plans/current.md  (updated if plans found)
 
 NOTE: Uses only Python standard library (no external dependencies)
 """
@@ -293,7 +293,7 @@ def extract_plans(content: str) -> List[str]:
 
 
 def create_session_file(
-    scratch_dir: Path,
+    workspace_dir: Path,
     session_id: str,
     start_time: Optional[datetime],
     end_time: Optional[datetime],
@@ -304,7 +304,7 @@ def create_session_file(
     discoveries: List[Tuple[str, str]],
 ) -> Optional[Path]:
     """Create individual session summary file."""
-    sessions_dir = scratch_dir / "history" / "sessions"
+    sessions_dir = workspace_dir / "history" / "sessions"
     sessions_dir.mkdir(parents=True, exist_ok=True)
 
     # filename: YYYYMMDD_HHMMSS_sessionid.md
@@ -402,7 +402,7 @@ def create_session_file(
 
 
 def update_session_index(
-    scratch_dir: Path,
+    workspace_dir: Path,
     session_id: str,
     topic: str,
     brief: str,
@@ -411,7 +411,7 @@ def update_session_index(
     session_filename: str,
 ):
     """Add one-liner to sessions.md index."""
-    index_file = scratch_dir / "history" / "sessions.md"
+    index_file = workspace_dir / "history" / "sessions.md"
     index_file.parent.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -441,12 +441,12 @@ def update_session_index(
         pass
 
 
-def append_discoveries(scratch_dir: Path, discoveries: List[Tuple[str, str]]) -> int:
+def append_discoveries(workspace_dir: Path, discoveries: List[Tuple[str, str]]) -> int:
     """Append discoveries to discoveries.md."""
     if not discoveries:
         return 0
 
-    discoveries_file = scratch_dir / "context" / "discoveries.md"
+    discoveries_file = workspace_dir / "context" / "discoveries.md"
     discoveries_file.parent.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -464,12 +464,12 @@ def append_discoveries(scratch_dir: Path, discoveries: List[Tuple[str, str]]) ->
         return 0
 
 
-def save_plans(scratch_dir: Path, plans: List[str]) -> bool:
+def save_plans(workspace_dir: Path, plans: List[str]) -> bool:
     """Save plans to plans/current.md."""
     if not plans:
         return False
 
-    plans_file = scratch_dir / "plans" / "current.md"
+    plans_file = workspace_dir / "plans" / "current.md"
     plans_file.parent.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -508,9 +508,11 @@ def main():
         cwd = input_data.get("cwd", os.getcwd())
         transcript_path = input_data.get("transcript_path", "")
 
-        scratch_dir = Path(cwd) / "scratch"
+        workspace_dir = Path(cwd) / ".giantmem"
+        if not workspace_dir.exists():
+            workspace_dir = Path(cwd) / "scratch"
 
-        if not scratch_dir.exists():
+        if not workspace_dir.exists():
             return
 
         if not transcript_path:
@@ -539,7 +541,7 @@ def main():
 
         # create individual session file
         session_file = create_session_file(
-            scratch_dir=scratch_dir,
+            workspace_dir=workspace_dir,
             session_id=session_id,
             start_time=start_time,
             end_time=end_time,
@@ -553,7 +555,7 @@ def main():
         # update index
         session_filename = session_file.name if session_file else ''
         update_session_index(
-            scratch_dir=scratch_dir,
+            workspace_dir=workspace_dir,
             session_id=session_id,
             topic=topic,
             brief=brief,
@@ -563,8 +565,8 @@ def main():
         )
 
         # persist discoveries and plans (existing behavior)
-        discoveries_count = append_discoveries(scratch_dir, discoveries)
-        has_plans = save_plans(scratch_dir, plans)
+        discoveries_count = append_discoveries(workspace_dir, discoveries)
+        has_plans = save_plans(workspace_dir, plans)
 
         # output summary
         parts = []

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Migrate existing scratch/plans/ to scratch/features/ structure.
+Migrate existing .giantmem/plans/ to .giantmem/features/ structure.
 
 Usage:
-    workspace-migrate-features.py [scratch_dir] [--dry-run] [--interactive]
+    workspace-migrate-features.py [workspace_dir] [--dry-run] [--interactive]
 
 This script:
 1. Scans plans/ for existing plan files
@@ -347,19 +347,22 @@ def archive_migrated_plans(scratch_dir: Path, features: dict, dry_run: bool = Fa
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Migrate plans to features structure")
-    parser.add_argument("scratch_dir", nargs="?", default=".", help="Path to scratch/ or its parent")
+    parser.add_argument("scratch_dir", nargs="?", default=".", help="Path to .giantmem/ or its parent")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be done")
     parser.add_argument("--interactive", "-i", action="store_true", help="Confirm each feature")
     parser.add_argument("--no-archive", action="store_true", help="Don't archive migrated plans")
     args = parser.parse_args()
 
-    # find scratch dir
+    # find workspace dir (.giantmem preferred, scratch as fallback)
     scratch_dir = Path(args.scratch_dir)
-    if scratch_dir.name != "scratch":
-        scratch_dir = scratch_dir / "scratch"
+    if scratch_dir.name not in (".giantmem", "scratch"):
+        if (scratch_dir / ".giantmem").exists():
+            scratch_dir = scratch_dir / ".giantmem"
+        else:
+            scratch_dir = scratch_dir / "scratch"
 
     if not scratch_dir.exists():
-        print(f"Error: scratch directory not found at {scratch_dir}")
+        print(f"Error: workspace directory not found at {scratch_dir}")
         sys.exit(1)
 
     print(f"Analyzing: {scratch_dir}")
