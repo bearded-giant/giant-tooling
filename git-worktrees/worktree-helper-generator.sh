@@ -987,7 +987,7 @@ ${prefix}r() {
     local worktree_dir="\$${WORKTREE_BASE_VAR}/\$branch_name"
     local workspace_source="\$worktree_dir/.giantmem"
     [ ! -d "\$workspace_source" ] && workspace_source="\$worktree_dir/scratch"
-    local workspace_backup_base="\${GIANTMEM_ARCHIVE_BASE:-\${SCRATCH_ARCHIVE_BASE:-\$HOME/giantmem_archive}}/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local workspace_backup_base="\${GIANTMEM_ARCHIVE_BASE:-\$HOME/giantmem_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
 
     if [ "\$2" != "-f" ] && [ "\$2" != "--force" ]; then
         echo "Are you sure you want to delete worktree '\$branch_name'? (y/N)"
@@ -1012,7 +1012,7 @@ ${prefix}r() {
             ln -s "\$timestamp" "\$latest_link"
             echo "✓ Created symlink: \$latest_link -> \$timestamp"
 
-            local search_script="\${GIANT_TOOLING_DIR:-\$HOME/dev/giant-tooling}/scratch-archive/scratch-search.py"
+            local search_script="\${GIANT_TOOLING_DIR:-\$HOME/dev/giant-tooling}/giantmem-archive/giantmem-search.py"
             [ -f "\$search_script" ] && python3 "\$search_script" ingest --project "\$(basename "\$${WORKTREE_BASE_VAR}")" 2>/dev/null &
         else
             echo "❌ ERROR: Failed to backup workspace directory"
@@ -1111,7 +1111,7 @@ ${prefix}rn() {
     fi
 
     # migrate workspace archives
-    local workspace_archive_base="\${GIANTMEM_ARCHIVE_BASE:-\${SCRATCH_ARCHIVE_BASE:-\$HOME/giantmem_archive}}/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local workspace_archive_base="\${GIANTMEM_ARCHIVE_BASE:-\$HOME/giantmem_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
     local old_archive="\$workspace_archive_base/\$old_name"
     local new_archive="\$workspace_archive_base/\$new_name"
     if [ -d "\$old_archive" ]; then
@@ -1308,7 +1308,7 @@ ${prefix}bs() {
     local worktree_name="\$(basename "\$worktree_dir")"
     local workspace_source="\$worktree_dir/.giantmem"
     [ ! -d "\$workspace_source" ] && workspace_source="\$worktree_dir/scratch"
-    local workspace_backup_base="\${GIANTMEM_ARCHIVE_BASE:-\${SCRATCH_ARCHIVE_BASE:-\$HOME/giantmem_archive}}/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local workspace_backup_base="\${GIANTMEM_ARCHIVE_BASE:-\$HOME/giantmem_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
 
     if [ -d "\$workspace_source" ]; then
         local branch_backup_dir="\$workspace_backup_base/\$worktree_name"
@@ -1334,7 +1334,7 @@ ${prefix}bs() {
 
 # List workspace backups
 ${prefix}sl() {
-    local workspace_dir="\${GIANTMEM_ARCHIVE_BASE:-\${SCRATCH_ARCHIVE_BASE:-\$HOME/giantmem_archive}}/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local workspace_dir="\${GIANTMEM_ARCHIVE_BASE:-\$HOME/giantmem_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
 
     if [ ! -d "\$workspace_dir" ]; then
         echo "No workspace backups found"
@@ -1387,7 +1387,7 @@ ${prefix}sb() {
     local worktree_dir="\$${WORKTREE_BASE_VAR}/\$branch_name"
     local workspace_source="\$worktree_dir/.giantmem"
     [ ! -d "\$workspace_source" ] && workspace_source="\$worktree_dir/scratch"
-    local workspace_backup_base="\${GIANTMEM_ARCHIVE_BASE:-\${SCRATCH_ARCHIVE_BASE:-\$HOME/giantmem_archive}}/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local workspace_backup_base="\${GIANTMEM_ARCHIVE_BASE:-\$HOME/giantmem_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
 
     if [ ! -d "\$worktree_dir" ]; then
         echo "Error: Worktree '\$branch_name' not found"
@@ -1426,7 +1426,7 @@ ${prefix}so() {
         return 1
     fi
 
-    local workspace_dir="\${GIANTMEM_ARCHIVE_BASE:-\${SCRATCH_ARCHIVE_BASE:-\$HOME/giantmem_archive}}/\$(basename "\$${WORKTREE_BASE_VAR}")"
+    local workspace_dir="\${GIANTMEM_ARCHIVE_BASE:-\$HOME/giantmem_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
     local branch_dir="\$workspace_dir/\$1"
 
     if [ ! -d "\$branch_dir" ]; then

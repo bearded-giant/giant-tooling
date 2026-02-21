@@ -13,14 +13,11 @@ from datetime import datetime
 from pathlib import Path
 
 ARCHIVE_BASE = Path(
-    os.environ.get(
-        "GIANTMEM_ARCHIVE_BASE",
-        os.environ.get("SCRATCH_ARCHIVE_BASE", os.path.expanduser("~/giantmem_archive")),
-    )
+    os.environ.get("GIANTMEM_ARCHIVE_BASE", os.path.expanduser("~/giantmem_archive"))
 )
 DB_PATH = ARCHIVE_BASE / "archives.db"
 
-SKIP_FILES = {".scratch-index", ".DS_Store"}
+SKIP_FILES = {".giantmem-index", ".DS_Store"}
 SKIP_DIRS = {".git"}
 VALID_TYPES = {"plans", "context", "research", "reviews", "filebox", "history", "prompts", "features", "domains"}
 TIMESTAMP_RE = re.compile(r"^\d{8}_\d{6}$")

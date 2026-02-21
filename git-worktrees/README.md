@@ -122,7 +122,7 @@ edgewt                   # back to previous branch
 edgewtf                  # fetch latest
 edgewt pr-123            # checkout PR branch
 # review code...
-edgewtr pr-123           # clean up when done (scratch backed up)
+edgewtr pr-123           # clean up when done (.giantmem backed up)
 ```
 
 ## Directory Structure

@@ -394,7 +394,7 @@ workspace_bootstrap() {
 }
 
 # Central archive location
-WORKSPACE_ARCHIVE_BASE="${GIANTMEM_ARCHIVE_BASE:-${SCRATCH_ARCHIVE_BASE:-$HOME/giantmem_archive}}"
+WORKSPACE_ARCHIVE_BASE="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}"
 
 # Archive .giantmem directory to central location
 # Usage: workspace_archive [source] [project_name] [branch_name]
@@ -441,8 +441,12 @@ workspace_archive() {
         echo "Archive size: $size"
 
         # update fts5 search index
-        local search_script="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/scratch-archive/scratch-search.py"
+        local search_script="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/giantmem-archive/giantmem-search.py"
         [ -f "$search_script" ] && python3 "$search_script" ingest --project "$project_name" 2>/dev/null &
+
+        # re-init workspace so .giantmem/ isn't left empty
+        local parent_dir="$(dirname "$scratch_source")"
+        workspace_init "$parent_dir" "$(basename "$parent_dir")"
 
         return 0
     else

@@ -1,6 +1,6 @@
 # giant-tooling
 
-Workspace, worktree, and scratch-archive management tooling for Claude Code development workflows.
+Workspace, worktree, and giantmem-archive management tooling for Claude Code development workflows.
 
 These tools were extracted from a private utility repo where they evolved over months of daily use. The commit history starts fresh here, but the code is battle-tested.
 
@@ -24,13 +24,13 @@ Generated scripts use a bare repo layout (`.bare/` alongside worktree directorie
 
 See [git-worktrees/README.md](git-worktrees/README.md) for the full command reference, setup walkthrough, and directory layout. Architecture details in [git-worktrees/docs/](git-worktrees/docs/).
 
-### scratch-archive/
+### giantmem-archive/
 
-Archives .giantmem/ directories to `~/giantmem_archive/{project}/{branch}/{timestamp}/` and makes them searchable. Two scripts work together: `scratch-archive.sh` handles the file copy, builds a ripgrep-based `.scratch-index`, manages `latest` symlinks, and triggers FTS5 ingestion. `scratch-search.py` maintains a SQLite FTS5 database (`archives.db`) with ranked full-text search, fzf interactive picker with bat-highlighted previews, and project/branch/type filtering.
+Archives .giantmem/ directories to `~/giantmem_archive/{project}/{branch}/{timestamp}/` and makes them searchable. Two scripts work together: `giantmem-archive.sh` handles the file copy, builds a ripgrep-based `.giantmem-index`, manages `latest` symlinks, and triggers FTS5 ingestion. `giantmem-search.py` maintains a SQLite FTS5 database (`archives.db`) with ranked full-text search, fzf interactive picker with bat-highlighted previews, and project/branch/type filtering.
 
 Indexes `.md` files and `domains/*.json` files. Domain JSONs get flattened into searchable text (entry points, key files, architecture patterns, gotchas) before indexing.
 
-See [scratch-archive/USAGE.md](scratch-archive/USAGE.md) for all commands, flags, and alias setup.
+See [giantmem-archive/USAGE.md](giantmem-archive/USAGE.md) for all commands, flags, and alias setup.
 
 ### domain-search/
 
@@ -54,15 +54,14 @@ Source the workspace library in your shell config:
 source ~/dev/giant-tooling/workspace/workspace-lib.sh
 ```
 
-Set up scratch-archive aliases:
+Set up giantmem-archive aliases:
 
 ```bash
-alias scratch-archive='~/dev/giant-tooling/scratch-archive/scratch-archive.sh'
-alias sa='scratch-archive'
-alias saa='sa archive'
-alias sal='sa list'
-alias sas='sa search'
-alias saq='~/dev/giant-tooling/scratch-archive/scratch-search.py'
+alias giantmem-archive='~/dev/giant-tooling/giantmem-archive/giantmem-archive.sh'
+alias gma='giantmem-archive archive'
+alias gml='giantmem-archive list'
+alias gms='giantmem-archive search'
+alias gmq='~/dev/giant-tooling/giantmem-archive/giantmem-search.py'
 ```
 
 Generate worktree helpers for your projects:

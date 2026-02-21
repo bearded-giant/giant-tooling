@@ -1,23 +1,16 @@
 #!/usr/bin/env bash
-# scratch-archive.sh - standalone .giantmem directory archiving
+# giantmem-archive.sh - standalone .giantmem directory archiving
 # archives .giantmem/ dirs to ~/giantmem_archive/{project}/{branch}/{timestamp}/
 
 set -euo pipefail
 
-GIANTMEM_ARCHIVE_BASE="${GIANTMEM_ARCHIVE_BASE:-${SCRATCH_ARCHIVE_BASE:-$HOME/giantmem_archive}}"
-SCRATCH_INDEX_FILE=".scratch-index"
-
-# one-time migration: rename old archive dir and symlink for compat
-if [ -d "$HOME/scratch_archive" ] && [ ! -d "$HOME/giantmem_archive" ] && [ ! -L "$HOME/scratch_archive" ]; then
-    echo "Migrating archive: ~/scratch_archive -> ~/giantmem_archive"
-    mv "$HOME/scratch_archive" "$HOME/giantmem_archive"
-    ln -s "$HOME/giantmem_archive" "$HOME/scratch_archive"
-fi
+GIANTMEM_ARCHIVE_BASE="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}"
+GIANTMEM_INDEX_FILE=".giantmem-index"
 
 # build search index for an archive directory
 build_index() {
     local archive_dir="$1"
-    local index_file="$archive_dir/$SCRATCH_INDEX_FILE"
+    local index_file="$archive_dir/$GIANTMEM_INDEX_FILE"
 
     # index .md files and domain .json files: filepath:line:content
     # --no-ignore: don't respect gitignore (archives are outside repos)
@@ -136,11 +129,19 @@ do_archive() {
         echo "Archived: $size (latest -> $timestamp)"
 
         # update fts5 search db in background
-        python3 "$(dirname "$0")/scratch-search.py" ingest --project "$project_name" 2>/dev/null &
+        python3 "$(dirname "$0")/giantmem-search.py" ingest --project "$project_name" 2>/dev/null &
 
         if [ "$clean" = true ]; then
             rm -rf "$scratch_source"
             echo "Cleaned: $scratch_source"
+
+            # re-init workspace so .giantmem/ isn't left empty
+            local parent_dir="$(dirname "$scratch_source")"
+            local ws_lib="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
+            if [ -f "$ws_lib" ]; then
+                source "$ws_lib"
+                workspace_init "$parent_dir" "$(basename "$parent_dir")"
+            fi
         fi
 
         return 0
@@ -256,7 +257,7 @@ do_search() {
 
     # use fts5 python search when db exists
     if [ -f "$db_path" ]; then
-        python3 "$script_dir/scratch-search.py" search "$@"
+        python3 "$script_dir/giantmem-search.py" search "$@"
         return $?
     fi
 
@@ -353,7 +354,7 @@ do_search() {
     for search_dir in $grep_paths; do
         while IFS= read -r idx; do
             index_files="$index_files $idx"
-        done < <(find "$search_dir" -name "$SCRATCH_INDEX_FILE" -type f 2>/dev/null)
+        done < <(find "$search_dir" -name "$GIANTMEM_INDEX_FILE" -type f 2>/dev/null)
     done
 
     if [ -n "$index_files" ]; then

@@ -26,8 +26,7 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
-ARCHIVE_BASE = Path(os.environ.get("GIANTMEM_ARCHIVE_BASE",
-                    os.environ.get("SCRATCH_ARCHIVE_BASE", Path.home() / "giantmem_archive")))
+ARCHIVE_BASE = Path(os.environ.get("GIANTMEM_ARCHIVE_BASE", Path.home() / "giantmem_archive"))
 ARCHIVE_DB = ARCHIVE_BASE / "archives.db"
 
 
@@ -407,7 +406,7 @@ def cmd_archive(args, domains_dir=None):
     """search archived domains across all projects via sqlite fts5"""
     if not ARCHIVE_DB.exists():
         print(f"no archive database at {ARCHIVE_DB}", file=sys.stderr)
-        print("run: giantmem-archive archive && scratch-search.py ingest", file=sys.stderr)
+        print("run: giantmem-archive archive && giantmem-search.py ingest", file=sys.stderr)
         sys.exit(1)
 
     db = sqlite3.connect(str(ARCHIVE_DB))
