@@ -248,12 +248,14 @@ do_archive_feature() {
 do_archive() {
     local clean=false
     local project_override=""
+    local dry_run=false
 
     # parse flags
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --clean) clean=true; shift ;;
             --project) project_override="$2"; shift 2 ;;
+            --dry-run) dry_run=true; shift ;;
             *) break ;;
         esac
     done
@@ -293,8 +295,15 @@ do_archive() {
     local timestamp=$(date '+%Y%m%d_%H%M%S')
     local backup_dir="$project_backup_dir/$timestamp"
 
-    echo "Archiving: $scratch_source"
+    local size=$(du -sh "$scratch_source" 2>/dev/null | cut -f1)
+    echo "Archiving: $scratch_source ($size)"
     echo "      To: $backup_dir"
+
+    if [ "$dry_run" = true ]; then
+        [ "$clean" = true ] && echo "   Clean: would remove $scratch_source"
+        echo "[dry-run] No files copied"
+        return 0
+    fi
 
     if cp -r "$scratch_source" "$backup_dir"; then
         # build search index
@@ -603,7 +612,9 @@ case "$action" in
             [ "$dry_run" = true ] && feature_args+=("--dry-run")
             do_archive_feature "$feature" "${feature_args[@]+"${feature_args[@]}"}"
         else
-            do_archive "${passthrough[@]+"${passthrough[@]}"}"
+            archive_args=("${passthrough[@]+"${passthrough[@]}"}")
+            [ "$dry_run" = true ] && archive_args+=("--dry-run")
+            do_archive "${archive_args[@]+"${archive_args[@]}"}"
         fi
         ;;
     list|ls|l)
