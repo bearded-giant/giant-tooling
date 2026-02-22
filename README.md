@@ -26,7 +26,7 @@ See [git-worktrees/README.md](git-worktrees/README.md) for the full command refe
 
 ### giantmem-archive/
 
-Archives .giantmem/ directories to `~/giantmem_archive/{project}/{branch}/{timestamp}/` and makes them searchable. Two scripts work together: `giantmem-archive.sh` handles the file copy, builds a ripgrep-based `.giantmem-index`, manages `latest` symlinks, and triggers FTS5 ingestion. `giantmem-search.py` maintains a SQLite FTS5 database (`archives.db`) with ranked full-text search, fzf interactive picker with bat-highlighted previews, and project/branch/type filtering.
+Archives .giantmem/ directories to `~/giantmem_archive/{project}/{timestamp}/` and makes them searchable. Two scripts work together: `giantmem-archive.sh` handles the file copy, builds a ripgrep-based `.giantmem-index`, manages `latest` symlinks, and triggers FTS5 ingestion. `giantmem-search.py` maintains a SQLite FTS5 database (`archives.db`) with ranked full-text search, fzf interactive picker with bat-highlighted previews, and project/type filtering.
 
 Indexes `.md` files and `domains/*.json` files. Domain JSONs get flattened into searchable text (entry points, key files, architecture patterns, gotchas) before indexing.
 

@@ -34,7 +34,6 @@ SCHEMA_SQL = """
     CREATE TABLE IF NOT EXISTS documents (
         id INTEGER PRIMARY KEY,
         project TEXT NOT NULL,
-        branch TEXT NOT NULL,
         timestamp TEXT NOT NULL,
         dir_type TEXT,
         filepath TEXT NOT NULL UNIQUE,
@@ -76,41 +75,30 @@ def resolve_latest_timestamps(archive_base):
 
 
 def parse_archive_path(filepath, archive_base):
-    """extract project/branch/timestamp/dir_type from archive filepath.
-    handles branches with slashes (e.g. feat/responsive-toolbar) by scanning
-    for the timestamp pattern instead of assuming a fixed position."""
+    """extract project/timestamp/dir_type from archive filepath.
+    path layout: {archive_base}/{project}/{timestamp}/[dir_type]/..."""
     rel = filepath.relative_to(archive_base)
     parts = rel.parts
 
-    if len(parts) < 4:
+    if len(parts) < 3:
         return None
 
     project = parts[0]
 
-    # find timestamp part — branch may contain slashes (feat/foo)
-    ts_idx = None
-    for i in range(1, len(parts)):
-        if TIMESTAMP_RE.match(parts[i]):
-            ts_idx = i
-            break
-
-    if ts_idx is None or ts_idx < 2:
+    if not TIMESTAMP_RE.match(parts[1]):
         return None
 
-    branch = "/".join(parts[1:ts_idx])
-    timestamp = parts[ts_idx]
+    timestamp = parts[1]
 
     # dir_type is the folder right after timestamp, if it matches known types
     dir_type = None
-    after_ts = ts_idx + 1
-    if len(parts) > after_ts and parts[after_ts] in VALID_TYPES:
-        dir_type = parts[after_ts]
-    elif len(parts) > after_ts:
+    if len(parts) > 2 and parts[2] in VALID_TYPES:
+        dir_type = parts[2]
+    elif len(parts) > 2:
         dir_type = "root"
 
     return {
         "project": project,
-        "branch": branch,
         "timestamp": timestamp,
         "dir_type": dir_type,
     }
@@ -188,11 +176,10 @@ def _ingest_file(db, filepath, parsed, is_latest, now):
     try:
         db.execute(
             """INSERT INTO documents
-               (project, branch, timestamp, dir_type, filepath, filename, is_latest, indexed_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+               (project, timestamp, dir_type, filepath, filename, is_latest, indexed_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
             (
                 parsed["project"],
-                parsed["branch"],
                 parsed["timestamp"],
                 parsed["dir_type"],
                 str(filepath),
@@ -259,7 +246,7 @@ def do_ingest(args):
         if not parsed:
             continue
 
-        ts_dir = archive_base / parsed["project"] / parsed["branch"] / parsed["timestamp"]
+        ts_dir = archive_base / parsed["project"] / parsed["timestamp"]
         is_latest = 1 if str(ts_dir) in latest_dirs else 0
 
         ok, err = _ingest_file(db, md_file, parsed, is_latest, now)
@@ -279,7 +266,7 @@ def do_ingest(args):
         if not parsed:
             continue
 
-        ts_dir = archive_base / parsed["project"] / parsed["branch"] / parsed["timestamp"]
+        ts_dir = archive_base / parsed["project"] / parsed["timestamp"]
         is_latest = 1 if str(ts_dir) in latest_dirs else 0
 
         ok, err = _ingest_file(db, json_file, parsed, is_latest, now)
@@ -315,9 +302,6 @@ def do_search(args):
     if args.type:
         where.append("d.dir_type = ?")
         params.append(args.type)
-    if args.branch:
-        where.append("d.branch = ?")
-        params.append(args.branch)
     if args.latest:
         where.append("d.is_latest = 1")
 
@@ -329,7 +313,6 @@ def do_search(args):
         SELECT
             d.filepath,
             d.project,
-            d.branch,
             d.timestamp,
             d.dir_type,
             d.filename,
@@ -360,13 +343,13 @@ def do_search(args):
     now = datetime.now()
     decayed = []
     for row in rows:
-        filepath, project, branch, ts, dir_type, filename, rank = row
+        filepath, project, ts, dir_type, filename, rank = row
         days_old = _days_from_timestamp(ts, now)
         decay = 1.0 / (1.0 + days_old * 0.01)
         adjusted_rank = rank * decay
-        decayed.append((filepath, project, branch, ts, dir_type, filename, adjusted_rank))
+        decayed.append((filepath, project, ts, dir_type, filename, adjusted_rank))
 
-    decayed.sort(key=lambda r: r[6])
+    decayed.sort(key=lambda r: r[5])
     rows = decayed[: args.n]
 
     # fzf picker: always use when --file-name (needs interactive pick even in subshell)
@@ -376,9 +359,9 @@ def do_search(args):
         return _fzf_pick(rows, args.pattern, open_file=not args.file_name)
 
     # plain output for piping
-    for filepath, project, branch, ts, dir_type, filename, rank in rows:
+    for filepath, project, ts, dir_type, filename, rank in rows:
         lineno = _find_match_line(filepath, args.pattern)
-        rel = f"{project}/{branch}/{ts}/{dir_type or ''}/{filename}:{lineno}"
+        rel = f"{project}/{ts}/{dir_type or ''}/{filename}:{lineno}"
         score = f"[{abs(rank):.2f}]"
         print(f"{score} {rel}")
 
@@ -419,11 +402,11 @@ def _open_file(filepath):
 
 
 def _fzf_pick(rows, pattern, open_file=False):
-    # format: "filepath\tline\t[score] project/branch/ts/type/file:line"
+    # format: "filepath\tline\t[score] project/ts/type/file:line"
     lines = []
-    for filepath, project, branch, ts, dir_type, filename, rank in rows:
+    for filepath, project, ts, dir_type, filename, rank in rows:
         lineno = _find_match_line(filepath, pattern)
-        rel = f"{project}/{branch}/{ts}/{dir_type or ''}/{filename}:{lineno}"
+        rel = f"{project}/{ts}/{dir_type or ''}/{filename}:{lineno}"
         score = f"[{abs(rank):.2f}]"
         lines.append(f"{filepath}\t{lineno}\t{score} {rel}")
 
@@ -533,7 +516,6 @@ def main():
     p_search.add_argument("pattern", help="search pattern")
     p_search.add_argument("-p", "--project", help="filter by project")
     p_search.add_argument("-t", "--type", help="filter by dir_type")
-    p_search.add_argument("-b", "--branch", help="filter by branch")
     p_search.add_argument("-l", "--latest", action="store_true", help="latest archives only")
     p_search.add_argument("-n", type=int, default=20, help="max results (default: 20)")
     p_search.add_argument("--full", action="store_true", help="show matching content snippet")

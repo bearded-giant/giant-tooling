@@ -999,15 +999,14 @@ ${prefix}r() {
     fi
 
     if [ -d "\$workspace_source" ]; then
-        local branch_backup_dir="\$workspace_backup_base/\$branch_name"
-        mkdir -p "\$branch_backup_dir"
+        mkdir -p "\$workspace_backup_base"
         local timestamp=\$(date '+%Y%m%d_%H%M%S')
-        local backup_dir="\$branch_backup_dir/\$timestamp"
+        local backup_dir="\$workspace_backup_base/\$timestamp"
 
         echo "Backing up workspace directory to: \$backup_dir"
         if cp -r "\$workspace_source" "\$backup_dir"; then
             echo "✓ Workspace directory backed up successfully"
-            local latest_link="\$branch_backup_dir/latest"
+            local latest_link="\$workspace_backup_base/latest"
             [ -L "\$latest_link" ] && rm "\$latest_link"
             ln -s "\$timestamp" "\$latest_link"
             echo "✓ Created symlink: \$latest_link -> \$timestamp"
@@ -1107,19 +1106,6 @@ ${prefix}rn() {
         if [ "\$(cat "\$${WORKTREE_LAST_VAR}")" = "\$old_name" ]; then
             echo "\$new_name" > "\$${WORKTREE_LAST_VAR}"
             echo "✓ Updated last-branch reference"
-        fi
-    fi
-
-    # migrate workspace archives
-    local workspace_archive_base="\${GIANTMEM_ARCHIVE_BASE:-\$HOME/giantmem_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
-    local old_archive="\$workspace_archive_base/\$old_name"
-    local new_archive="\$workspace_archive_base/\$new_name"
-    if [ -d "\$old_archive" ]; then
-        if [ -d "\$new_archive" ]; then
-            echo "Warning: Workspace archive '\$new_name' already exists, skipping archive migration"
-        else
-            mv "\$old_archive" "\$new_archive"
-            echo "✓ Migrated workspace archives: \$old_name -> \$new_name"
         fi
     fi
 
@@ -1311,15 +1297,14 @@ ${prefix}bs() {
     local workspace_backup_base="\${GIANTMEM_ARCHIVE_BASE:-\$HOME/giantmem_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
 
     if [ -d "\$workspace_source" ]; then
-        local branch_backup_dir="\$workspace_backup_base/\$worktree_name"
-        mkdir -p "\$branch_backup_dir"
+        mkdir -p "\$workspace_backup_base"
         local timestamp=\$(date '+%Y%m%d_%H%M%S')
-        local backup_dir="\$branch_backup_dir/\$timestamp"
+        local backup_dir="\$workspace_backup_base/\$timestamp"
 
         echo "Backing up workspace directory to: \$backup_dir"
         if cp -r "\$workspace_source" "\$backup_dir"; then
             echo "✓ Workspace directory backed up successfully"
-            local latest_link="\$branch_backup_dir/latest"
+            local latest_link="\$workspace_backup_base/latest"
             [ -L "\$latest_link" ] && rm "\$latest_link"
             ln -s "\$timestamp" "\$latest_link"
             echo "✓ Created symlink: \$latest_link -> \$timestamp"
@@ -1344,29 +1329,22 @@ ${prefix}sl() {
     echo "Workspace backups in \$workspace_dir:"
     echo "────────────────────────────────────"
 
-    for branch_dir in "\$workspace_dir"/*; do
-        if [ -d "\$branch_dir" ] && [ ! -L "\$branch_dir" ]; then
-            local branch_name=\$(basename "\$branch_dir")
-            echo ""
-            echo "  \$branch_name:"
-            for backup in "\$branch_dir"/*; do
-                if [ -d "\$backup" ] && [[ "\$(basename "\$backup")" =~ ^[0-9]{8}_[0-9]{6}\$ ]]; then
-                    local timestamp=\$(basename "\$backup")
-                    local size=\$(du -sh "\$backup" 2>/dev/null | cut -f1)
-                    local date_part=\${timestamp%_*}
-                    local time_part=\${timestamp#*_}
-                    local formatted_date="\${date_part:0:4}-\${date_part:4:2}-\${date_part:6:2}"
-                    local formatted_time="\${time_part:0:2}:\${time_part:2:2}:\${time_part:4:2}"
-                    echo "    - \$formatted_date \$formatted_time (\$size)"
-                    if [ -L "\$branch_dir/latest" ]; then
-                        [ "\$(readlink "\$branch_dir/latest")" = "\$timestamp" ] && echo "      └─ (latest)"
-                    fi
-                fi
-            done
+    for backup in "\$workspace_dir"/*; do
+        if [ -d "\$backup" ] && [[ "\$(basename "\$backup")" =~ ^[0-9]{8}_[0-9]{6}\$ ]]; then
+            local timestamp=\$(basename "\$backup")
+            local size=\$(du -sh "\$backup" 2>/dev/null | cut -f1)
+            local date_part=\${timestamp%_*}
+            local time_part=\${timestamp#*_}
+            local formatted_date="\${date_part:0:4}-\${date_part:4:2}-\${date_part:6:2}"
+            local formatted_time="\${time_part:0:2}:\${time_part:2:2}:\${time_part:4:2}"
+            echo "  - \$formatted_date \$formatted_time (\$size)"
+            if [ -L "\$workspace_dir/latest" ]; then
+                [ "\$(readlink "\$workspace_dir/latest")" = "\$timestamp" ] && echo "    └─ (latest)"
+            fi
         fi
     done
 
-    local total_backups=\$(find "\$workspace_dir" -mindepth 2 -maxdepth 2 -type d -name "[0-9]*_[0-9]*" | wc -l | tr -d ' ')
+    local total_backups=\$(find "\$workspace_dir" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*_[0-9]*" | wc -l | tr -d ' ')
     echo ""
     echo "Total backups: \$total_backups"
 }
@@ -1399,15 +1377,14 @@ ${prefix}sb() {
         return 1
     fi
 
-    local branch_backup_dir="\$workspace_backup_base/\$branch_name"
-    mkdir -p "\$branch_backup_dir"
+    mkdir -p "\$workspace_backup_base"
     local timestamp=\$(date '+%Y%m%d_%H%M%S')
-    local backup_dir="\$branch_backup_dir/\$timestamp"
+    local backup_dir="\$workspace_backup_base/\$timestamp"
 
     echo "Backing up workspace directory to: \$backup_dir"
     if cp -r "\$workspace_source" "\$backup_dir"; then
         echo "✓ Workspace directory backed up successfully"
-        local latest_link="\$branch_backup_dir/latest"
+        local latest_link="\$workspace_backup_base/latest"
         [ -L "\$latest_link" ] && rm "\$latest_link"
         ln -s "\$timestamp" "\$latest_link"
         echo "✓ Created symlink: \$latest_link -> \$timestamp"
@@ -1421,31 +1398,26 @@ ${prefix}sb() {
 
 # Open/browse a workspace backup
 ${prefix}so() {
-    if [ -z "\$1" ]; then
-        echo "Usage: ${prefix}so <branch-name> [timestamp]"
-        return 1
-    fi
-
     local workspace_dir="\${GIANTMEM_ARCHIVE_BASE:-\$HOME/giantmem_archive}/\$(basename "\$${WORKTREE_BASE_VAR}")"
-    local branch_dir="\$workspace_dir/\$1"
 
-    if [ ! -d "\$branch_dir" ]; then
-        echo "Error: No workspace backups found for branch '\$1'"
+    if [ ! -d "\$workspace_dir" ]; then
+        echo "Error: No workspace backups found"
         echo "Hint: Use '${prefix}sl' to see available backups"
         return 1
     fi
 
     local target_dir=""
-    if [ -n "\$2" ]; then
-        target_dir="\$branch_dir/\$2"
+    if [ -n "\$1" ]; then
+        target_dir="\$workspace_dir/\$1"
     else
-        target_dir="\$branch_dir/latest"
+        target_dir="\$workspace_dir/latest"
         if [ ! -L "\$target_dir" ]; then
-            local latest_backup=\$(ls -1d "\$branch_dir"/[0-9]*_[0-9]* 2>/dev/null | sort -r | head -n1)
+            local latest_backup=\$(ls -1d "\$workspace_dir"/[0-9]*_[0-9]* 2>/dev/null | sort -r | head -n1)
             if [ -n "\$latest_backup" ]; then
                 target_dir="\$latest_backup"
             else
-                echo "Error: No backups found for branch '\$1'"
+                echo "Error: No backups found"
+                echo "Usage: ${prefix}so [timestamp]"
                 return 1
             fi
         fi
@@ -1456,6 +1428,7 @@ ${prefix}so() {
         echo "➜ \$(pwd)"
     else
         echo "Error: Workspace backup not found"
+        echo "Usage: ${prefix}so [timestamp]"
         return 1
     fi
 }

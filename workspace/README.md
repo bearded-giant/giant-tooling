@@ -97,6 +97,6 @@ ws-migrate-features /path/to/worktree
 
 ## Archive Location
 
-Archives stored at: `~/giantmem_archive/{project}/{branch}/{timestamp}/`
+Archives stored at: `~/giantmem_archive/{project}/{timestamp}/`
 
 Each archive includes a `latest` symlink to the most recent backup.

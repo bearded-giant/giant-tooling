@@ -561,17 +561,16 @@ wtr() {
 
     # Check if the worktree has a workspace directory to backup
     if [ -d "$workspace_source" ]; then
-        local branch_backup_dir="$workspace_backup_base/$branch_name"
-        mkdir -p "$branch_backup_dir"
+        mkdir -p "$workspace_backup_base"
 
         local timestamp=$(date '+%Y%m%d_%H%M%S')
-        local backup_dir="$branch_backup_dir/$timestamp"
+        local backup_dir="$workspace_backup_base/$timestamp"
 
         echo "Backing up workspace directory to: $backup_dir"
         if cp -r "$workspace_source" "$backup_dir"; then
             echo "✓ Workspace directory backed up successfully"
 
-            local latest_link="$branch_backup_dir/latest"
+            local latest_link="$workspace_backup_base/latest"
             if [ -L "$latest_link" ]; then
                 rm "$latest_link"
             fi
@@ -809,38 +808,29 @@ wtsl() {
 
     echo "Workspace backups in $workspace_dir:"
     echo "────────────────────────────────────"
-    
-    # List each branch that has backups
-    for branch_dir in "$workspace_dir"/*; do
-        if [ -d "$branch_dir" ] && [ ! -L "$branch_dir" ]; then
-            local branch_name=$(basename "$branch_dir")
-            echo ""
-            echo "  $branch_name:"
 
-            for backup in "$branch_dir"/*; do
-                if [ -d "$backup" ] && [[ "$(basename "$backup")" =~ ^[0-9]{8}_[0-9]{6}$ ]]; then
-                    local timestamp=$(basename "$backup")
-                    local size=$(du -sh "$backup" 2>/dev/null | cut -f1)
+    for backup in "$workspace_dir"/*; do
+        if [ -d "$backup" ] && [[ "$(basename "$backup")" =~ ^[0-9]{8}_[0-9]{6}$ ]]; then
+            local timestamp=$(basename "$backup")
+            local size=$(du -sh "$backup" 2>/dev/null | cut -f1)
 
-                    local date_part=${timestamp%_*}
-                    local time_part=${timestamp#*_}
-                    local formatted_date="${date_part:0:4}-${date_part:4:2}-${date_part:6:2}"
-                    local formatted_time="${time_part:0:2}:${time_part:2:2}:${time_part:4:2}"
+            local date_part=${timestamp%_*}
+            local time_part=${timestamp#*_}
+            local formatted_date="${date_part:0:4}-${date_part:4:2}-${date_part:6:2}"
+            local formatted_time="${time_part:0:2}:${time_part:2:2}:${time_part:4:2}"
 
-                    echo "    - $formatted_date $formatted_time ($size)"
+            echo "  - $formatted_date $formatted_time ($size)"
 
-                    if [ -L "$branch_dir/latest" ]; then
-                        local link_target=$(readlink "$branch_dir/latest")
-                        if [ "$link_target" = "$timestamp" ]; then
-                            echo "      └─ (latest)"
-                        fi
-                    fi
+            if [ -L "$workspace_dir/latest" ]; then
+                local link_target=$(readlink "$workspace_dir/latest")
+                if [ "$link_target" = "$timestamp" ]; then
+                    echo "    └─ (latest)"
                 fi
-            done
+            fi
         fi
     done
 
-    local total_backups=$(find "$workspace_dir" -mindepth 2 -maxdepth 2 -type d -name "[0-9]*_[0-9]*" | wc -l | tr -d ' ')
+    local total_backups=$(find "$workspace_dir" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*_[0-9]*" | wc -l | tr -d ' ')
     echo ""
     echo "Total backups: $total_backups"
 }
@@ -875,17 +865,16 @@ wtsb() {
         return 1
     fi
 
-    local branch_backup_dir="$workspace_backup_base/$branch_name"
-    mkdir -p "$branch_backup_dir"
+    mkdir -p "$workspace_backup_base"
 
     local timestamp=$(date '+%Y%m%d_%H%M%S')
-    local backup_dir="$branch_backup_dir/$timestamp"
+    local backup_dir="$workspace_backup_base/$timestamp"
 
     echo "Backing up workspace directory to: $backup_dir"
     if cp -r "$workspace_source" "$backup_dir"; then
         echo "✓ Workspace directory backed up successfully"
 
-        local latest_link="$branch_backup_dir/latest"
+        local latest_link="$workspace_backup_base/latest"
         if [ -L "$latest_link" ]; then
             rm "$latest_link"
         fi
@@ -902,46 +891,38 @@ wtsb() {
 
 # Open/browse a workspace backup
 wtso() {
-    if [ -z "$1" ]; then
-        echo "Usage: wtso <branch-name> [timestamp]"
-        echo "  Opens the workspace backup directory for a branch"
-        echo "  If no timestamp specified, opens the latest (symlink)"
-        return 1
-    fi
-
     local workspace_dir="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}/$(basename "$WORKTREE_BASE")"
-    local branch_dir="$workspace_dir/$1"
 
-    if [ ! -d "$branch_dir" ]; then
-        echo "Error: No workspace backups found for branch '$1'"
+    if [ ! -d "$workspace_dir" ]; then
+        echo "Error: No workspace backups found"
         echo "Hint: Use 'wtsl' to see available backups"
         return 1
     fi
-    
+
     local target_dir=""
-    if [ -n "$2" ]; then
+    if [ -n "$1" ]; then
         # Specific timestamp requested
-        target_dir="$branch_dir/$2"
+        target_dir="$workspace_dir/$1"
     else
         # Use the latest symlink
-        target_dir="$branch_dir/latest"
+        target_dir="$workspace_dir/latest"
         if [ ! -L "$target_dir" ]; then
             # If no latest symlink, try to find the most recent backup
-            local latest_backup=$(ls -1d "$branch_dir"/[0-9]*_[0-9]* 2>/dev/null | sort -r | head -n1)
+            local latest_backup=$(ls -1d "$workspace_dir"/[0-9]*_[0-9]* 2>/dev/null | sort -r | head -n1)
             if [ -n "$latest_backup" ]; then
                 target_dir="$latest_backup"
             else
-                echo "Error: No backups found for branch '$1'"
+                echo "Error: No backups found"
                 return 1
             fi
         fi
     fi
-    
+
     if [ -d "$target_dir" ] || [ -L "$target_dir" ]; then
         cd "$target_dir"
         echo "➜ $(pwd)"
     else
-        echo "Error: Workspace backup not found for '$1' with timestamp '$2'"
+        echo "Error: Workspace backup not found for timestamp '$1'"
         echo "Hint: Use 'wtsl' to see available backups"
         return 1
     fi

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # giantmem-archive.sh - standalone .giantmem directory archiving
-# archives .giantmem/ dirs to ~/giantmem_archive/{project}/{branch}/{timestamp}/
+# archives .giantmem/ dirs to ~/giantmem_archive/{project}/{timestamp}/
 
 set -euo pipefail
 
@@ -23,37 +23,226 @@ build_index() {
 
 usage() {
     cat <<EOF
-Usage: $(basename "$0") <command> [options]
+Usage: $(basename "$0") --action <verb> [options]
 
-Commands:
+Actions:
   archive [--clean] [--project <name>] [src]  Archive a .giantmem directory
-  list [project]                    List archives (all or specific project)
-  open <project> [branch] [ts]      Open archive in Finder
-  search <pattern> [flags]          Search archives with fzf (interactive)
-  index [project]                   Rebuild search indexes for archives
-  help                              Show this help
+  archive --feature <all|name>                Archive completed features (mv out of .giantmem/features/)
+  list [project]                              List archives (all or specific project)
+  open <project> [ts]                          Open archive in Finder
+  search <pattern> [flags]                    Search archives with fzf (interactive)
+  index [project]                             Rebuild search indexes for archives
+  help                                        Show this help
 
 Search flags:
   -p <project>   Filter by project
   -t <type>      Filter by type: plans|context|research|reviews|filebox|history|prompts|features|domains
-  -d <path>      Search specific dir (e.g., master/20251220_143022)
+  -d <path>      Search specific dir (e.g., 20251220_143022)
   -l             Search only "latest" archives
   -C <n>         Context lines in preview (default: 5)
 
 Examples:
-  $(basename "$0") archive                        # archive ./.giantmem with auto-detect
-  $(basename "$0") archive --clean                # archive and remove ./.giantmem
-  $(basename "$0") archive --project cc-wt        # archive under cc-wt/{branch}/
-  $(basename "$0") archive --project cc-wt --clean  # worktree: archive and remove
-  $(basename "$0") list                           # list all projects
-  $(basename "$0") list myproj                    # list archives for project
-  $(basename "$0") open myproj main               # open latest for branch
-  $(basename "$0") search "jwt"                   # search all archives
-  $(basename "$0") search "replica" -p mas        # search specific project
-  $(basename "$0") search "auth" -t plans -l      # search only latest, plans only
+  $(basename "$0") --action archive                            # archive ./.giantmem with auto-detect
+  $(basename "$0") --action archive --clean                    # archive and remove ./.giantmem
+  $(basename "$0") --action archive --project cc-wt            # archive under cc-wt/{timestamp}/
+  $(basename "$0") --action archive --feature all              # archive all completed features
+  $(basename "$0") --action archive --feature jwt-session      # archive one completed feature
+  $(basename "$0") --action list                               # list all projects
+  $(basename "$0") --action list myproj                        # list archives for project
+  $(basename "$0") --action open myproj                        # open latest archive
+  $(basename "$0") --action search "jwt"                       # search all archives
+  $(basename "$0") --action search "replica" -p mas            # search specific project
+  $(basename "$0") --action search "auth" -t plans -l          # search only latest, plans only
 
-Archive location: $GIANTMEM_ARCHIVE_BASE/{project}/{branch}/{timestamp}/
+Archive location: $GIANTMEM_ARCHIVE_BASE/{project}/{timestamp}/
+Feature archive:  $GIANTMEM_ARCHIVE_BASE/{project}/{timestamp}/features/{name}/
 EOF
+}
+
+# check if a feature has status "complete" or "completed"
+_is_feature_complete() {
+    local json_file="$1"
+    local feature_dir="$2"
+    local name="$3"
+
+    # try features.json first
+    if [ -f "$json_file" ]; then
+        local status
+        status=$(python3 -c "
+import json, sys
+with open('$json_file') as f:
+    data = json.load(f)
+feat = data.get('$name', {})
+print(feat.get('status', ''))
+" 2>/dev/null)
+        if [[ "$status" == "complete" || "$status" == "completed" ]]; then
+            return 0
+        fi
+    fi
+
+    # fall back to spec.md
+    if [ -f "$feature_dir/spec.md" ]; then
+        if grep -qi '^status:.*complete' "$feature_dir/spec.md" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# remove a feature entry from features.json
+_remove_feature_from_json() {
+    local json_file="$1"
+    local name="$2"
+
+    [ -f "$json_file" ] || return 0
+    python3 -c "
+import json
+with open('$json_file') as f:
+    data = json.load(f)
+data.pop('$name', None)
+with open('$json_file', 'w') as f:
+    json.dump(data, f, indent=2)
+    f.write('\n')
+" 2>/dev/null
+}
+
+# remove a feature row from _index.md
+_remove_feature_from_index() {
+    local index_file="$1"
+    local name="$2"
+
+    [ -f "$index_file" ] || return 0
+    local tmp="${index_file}.tmp"
+    grep -v "\[${name}\]" "$index_file" > "$tmp" 2>/dev/null || true
+    mv "$tmp" "$index_file"
+}
+
+# archive completed features by moving them to the archive tree
+do_archive_feature() {
+    local target="$1"
+    shift
+    local project_override=""
+    local dry_run=false
+
+    # parse passthrough for --project, --dry-run
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --project) project_override="$2"; shift 2 ;;
+            --dry-run) dry_run=true; shift ;;
+            *) shift ;;
+        esac
+    done
+
+    # resolve project name
+    local project_name=""
+
+    if [ -n "$project_override" ]; then
+        project_name="$project_override"
+    else
+        local git_toplevel
+        git_toplevel=$(git rev-parse --show-toplevel 2>/dev/null || echo "")
+        if [ -n "$git_toplevel" ] && [ -f "$git_toplevel/.git" ]; then
+            project_name=$(basename "$(dirname "$git_toplevel")")
+        else
+            project_name=$(basename "$PWD")
+        fi
+    fi
+
+    local giantmem_dir="$PWD/.giantmem"
+    local features_dir="$giantmem_dir/features"
+    local json_file="$features_dir/features.json"
+    local index_file="$features_dir/_index.md"
+
+    if [ ! -d "$features_dir" ]; then
+        echo "ERROR: No .giantmem/features/ directory found"
+        return 1
+    fi
+
+    # single timestamp for the batch
+    local timestamp=$(date '+%Y%m%d_%H%M%S')
+    local project_backup_dir="$GIANTMEM_ARCHIVE_BASE/$project_name"
+    local archive_base="$project_backup_dir/$timestamp/features"
+
+    # collect features to archive
+    local features_to_archive=()
+
+    if [ "$target" = "all" ]; then
+        for fdir in "$features_dir"/*/; do
+            [ -d "$fdir" ] || continue
+            local fname
+            fname=$(basename "$fdir")
+            [ "$fname" = "_index.md" ] && continue
+            if _is_feature_complete "$json_file" "$fdir" "$fname"; then
+                features_to_archive+=("$fname")
+            fi
+        done
+        if [ ${#features_to_archive[@]} -eq 0 ]; then
+            echo "No completed features found to archive"
+            return 0
+        fi
+    else
+        local fdir="$features_dir/$target"
+        if [ ! -d "$fdir" ]; then
+            echo "ERROR: Feature not found: $target"
+            return 1
+        fi
+        if ! _is_feature_complete "$json_file" "$fdir" "$target"; then
+            echo "ERROR: Feature '$target' is not marked as complete"
+            return 1
+        fi
+        features_to_archive+=("$target")
+    fi
+
+    if [ "$dry_run" = true ]; then
+        echo "[dry-run] Would archive ${#features_to_archive[@]} feature(s):"
+        for fname in "${features_to_archive[@]}"; do
+            local src="$features_dir/$fname"
+            local dest="$archive_base/$fname"
+            local size=$(du -sh "$src" 2>/dev/null | cut -f1)
+            echo "  $fname ($size)"
+            echo "    mv $src"
+            echo "    -> $dest"
+        done
+        echo "[dry-run] No files moved"
+        return 0
+    fi
+
+    mkdir -p "$archive_base"
+
+    local archived_count=0
+    for fname in "${features_to_archive[@]}"; do
+        local src="$features_dir/$fname"
+        local dest="$archive_base/$fname"
+
+        echo "Archiving feature: $fname"
+        echo "  From: $src"
+        echo "    To: $dest"
+
+        if mv "$src" "$dest"; then
+            _remove_feature_from_json "$json_file" "$fname"
+            _remove_feature_from_index "$index_file" "$fname"
+            archived_count=$((archived_count + 1))
+            echo "  Done"
+        else
+            echo "  ERROR: Failed to move $fname"
+        fi
+    done
+
+    if [ $archived_count -gt 0 ]; then
+        # build search index for the timestamp dir
+        build_index "$project_backup_dir/$timestamp"
+
+        # update latest symlink
+        local latest_link="$project_backup_dir/latest"
+        [ -L "$latest_link" ] && rm "$latest_link"
+        ln -s "$timestamp" "$latest_link"
+
+        # update fts5 search db in background
+        python3 "$(dirname "$0")/giantmem-search.py" ingest --project "$project_name" 2>/dev/null &
+
+        echo "Archived $archived_count feature(s) to $project_backup_dir/$timestamp/features/"
+    fi
 }
 
 do_archive() {
@@ -78,7 +267,6 @@ do_archive() {
         fi
     fi
     local project_name=""
-    local branch_name=""
 
     if [ -n "$project_override" ]; then
         project_name="$project_override"
@@ -94,24 +282,16 @@ do_archive() {
         fi
     fi
 
-    # try git branch if not provided
-    if [ -z "$branch_name" ]; then
-        if git rev-parse --is-inside-work-tree &>/dev/null; then
-            branch_name=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-        fi
-        [ -z "$branch_name" ] && branch_name=$(basename "$(dirname "$(realpath "$scratch_source")")")
-    fi
-
     if [ ! -d "$scratch_source" ]; then
         echo "ERROR: No .giantmem directory found at: $scratch_source"
         return 1
     fi
 
-    local branch_backup_dir="$GIANTMEM_ARCHIVE_BASE/$project_name/$branch_name"
-    mkdir -p "$branch_backup_dir"
+    local project_backup_dir="$GIANTMEM_ARCHIVE_BASE/$project_name"
+    mkdir -p "$project_backup_dir"
 
     local timestamp=$(date '+%Y%m%d_%H%M%S')
-    local backup_dir="$branch_backup_dir/$timestamp"
+    local backup_dir="$project_backup_dir/$timestamp"
 
     echo "Archiving: $scratch_source"
     echo "      To: $backup_dir"
@@ -121,7 +301,7 @@ do_archive() {
         build_index "$backup_dir"
 
         # update latest symlink
-        local latest_link="$branch_backup_dir/latest"
+        local latest_link="$project_backup_dir/latest"
         [ -L "$latest_link" ] && rm "$latest_link"
         ln -s "$timestamp" "$latest_link"
 
@@ -166,27 +346,21 @@ do_list() {
     echo "────────────────────────────────────"
 
     if [ -n "$project_name" ]; then
-        for branch_dir in "$archive_dir"/*; do
-            [ -d "$branch_dir" ] && [ ! -L "$branch_dir" ] || continue
-            local branch_name=$(basename "$branch_dir")
-            echo ""
-            echo "  $branch_name:"
-            for backup in "$branch_dir"/*; do
-                [ -d "$backup" ] && [ ! -L "$backup" ] || continue
-                local backup_name=$(basename "$backup")
-                local size=$(du -sh "$backup" 2>/dev/null | cut -f1)
-                if [ -L "$branch_dir/latest" ] && [ "$(readlink "$branch_dir/latest")" = "$backup_name" ]; then
-                    echo "    $backup_name ($size) <- latest"
-                else
-                    echo "    $backup_name ($size)"
-                fi
-            done
+        for backup in "$archive_dir"/*; do
+            [ -d "$backup" ] && [ ! -L "$backup" ] || continue
+            local backup_name=$(basename "$backup")
+            local size=$(du -sh "$backup" 2>/dev/null | cut -f1)
+            if [ -L "$archive_dir/latest" ] && [ "$(readlink "$archive_dir/latest")" = "$backup_name" ]; then
+                echo "  $backup_name ($size) <- latest"
+            else
+                echo "  $backup_name ($size)"
+            fi
         done
     else
         for project_dir in "$archive_dir"/*; do
             [ -d "$project_dir" ] || continue
             local proj=$(basename "$project_dir")
-            local count=$(find "$project_dir" -mindepth 2 -maxdepth 2 -type d -name "[0-9]*_[0-9]*" 2>/dev/null | wc -l | tr -d ' ')
+            local count=$(find "$project_dir" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*_[0-9]*" 2>/dev/null | wc -l | tr -d ' ')
             echo "  $proj/: $count archives"
         done
     fi
@@ -194,20 +368,18 @@ do_list() {
 
 do_open() {
     if [ -z "${1:-}" ]; then
-        echo "Usage: $(basename "$0") open <project> [branch] [timestamp]"
+        echo "Usage: $(basename "$0") open <project> [timestamp]"
         return 1
     fi
 
     local project="$1"
-    local branch="${2:-}"
-    local timestamp="${3:-}"
+    local timestamp="${2:-}"
     local target_dir="$GIANTMEM_ARCHIVE_BASE/$project"
 
-    [ -n "$branch" ] && target_dir="$target_dir/$branch"
     [ -n "$timestamp" ] && target_dir="$target_dir/$timestamp"
 
-    # use latest symlink if branch specified but no timestamp
-    if [ -n "$branch" ] && [ -z "$timestamp" ] && [ -L "$target_dir/latest" ]; then
+    # use latest symlink if no timestamp specified
+    if [ -z "$timestamp" ] && [ -L "$target_dir/latest" ]; then
         target_dir="$target_dir/latest"
     fi
 
@@ -396,33 +568,61 @@ do_search() {
     fi
 }
 
-# main
-case "${1:-help}" in
+# main -- parse --action and --feature, pass the rest through
+action=""
+feature=""
+dry_run=false
+passthrough=()
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --action) action="$2"; shift 2 ;;
+        --feature) feature="$2"; shift 2 ;;
+        --dry-run) dry_run=true; shift ;;
+        -h|--help) action="help"; shift ;;
+        *) passthrough+=("$1"); shift ;;
+    esac
+done
+
+# backward compat: bare positional subcommand (e.g. `giantmem-archive list`)
+if [ -z "$action" ] && [ ${#passthrough[@]} -gt 0 ]; then
+    case "${passthrough[0]}" in
+        archive|a|list|ls|l|open|o|search|s|index|idx|i|help)
+            action="${passthrough[0]}"
+            passthrough=("${passthrough[@]:1}")
+            ;;
+    esac
+fi
+
+[ -z "$action" ] && action="help"
+
+case "$action" in
     archive|a)
-        shift
-        do_archive "$@"
+        if [ -n "$feature" ]; then
+            feature_args=("${passthrough[@]+"${passthrough[@]}"}")
+            [ "$dry_run" = true ] && feature_args+=("--dry-run")
+            do_archive_feature "$feature" "${feature_args[@]+"${feature_args[@]}"}"
+        else
+            do_archive "${passthrough[@]+"${passthrough[@]}"}"
+        fi
         ;;
     list|ls|l)
-        shift
-        do_list "$@"
+        do_list "${passthrough[@]+"${passthrough[@]}"}"
         ;;
     open|o)
-        shift
-        do_open "$@"
+        do_open "${passthrough[@]+"${passthrough[@]}"}"
         ;;
     search|s)
-        shift
-        do_search "$@"
+        do_search "${passthrough[@]+"${passthrough[@]}"}"
         ;;
     index|idx|i)
-        shift
-        do_index "$@"
+        do_index "${passthrough[@]+"${passthrough[@]}"}"
         ;;
-    help|-h|--help)
+    help)
         usage
         ;;
     *)
-        echo "Unknown command: $1"
+        echo "Unknown action: $action"
         usage
         exit 1
         ;;

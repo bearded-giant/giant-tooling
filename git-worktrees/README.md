@@ -81,7 +81,7 @@ Workspace directories are automatically backed up when removing worktrees.
 | `edgewtsl` | List all workspace backups |
 | `edgewtso <branch>` | Open/cd to workspace backup |
 
-Backups go to `~/giantmem_archive/{archive_name}/{branch}/{timestamp}/` with a `latest` symlink.
+Backups go to `~/giantmem_archive/{archive_name}/{timestamp}/` with a `latest` symlink.
 
 ### Workspace Commands
 

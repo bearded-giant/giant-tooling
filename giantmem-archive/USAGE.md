@@ -2,7 +2,7 @@
 
 Archive and search .giantmem/ directories.
 
-Archive location: `~/giantmem_archive/{project}/{branch}/{timestamp}/`
+Archive location: `~/giantmem_archive/{project}/{timestamp}/`
 
 ## Requirements
 
@@ -24,7 +24,6 @@ giantmem-archive.sh archive [--clean] [--project <name>] [src]
 Defaults:
 - source: `./.giantmem`
 - project: auto-detected from directory (see below)
-- branch: current git branch
 
 Project name detection:
 - **worktree** (`.git` is a file): parent dir of worktree root (e.g., `edgerouter-wt`)
@@ -32,14 +31,14 @@ Project name detection:
 - **`--project`**: overrides auto-detection
 
 ```bash
-gma                                    # archive ./.giantmem, auto-detect project+branch
+gma                                    # archive ./.giantmem, auto-detect project
 gma --clean                            # archive and remove ./.giantmem
 gma --project cc-wt                    # force project name
 giantmem-archive archive ~/path/to/.giantmem  # explicit source
 ```
 
-Creates: `~/giantmem_archive/{project}/{branch}/{timestamp}/`
-Updates: `latest` symlink in branch directory
+Creates: `~/giantmem_archive/{project}/{timestamp}/`
+Updates: `latest` symlink in project directory
 Builds: `.giantmem-index` for fast searching
 Updates: `archives.db` FTS5 database (background, additive per-project)
 

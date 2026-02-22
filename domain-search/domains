@@ -424,7 +424,7 @@ def cmd_archive(args, domains_dir=None):
     where_clause = " AND ".join(where)
 
     sql = f"""
-        SELECT d.filepath, d.project, d.branch, d.timestamp, d.filename, rank
+        SELECT d.filepath, d.project, d.timestamp, d.filename, rank
         FROM documents_fts f
         JOIN documents d ON d.id = f.rowid
         WHERE documents_fts MATCH ? AND {where_clause}
@@ -450,7 +450,7 @@ def cmd_archive(args, domains_dir=None):
 
     show_full = hasattr(args, "show") and args.show
 
-    for filepath, project, branch, timestamp, filename, rank in rows:
+    for filepath, project, timestamp, filename, rank in rows:
         domain_name = filename.replace(".json", "")
         score = abs(rank)
 
@@ -464,7 +464,7 @@ def cmd_archive(args, domains_dir=None):
 
         if domain_data and show_full:
             # full structured display
-            print(f"\033[1;36m{domain_name}\033[0m  [{project}/{branch} {timestamp}]  score: {score:.1f}")
+            print(f"\033[1;36m{domain_name}\033[0m  [{project} {timestamp}]  score: {score:.1f}")
             desc = domain_data.get("description", "")
             if desc:
                 print(f"  {desc}")
@@ -487,7 +487,7 @@ def cmd_archive(args, domains_dir=None):
         elif domain_data:
             # compact: domain name, description, matching sections
             desc = domain_data.get("description", "")[:60]
-            print(f"\033[1;36m{domain_name}\033[0m  [{project}/{branch}]  {desc}")
+            print(f"\033[1;36m{domain_name}\033[0m  [{project}]  {desc}")
             matches = search_domain(domain_data, query.lower().replace('"', ''))
             for section, hits in matches.items():
                 for hit in hits[:2]:
@@ -496,7 +496,7 @@ def cmd_archive(args, domains_dir=None):
 
         else:
             # fallback: can't read json, show filepath
-            print(f"{domain_name}  [{project}/{branch} {timestamp}]")
+            print(f"{domain_name}  [{project} {timestamp}]")
             print(f"  {filepath}")
             print()
 

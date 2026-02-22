@@ -21,7 +21,7 @@
 #   workspace_archive_open <proj> [branch] [ts] - Open archive in Finder
 #   list-features [--dir <path>]  - Show feature status table
 #
-# Archive location: ~/giantmem_archive/{project}/{branch}/{timestamp}/
+# Archive location: ~/giantmem_archive/{project}/{timestamp}/
 #
 # Aliases (add to .bashrc):
 #   alias wsb='workspace_bootstrap'  # Smart bootstrap mid-session
@@ -397,46 +397,33 @@ workspace_bootstrap() {
 WORKSPACE_ARCHIVE_BASE="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}"
 
 # Archive .giantmem directory to central location
-# Usage: workspace_archive [source] [project_name] [branch_name]
-# Defaults: current .giantmem/, project from parent dir name, branch from git or dir name
+# Usage: workspace_archive [source] [project_name]
+# Defaults: current .giantmem/, project from parent dir name
 workspace_archive() {
     local scratch_source="${1:-$PWD/.giantmem}"
     local project_name="${2:-$(basename "$(dirname "$scratch_source")")}"
-    local branch_name="${3:-}"
-
-    # Try to get branch name from git if not provided
-    if [ -z "$branch_name" ]; then
-        if git rev-parse --is-inside-work-tree &>/dev/null; then
-            branch_name=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-        fi
-        # Fallback to directory name
-        [ -z "$branch_name" ] && branch_name=$(basename "$(dirname "$scratch_source")")
-    fi
 
     if [ ! -d "$scratch_source" ]; then
         echo "No .giantmem directory found at: $scratch_source"
         return 1
     fi
 
-    # Create archive path: ~/giantmem_archive/{project}/{branch}/{timestamp}/
-    local archive_base="$WORKSPACE_ARCHIVE_BASE/$project_name"
-    local branch_backup_dir="$archive_base/$branch_name"
-    mkdir -p "$branch_backup_dir"
+    # archive path: ~/giantmem_archive/{project}/{timestamp}/
+    local project_dir="$WORKSPACE_ARCHIVE_BASE/$project_name"
+    mkdir -p "$project_dir"
 
     local timestamp=$(date '+%Y%m%d_%H%M%S')
-    local backup_dir="$branch_backup_dir/$timestamp"
+    local backup_dir="$project_dir/$timestamp"
 
     echo "Archiving .giantmem to: $backup_dir"
     if mv "$scratch_source" "$backup_dir"; then
         echo "Workspace archived and cleaned from working dir"
 
-        # Update latest symlink
-        local latest_link="$branch_backup_dir/latest"
+        local latest_link="$project_dir/latest"
         [ -L "$latest_link" ] && rm "$latest_link"
         ln -s "$timestamp" "$latest_link"
         echo "Created symlink: latest -> $timestamp"
 
-        # Show size
         local size=$(du -sh "$backup_dir" 2>/dev/null | cut -f1)
         echo "Archive size: $size"
 
@@ -474,29 +461,21 @@ workspace_archive_list() {
     echo "────────────────────────────────────"
 
     if [ -n "$project_name" ]; then
-        # List branches for specific project
-        for branch_dir in "$archive_dir"/*; do
-            [ -d "$branch_dir" ] && [ ! -L "$branch_dir" ] || continue
-            local branch_name=$(basename "$branch_dir")
-            echo ""
-            echo "  $branch_name:"
-            for backup in "$branch_dir"/*; do
-                [ -d "$backup" ] && [ ! -L "$backup" ] || continue
-                local backup_name=$(basename "$backup")
-                local size=$(du -sh "$backup" 2>/dev/null | cut -f1)
-                if [ -L "$branch_dir/latest" ] && [ "$(readlink "$branch_dir/latest")" = "$backup_name" ]; then
-                    echo "    $backup_name ($size) <- latest"
-                else
-                    echo "    $backup_name ($size)"
-                fi
-            done
+        for backup in "$archive_dir"/*; do
+            [ -d "$backup" ] && [ ! -L "$backup" ] || continue
+            local backup_name=$(basename "$backup")
+            local size=$(du -sh "$backup" 2>/dev/null | cut -f1)
+            if [ -L "$archive_dir/latest" ] && [ "$(readlink "$archive_dir/latest")" = "$backup_name" ]; then
+                echo "  $backup_name ($size) <- latest"
+            else
+                echo "  $backup_name ($size)"
+            fi
         done
     else
-        # List all projects
         for project_dir in "$archive_dir"/*; do
             [ -d "$project_dir" ] || continue
             local proj=$(basename "$project_dir")
-            local count=$(find "$project_dir" -mindepth 2 -maxdepth 2 -type d -name "[0-9]*_[0-9]*" 2>/dev/null | wc -l | tr -d ' ')
+            local count=$(find "$project_dir" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*_[0-9]*" 2>/dev/null | wc -l | tr -d ' ')
             echo "  $proj/: $count backups"
         done
     fi
