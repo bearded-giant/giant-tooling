@@ -26,8 +26,9 @@ usage() {
 Usage: $(basename "$0") --action <verb> [options]
 
 Actions:
-  archive [--clean] [--project <name>] [src]  Archive a .giantmem directory
+  archive [--project <name>] [src]            Archive (mv) a .giantmem directory, re-init workspace
   archive --feature <all|name>                Archive completed features (mv out of .giantmem/features/)
+  dedup <project> [--dry-run]                 Move older duplicate files to _review/
   list [project]                              List archives (all or specific project)
   open <project> [ts]                          Open archive in Finder
   search <pattern> [flags]                    Search archives with fzf (interactive)
@@ -42,11 +43,12 @@ Search flags:
   -C <n>         Context lines in preview (default: 5)
 
 Examples:
-  $(basename "$0") --action archive                            # archive ./.giantmem with auto-detect
-  $(basename "$0") --action archive --clean                    # archive and remove ./.giantmem
+  $(basename "$0") --action archive                            # archive ./.giantmem (mv + re-init)
   $(basename "$0") --action archive --project cc-wt            # archive under cc-wt/{timestamp}/
   $(basename "$0") --action archive --feature all              # archive all completed features
   $(basename "$0") --action archive --feature jwt-session      # archive one completed feature
+  $(basename "$0") --action dedup myproj --dry-run             # preview duplicate cleanup
+  $(basename "$0") --action dedup myproj                       # move older dupes to _review/
   $(basename "$0") --action list                               # list all projects
   $(basename "$0") --action list myproj                        # list archives for project
   $(basename "$0") --action open myproj                        # open latest archive
@@ -246,14 +248,13 @@ do_archive_feature() {
 }
 
 do_archive() {
-    local clean=false
     local project_override=""
     local dry_run=false
 
     # parse flags
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --clean) clean=true; shift ;;
+            --clean) shift ;; # deprecated: archive always moves now
             --project) project_override="$2"; shift 2 ;;
             --dry-run) dry_run=true; shift ;;
             *) break ;;
@@ -300,12 +301,11 @@ do_archive() {
     echo "      To: $backup_dir"
 
     if [ "$dry_run" = true ]; then
-        [ "$clean" = true ] && echo "   Clean: would remove $scratch_source"
-        echo "[dry-run] No files copied"
+        echo "[dry-run] No files moved"
         return 0
     fi
 
-    if cp -r "$scratch_source" "$backup_dir"; then
+    if mv "$scratch_source" "$backup_dir"; then
         # build search index
         build_index "$backup_dir"
 
@@ -320,23 +320,106 @@ do_archive() {
         # update fts5 search db in background
         python3 "$(dirname "$0")/giantmem-search.py" ingest --project "$project_name" 2>/dev/null &
 
-        if [ "$clean" = true ]; then
-            rm -rf "$scratch_source"
-            echo "Cleaned: $scratch_source"
-
-            # re-init workspace so .giantmem/ isn't left empty
-            local parent_dir="$(dirname "$scratch_source")"
-            local ws_lib="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
-            if [ -f "$ws_lib" ]; then
-                source "$ws_lib"
-                workspace_init "$parent_dir" "$(basename "$parent_dir")"
-            fi
+        # re-init workspace so .giantmem/ is available for new work
+        local parent_dir="$(dirname "$scratch_source")"
+        local ws_lib="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
+        if [ -f "$ws_lib" ]; then
+            source "$ws_lib"
+            workspace_init "$parent_dir" "$(basename "$parent_dir")"
         fi
 
         return 0
     else
         echo "ERROR: Failed to archive"
         return 1
+    fi
+}
+
+# deduplicate older archive files that also exist in newer timestamps
+do_dedup() {
+    local project=""
+    local dry_run=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --dry-run) dry_run=true; shift ;;
+            *) [ -z "$project" ] && project="$1"; shift ;;
+        esac
+    done
+
+    if [ -z "$project" ]; then
+        echo "Usage: $(basename "$0") --action dedup <project> [--dry-run]"
+        return 1
+    fi
+
+    local project_dir="$GIANTMEM_ARCHIVE_BASE/$project"
+    if [ ! -d "$project_dir" ]; then
+        echo "Project not found: $project"
+        return 1
+    fi
+
+    # collect timestamp dirs, sorted newest first
+    local -a ts_dirs=()
+    while IFS= read -r d; do
+        ts_dirs+=("$d")
+    done < <(find "$project_dir" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*_[0-9]*" | sort -r)
+
+    if [ ${#ts_dirs[@]} -lt 2 ]; then
+        echo "Need at least 2 archives to dedup (found ${#ts_dirs[@]})"
+        return 0
+    fi
+
+    echo "Scanning ${#ts_dirs[@]} archives for $project..."
+
+    local review_dir="$project_dir/_review"
+    declare -A seen_files
+    local moved=0
+
+    for ts_dir in "${ts_dirs[@]}"; do
+        local ts
+        ts=$(basename "$ts_dir")
+
+        while IFS= read -r file; do
+            local rel="${file#$ts_dir/}"
+
+            # skip features (handled separately by --feature archive)
+            [[ "$rel" == features/* ]] && continue
+            # skip index files
+            [[ "$rel" == ".giantmem-index" ]] && continue
+
+            if [ -n "${seen_files[$rel]+x}" ]; then
+                # older version of a file that exists in a newer timestamp
+                if [ "$dry_run" = true ]; then
+                    echo "  [dup] $ts/$rel"
+                else
+                    local dest="$review_dir/$ts/$rel"
+                    mkdir -p "$(dirname "$dest")"
+                    mv "$file" "$dest"
+                fi
+                moved=$((moved + 1))
+            else
+                seen_files[$rel]=1
+            fi
+        done < <(find "$ts_dir" -type f)
+    done
+
+    if [ "$dry_run" = true ]; then
+        echo "Found $moved older duplicate(s). Run without --dry-run to move to _review/"
+    else
+        if [ $moved -gt 0 ]; then
+            echo "Moved $moved older duplicate(s) to $review_dir/"
+            echo "Review and delete when satisfied: rm -rf $review_dir"
+
+            # rebuild indexes for affected archives
+            for ts_dir in "${ts_dirs[@]}"; do
+                build_index "$ts_dir"
+            done
+
+            # re-ingest search db
+            python3 "$(dirname "$0")/giantmem-search.py" ingest --project "$project" 2>/dev/null &
+        else
+            echo "No duplicates found"
+        fi
     fi
 }
 
@@ -596,7 +679,7 @@ done
 # backward compat: bare positional subcommand (e.g. `giantmem-archive list`)
 if [ -z "$action" ] && [ ${#passthrough[@]} -gt 0 ]; then
     case "${passthrough[0]}" in
-        archive|a|list|ls|l|open|o|search|s|index|idx|i|help)
+        archive|a|dedup|list|ls|l|open|o|search|s|index|idx|i|help)
             action="${passthrough[0]}"
             passthrough=("${passthrough[@]:1}")
             ;;
@@ -616,6 +699,11 @@ case "$action" in
             [ "$dry_run" = true ] && archive_args+=("--dry-run")
             do_archive "${archive_args[@]+"${archive_args[@]}"}"
         fi
+        ;;
+    dedup)
+        dedup_args=("${passthrough[@]+"${passthrough[@]}"}")
+        [ "$dry_run" = true ] && dedup_args+=("--dry-run")
+        do_dedup "${dedup_args[@]+"${dedup_args[@]}"}"
         ;;
     list|ls|l)
         do_list "${passthrough[@]+"${passthrough[@]}"}"

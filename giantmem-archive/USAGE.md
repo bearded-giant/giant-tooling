@@ -15,10 +15,10 @@ Archive location: `~/giantmem_archive/{project}/{timestamp}/`
 
 ### archive
 
-Archive a .giantmem/ directory.
+Archive (move) a .giantmem/ directory and re-init the workspace.
 
 ```bash
-giantmem-archive.sh archive [--clean] [--project <name>] [src]
+giantmem-archive.sh archive [--project <name>] [src]
 ```
 
 Defaults:
@@ -31,8 +31,7 @@ Project name detection:
 - **`--project`**: overrides auto-detection
 
 ```bash
-gma                                    # archive ./.giantmem, auto-detect project
-gma --clean                            # archive and remove ./.giantmem
+gma                                    # mv ./.giantmem to archive, re-init workspace
 gma --project cc-wt                    # force project name
 giantmem-archive archive ~/path/to/.giantmem  # explicit source
 ```
@@ -41,6 +40,24 @@ Creates: `~/giantmem_archive/{project}/{timestamp}/`
 Updates: `latest` symlink in project directory
 Builds: `.giantmem-index` for fast searching
 Updates: `archives.db` FTS5 database (background, additive per-project)
+Re-inits: fresh `.giantmem/` via `workspace_init`
+
+### dedup
+
+Move older duplicate files to `_review/` for cleanup. When the same file (by relative path) exists in multiple timestamp dirs, older versions are moved out. Feature directories (`features/*`) are skipped -- they have their own archive lifecycle via `--feature`.
+
+```bash
+giantmem-archive.sh dedup <project> [--dry-run]
+```
+
+```bash
+giantmem-archive dedup myproj --dry-run    # preview what would move
+giantmem-archive dedup myproj              # move older dupes to _review/
+rm -rf ~/giantmem_archive/myproj/_review   # delete after review
+```
+
+Creates: `~/giantmem_archive/{project}/_review/{timestamp}/{relative_path}`
+Rebuilds: search indexes and FTS5 database after cleanup
 
 ### search (FTS5 - default)
 
@@ -165,5 +182,5 @@ Quick reference:
 | `gms "auth" -p cc-wt -l` | search with filters |
 | `gmq ingest` | rebuild FTS5 database |
 | `gmq stats` | show indexed doc counts |
-| `gma` | archive current .giantmem/ |
+| `gma` | archive (mv) current .giantmem/, re-init |
 | `gml` | list archives |
