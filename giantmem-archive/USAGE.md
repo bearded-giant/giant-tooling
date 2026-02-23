@@ -71,8 +71,7 @@ Flags:
 | Flag | Description |
 |------|-------------|
 | `-p <project>` | filter by project |
-| `-t <type>` | filter by dir_type: plans, context, research, reviews, filebox, history, prompts, features |
-| `-b <branch>` | filter by branch |
+| `-t <type>` | filter by dir_type: plans, context, research, reviews, filebox, history, prompts, features, domains |
 | `-l` | search only "latest" archives |
 | `-n <N>` | max results (default: 20) |
 | `--full` | show matching content snippets |
@@ -101,7 +100,7 @@ mdv $(gms "jwt" --file-name)           # search -> pick -> render in terminal
 
 When piped or with `--no-fzf`, outputs plain ranked list:
 ```
-[score] project/branch/timestamp/dir_type/filename.md:line
+[score] project/timestamp/dir_type/filename.md:line
 ```
 
 With `--full`, includes matching content snippet below each result.
@@ -145,7 +144,7 @@ giantmem-archive.sh list [project]
 
 ```bash
 giantmem-archive.sh list           # all projects
-giantmem-archive.sh list myproj    # project's branches/timestamps
+giantmem-archive.sh list myproj    # project's timestamps
 giantmem-archive.sh l              # shorthand
 ```
 
@@ -154,13 +153,12 @@ giantmem-archive.sh l              # shorthand
 Open archive directory in Finder.
 
 ```bash
-giantmem-archive.sh open <project> [branch] [timestamp]
+giantmem-archive.sh open <project> [timestamp]
 ```
 
 ```bash
-giantmem-archive.sh open myproj              # project root
-giantmem-archive.sh open myproj main         # latest for branch
-giantmem-archive.sh open myproj main 20251220_143022  # specific
+giantmem-archive.sh open myproj              # open latest archive
+giantmem-archive.sh open myproj 20251220_143022  # specific timestamp
 giantmem-archive.sh o myproj                 # shorthand
 ```
 
