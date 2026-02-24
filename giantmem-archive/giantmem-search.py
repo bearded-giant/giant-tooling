@@ -164,6 +164,9 @@ def _ingest_file(db, filepath, parsed, is_latest, now):
     except (OSError, PermissionError):
         return False, True
 
+    # prepend filename so filename searches always match
+    content = f"{filepath.name}\n{content}"
+
     # flatten domain json for better fts indexing
     if filepath.suffix == ".json" and parsed.get("dir_type") == "domains":
         try:
@@ -270,6 +273,30 @@ def do_ingest(args):
         is_latest = 1 if str(ts_dir) in latest_dirs else 0
 
         ok, err = _ingest_file(db, json_file, parsed, is_latest, now)
+        if ok:
+            count += 1
+        if err:
+            errors += 1
+
+    # index all filebox files (scripts, data, etc. -- .md already covered above)
+    for fb_file in scan_root.rglob("filebox/*"):
+        if not fb_file.is_file():
+            continue
+        if fb_file.name in SKIP_FILES or fb_file.name.startswith("."):
+            continue
+        if fb_file.suffix == ".md":
+            continue
+        if any(skip in fb_file.parts for skip in SKIP_DIRS):
+            continue
+
+        parsed = parse_archive_path(fb_file, archive_base)
+        if not parsed:
+            continue
+
+        ts_dir = archive_base / parsed["project"] / parsed["timestamp"]
+        is_latest = 1 if str(ts_dir) in latest_dirs else 0
+
+        ok, err = _ingest_file(db, fb_file, parsed, is_latest, now)
         if ok:
             count += 1
         if err:
