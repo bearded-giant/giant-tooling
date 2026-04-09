@@ -27,7 +27,8 @@
 WORKTREE_BASE="$HOME/dev/YOUR-PROJECT-worktree"
 
 # Source workspace library (for .giantmem/ workspace management)
-WORKSPACE_LIB="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
+WORKSPACE_LIB="${WORKSPACE_LIB:-$HOME/.claude/lib/workspace/workspace-lib.sh}"
+[ -f "$WORKSPACE_LIB" ] || WORKSPACE_LIB="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
 [ -f "$WORKSPACE_LIB" ] && source "$WORKSPACE_LIB"
 WORKTREE_LAST_FILE="$WORKTREE_BASE/.last-branch"
 

@@ -315,7 +315,8 @@ ${WORKTREE_BASE_VAR}="${worktree_base}"
 ${WORKTREE_LAST_VAR}="\$${WORKTREE_BASE_VAR}/.last-branch"
 
 # Source workspace library
-WORKSPACE_LIB="\${GIANT_TOOLING_DIR:-\$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
+WORKSPACE_LIB="\${WORKSPACE_LIB:-\$HOME/.claude/lib/workspace/workspace-lib.sh}"
+[ -f "\$WORKSPACE_LIB" ] || WORKSPACE_LIB="\${GIANT_TOOLING_DIR:-\$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
 [ -f "\$WORKSPACE_LIB" ] && source "\$WORKSPACE_LIB"
 
 # Helper: Get current branch name

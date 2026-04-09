@@ -322,7 +322,8 @@ do_archive() {
 
         # re-init workspace so .giantmem/ is available for new work
         local parent_dir="$(dirname "$scratch_source")"
-        local ws_lib="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
+        local ws_lib="${WORKSPACE_LIB:-$HOME/.claude/lib/workspace/workspace-lib.sh}"
+        [ -f "$ws_lib" ] || ws_lib="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
         if [ -f "$ws_lib" ]; then
             source "$ws_lib"
             workspace_init "$parent_dir" "$(basename "$parent_dir")"
