@@ -86,6 +86,12 @@ EOF
         echo "Created .giantmem/WORKSPACE.md"
     fi
 
+    # Create notes.md if missing
+    if [ ! -f "$scratch_dir/notes.md" ]; then
+        touch "$scratch_dir/notes.md"
+        echo "Created .giantmem/notes.md"
+    fi
+
     # Create features/_index.md if missing
     if [ ! -f "$scratch_dir/features/_index.md" ]; then
         cat > "$scratch_dir/features/_index.md" << 'EOF'
@@ -271,10 +277,11 @@ workspace_migrate() {
 
     # Process each file in .giantmem root (not in subdirs)
     for file in "$scratch_dir"/*; do
-        # Skip if not a file or is WORKSPACE.md
+        # Skip if not a file or is a root-level file
         [ ! -f "$file" ] && continue
         local basename=$(basename "$file")
         [ "$basename" = "WORKSPACE.md" ] && continue
+        [ "$basename" = "notes.md" ] && continue
 
         local dest=""
         local reason=""
