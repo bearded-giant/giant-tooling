@@ -1,197 +1,127 @@
-# Worktree Helper - Quickstart
+# worktrees
 
-Set up git worktree management for any project in under a minute.
+Per-project git worktree management. One shared core (`worktree-core.sh`) plus a small config file per project (`wt-{name}.sh`) that binds prefix-style shell functions, e.g. `myprjwt`, `myprjwtl`, `myprjwtr`.
 
-## New Project Setup
+## Quick start
+
+```bash
+# 1. Clone giant-tooling somewhere, e.g.
+git clone <repo-url> ~/dev/giant-tooling
+
+# 2. Bootstrap (add to .bashrc / .zshrc)
+source ~/dev/giant-tooling/git-worktrees/worktree-core.sh
+
+# 3. Create a project (pick one)
+wt_init                              # wizard for a fresh clone
+wt_adopt /path/to/existing/repo      # convert an existing clone in place
+
+# 4. Use the prefix functions the wizard binds
+{prefix} <branch>                    # switch to or create a worktree
+{prefix}l                            # list worktrees
+{prefix}r <branch>                   # remove (with .giantmem backup)
+```
+
+After step 2, `wt_init`, `wt_adopt`, and `wt_projects` exist in every shell. Run `wt_init` once per project. The wizard writes a `wt-{name}.sh` config file beside `worktree-core.sh`. To keep configs in a separate (e.g. private) dir, see [Install](#install) below.
+
+## Philosophy
+
+The whole thing is opinionated and bespoke. A few load-bearing choices that drive everything else:
+
+The bare repo lives at `{base}/.bare` and worktrees are siblings, not children. This keeps the canonical git data in one fixed spot and lets each branch have its own checkout dir without the usual nested-`.git` confusion. Cost: the layout is non-standard, so `cd repo && git status` only works inside a worktree.
+
+Per-project prefix functions (`cwt`, `awt`, etc.) are how you actually use this. `wt_register` binds twenty-odd functions per prefix using `eval`, then your muscle memory does the rest. Two-key moves replace ten-key git invocations. The wizard exists because writing a config by hand is friction nobody needs.
+
+Worktrees are throwaway. Spin one up for a feature, do the work, kill the worktree when done, never touch git directly. Removal backs `.giantmem/` up to `~/giantmem_archive/` first, so context isn't lost. Stack-aware setup (python/node/lua/bash) runs on create so you don't re-pin versions per worktree.
+
+`wt_init` is for greenfield (clone fresh). `wt_adopt` is for "I already have a working clone with WIP I don't want to lose" -- it converts the existing repo in place, preserving uncommitted/untracked files. The two flows exist because the cost of getting either one wrong is real lost work, and most "convert to worktree" advice on the internet drops your WIP on the floor.
+
+`worktree-core.sh` is bash-only, no external deps, no config files outside of the per-project shell scripts it generates. You can read the whole thing in one sitting. If something breaks, the call graph is small and obvious.
+
+## Files
+
+| File | Purpose |
+|------|---------|
+| `worktree-core.sh` | Shared library. Defines `wt_init`, `wt_adopt`, `wt_register`, plus all `__wt_*` helpers used by per-project prefixes. |
+| `wt-{name}.sh` | Per-project config (one file per project). Sets env vars (base dir, stack, default branches, etc.) and calls `wt_register {prefix}` to bind shell functions. Source it from your shell rc, or auto-load via your dotfiles. |
+
+## Layout
+
+Each project lives in its own base directory with a bare repo and worktree siblings:
+
+```
+~/dev/{name}-wt/
+  .bare/              git bare repo (origin lives here)
+  main/               worktree for main branch
+  feature-x/          worktree for feature branch
+  wt-bootstrap/       shared files copied into new worktrees (.env, etc.)
+```
+
+## Two ways to start a project
+
+### 1. Greenfield: `wt_init` then `{prefix}_init`
+
+Use this when starting from scratch with a remote URL or a repo path you haven't touched yet.
 
 ```bash
 wt_init
+# Wizard prompts: project name, prefix, base dir, stack,
+# default branch order, env files, archive name, version file, etc.
+# Creates wt-{name}.sh and sources it.
+
+{prefix}_init git@github.com:org/repo.git
+# Clones bare into $base/.bare, fetches, creates first worktree
+# at $base/{default-branch}/.
 ```
 
-The wizard prompts for:
+### 2. Adopt: `wt_adopt` then `wt_init`
 
-| Prompt | Example | Notes |
-|--------|---------|-------|
-| Project name | `edgerouter` | Config filename: `wt-edgerouter.sh` |
-| Command prefix | `edgewt` | All commands start with this: `edgewt`, `edgewtl`, etc. |
-| Worktree base directory | `~/dev/lua/edgerouter-wt` | Where all worktrees live |
-| Stack | `python`, `node`, `lua`, `bash`, `other` | Determines version file and defaults |
-| Default branch search order | `main master develop` | Used when creating branches from default |
-| CLAUDE.md source branch | `main` | Branch to symlink CLAUDE.md from |
-| Env files | `.env` or `.env.local` | Copied from wt-bootstrap/ to new worktrees |
-| Use direnv? | `n` | Whether to copy .envrc and run `direnv allow` |
-| Archive name | `edgerouter-wt` | Directory name in ~/giantmem_archive/ |
-| Version file | `.python-version` | Created in each new worktree |
-| Version content | `3.11.12` | Written to version file (empty = copy from bootstrap) |
-| Package hint | `Run 'posh'...` | Shown after worktree creation |
-| Workspace alias base | `edges` | Creates `edges`, `edgestree`, etc. |
-
-Output: `~/dotfiles/shell/scripts/worktrees/wt-{project}.sh` - sourced immediately and auto-loaded on next shell start.
-
-## First Use
-
-After `wt_init`, initialize the bare repo:
+Use this when you already have a working clone with WIP, untracked files, or local-only branches you want to keep. Converts the existing repo in place.
 
 ```bash
-edgewt_init ~/dev/lua/edgerouter     # from existing local repo (fast)
-edgewt_init git@github.com:org/repo.git  # or from remote URL
+cd ~/dev/myrepo
+wt_adopt
+# Confirms, then:
+#   moves .git -> ~/dev/myrepo-wt/.bare (sets core.bare=true)
+#   moves working tree -> ~/dev/myrepo-wt/{current-branch}/
+#   wires worktree metadata manually so WIP/untracked survive
+# Original ~/dev/myrepo is gone after this.
+
+wt_init
+# Wizard. Set base dir to ~/dev/myrepo-wt when prompted.
+# Detects existing .bare and tells you to SKIP {prefix}_init.
 ```
 
-Or just run `edgewt master` - if the bare repo doesn't exist, you'll be prompted for the source.
+`wt_adopt` errors out on: not a git repo, already bare, detached HEAD, submodules present (unsupported), linked worktree (`.git` is a file), or target `{name}-wt` already exists.
 
-### What init does
+## Generated commands per prefix
 
-1. Clones bare repo to `{base}/.bare/`
-2. Detaches HEAD so no branch is blocked
-3. Creates first worktree for the default branch
-4. Creates `wt-bootstrap/` directory
-5. Runs setup (version file, .giantmem/, .claude/)
+After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions exist:
 
-After init, populate `wt-bootstrap/` with files you want copied to every new worktree (.env, CLAUDE.md, docker-compose.override.yml, etc.).
+| Command | What |
+|---------|------|
+| `{prefix} <branch>` | switch to worktree, or create if missing |
+| `{prefix}l` | list worktrees |
+| `{prefix}b` | list branches |
+| `{prefix}s` | status across worktrees |
+| `{prefix}a <branch>` | add worktree explicitly |
+| `{prefix}r <branch>` | remove worktree (backs up `.giantmem/` to `~/giantmem_archive/`) |
+| `{prefix}rn <old> <new>` | rename worktree |
+| `{prefix}p` / `{prefix}pr` | pull / pull --rebase |
+| `{prefix}f` | fetch |
+| `{prefix}c <src> <dst>` | copy bootstrap files between worktrees |
+| `{prefix}prune` | git worktree prune |
+| `{prefix}repair` | git worktree repair |
+| `{prefix}sl` / `{prefix}sb` / `{prefix}so` | workspace archive list / backup / open |
+| `{prefix}_init <src>` | bare clone init (no-op if `.bare` exists) |
 
-## Commands
+Workspace aliases (when `WS_BASE` set in config): `{ws}`, `{ws}tree`, `{ws}sync`, `{ws}discover`, `{ws}complete`.
 
-All commands use your chosen prefix. Examples below use `edgewt`.
+`wt_projects` lists all registered prefixes with their base dirs and archive names.
 
-| Command | Description |
-|---------|-------------|
-| `edgewt_init <source>` | Initialize bare repo from local path or URL |
-| `edgewt [branch]` | Switch to worktree, create if missing |
-| `edgewt` | Toggle to last visited worktree |
-| `edgewtl` | List all worktrees with status |
-| `edgewtb` | List local and remote branches |
-| `edgewta <branch> [base]` | Add worktree explicitly |
-| `edgewtr <branch>` | Remove worktree (backs up .giantmem/) |
-| `edgewts` | Current worktree status |
-| `edgewtp` | Pull (fast-forward only) |
-| `edgewtpr [branch]` | Pull with rebase |
-| `edgewtf` | Fetch all remotes |
-| `edgewtc <target> [source]` | Copy bootstrap files between worktrees |
-| `edgewtprune` | Prune stale worktree references |
-| `edgewtrepair` | Repair worktrees after directory moves |
+## Install
 
-### Workspace Backup Commands
+1. Clone this repo (or pin its path via `$GIANT_TOOLING_DIR`).
+2. Source `git-worktrees/worktree-core.sh` from your shell rc. After this `wt_init`, `wt_adopt`, and `wt_projects` are available globally.
+3. Source any `wt-{name}.sh` configs you have, or set up auto-loading from a dir of your choice.
 
-Workspace directories are automatically backed up when removing worktrees.
-
-| Command | Description |
-|---------|-------------|
-| `edgewtbs` | Backup current worktree's .giantmem/ |
-| `edgewtsb [branch]` | Backup any worktree's .giantmem/ |
-| `edgewtsl` | List all workspace backups |
-| `edgewtso <branch>` | Open/cd to workspace backup |
-
-Backups go to `~/giantmem_archive/{archive_name}/{timestamp}/` with a `latest` symlink.
-
-### Workspace Commands
-
-| Command | Description |
-|---------|-------------|
-| `edges` | Workspace status (uses WS_BASE alias) |
-| `edgestree` | Workspace tree |
-| `edgesdiscover` | Record discoveries |
-| `edgescomplete` | Mark workspace complete |
-| `edgessync` | Sync workspace |
-
-## Utility Commands
-
-| Command | Description |
-|---------|-------------|
-| `wt_init` | Set up worktree management for a new project |
-| `wt_projects` | List all registered worktree projects |
-
-## Workflow Examples
-
-### Starting a New Feature
-```bash
-edgewt feature-auth      # creates worktree, sets up environment
-# work on feature...
-git add . && git commit -m "add auth"
-git push
-```
-
-### Quick Context Switch
-```bash
-edgewt main              # switch to main
-git pull
-edgewt                   # back to previous branch
-```
-
-### Review a PR
-```bash
-edgewtf                  # fetch latest
-edgewt pr-123            # checkout PR branch
-# review code...
-edgewtr pr-123           # clean up when done (.giantmem backed up)
-```
-
-## Directory Structure
-
-```
-~/dev/lua/edgerouter-wt/
-├── .bare/              # bare git repo (shared)
-├── .last-branch        # tracks last visited branch
-├── wt-bootstrap/       # files copied to new worktrees
-│   ├── .env
-│   ├── CLAUDE.md
-│   └── ...
-├── master/             # worktree: master branch
-│   └── .giantmem/      # workspace (created by setup)
-├── feature-auth/       # worktree: feature branch
-└── bugfix-123/         # worktree: bugfix branch
-```
-
-## Current Projects
-
-Run `wt_projects` to see all registered worktree projects.
-
-## Architecture
-
-```
-~/dotfiles/shell/scripts/worktrees/
-  worktree-core.sh          # shared library (~750 lines)
-  wt-customcheckout.sh      # cwt config (~20 lines)
-  wt-frontend.sh            # fewt config (~20 lines)
-  wt-merchantanalytics.sh   # mwt config (~30 lines)
-```
-
-Per-project config files set variables (`CWT_BASE`, `CWT_STACK`, etc.) and call `wt_register <prefix>` which creates all the shell functions via eval. Config is read at runtime via bash indirect expansion.
-
-### Stack Support
-
-| Stack | Version File | Package Hint | Notes |
-|-------|-------------|-------------|-------|
-| `python` | `.python-version` | Poetry shell | Full support |
-| `node` | `.nvmrc` | pnpm install | Full support |
-| `lua` | - | - | No version file or hint defaults |
-| `bash` | - | - | No version file or hint defaults |
-| `other` | - | - | No version file or hint defaults |
-
-Lua, bash, and other stacks get the same core worktree management. Stack-specific setup (version managers, dependency hints) can be added to the `_post_setup` hook in the config file.
-
-## Troubleshooting
-
-**"Cannot access bare repository"**
-```bash
-cd ~/dev/myapp-wt/.bare && git status
-```
-
-**"Branch already checked out"**
-```bash
-edgewtl  # see which worktree has it
-```
-
-**Commands not found**
-```bash
-source ~/.bashrc  # reload shell config
-```
-
-**Worktrees broken after moving directory**
-```bash
-edgewtrepair  # re-links orphaned worktrees
-```
-
-## Related Files
-
-- `worktree-core.sh` - shared library (in `~/dotfiles/shell/scripts/worktrees/`)
-- `../workspace/workspace-lib.sh` - workspace functions (.giantmem/, session tracking)
+Configs source `worktree-core.sh` via `${BASH_SOURCE[0]%/*}/worktree-core.sh`, so keep them beside core.sh or symlink core.sh into your config dir. The symlink trick lets you keep configs in private dotfiles while pulling core from this repo: `ln -s /path/to/giant-tooling/git-worktrees/worktree-core.sh ~/dotfiles/worktrees/worktree-core.sh`. When the wizard runs through that symlink, `${BASH_SOURCE[0]}` resolves to the symlink path, so new configs land in the dotfiles dir, not in this repo.

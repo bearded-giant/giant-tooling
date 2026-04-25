@@ -1,4 +1,10 @@
 .DS_Store
-scratch/
+.giantmem/
 *.pyc
 __pycache__/
+
+# AI assistant guidance — CLAUDE.md is globally ignored in user setups,
+# but this repo ships it for project context. AGENTS.md symlinks to it
+# for cross-tool support (Cursor, Aider, etc.).
+!CLAUDE.md
+!AGENTS.md

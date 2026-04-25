@@ -4,6 +4,20 @@ Workspace, worktree, and giantmem-archive management tooling for Claude Code dev
 
 These tools were extracted from a private utility repo where they evolved over months of daily use. The commit history starts fresh here, but the code is battle-tested.
 
+## Philosophy
+
+This repo is opinionated and bespoke -- it codifies a specific way of working with Claude Code, not a general-purpose toolkit. Reading the code straight through is the fastest way to understand it. A few load-bearing choices shape everything else:
+
+Each project gets its own `.giantmem/` workspace dir. Plans, research, feature specs, session history, and discoveries live there alongside the code. Claude Code reads it on session start and writes back on session end via hooks. Nothing about your work lives in the chat transcript -- it lives in files you can grep, diff, and version. When a session ends or context compacts, the next session picks up exactly where the last one left off.
+
+Worktrees are throwaway. Spin one up per feature, branch, or experiment. Kill it when done. `.giantmem/` archives to `~/giantmem_archive/` on removal so context is never lost. A bare repo with sibling worktrees keeps git data in one fixed spot, and per-project prefix functions (`{prefix}`, `{prefix}l`, etc.) replace muscle-heavy git invocations with two-key moves.
+
+The archive is searchable. Every removed worktree's `.giantmem/` lands in `~/giantmem_archive/` and gets indexed into a SQLite FTS5 database. Past plans, research, and discoveries stay queryable across all projects forever, with temporal decay so newer hits rank higher.
+
+Bash and Python only, stdlib only. Hooks never crash -- exceptions are silently caught so a broken hook never breaks a session. Shell scripts use `set -euo pipefail`. Comments are lowercase. No external Python packages, no bundlers, no daemons. If something breaks, the call graph is small and the fix is usually obvious.
+
+The whole thing is meant to be forked, edited, and tweaked to your own bespoke workflow. The defaults reflect one author's working style; your mileage will vary. Read the subsystem READMEs (linked below) for the actual command reference and setup walkthroughs.
+
 ## What's in here
 
 ### workspace/
@@ -18,11 +32,11 @@ See [workspace/README.md](workspace/README.md) for shell and Claude commands, di
 
 ### git-worktrees/
 
-Interactive wizard (`worktree-helper-generator.sh`) that generates a self-contained bash script for managing git worktrees in a specific project. You run the wizard once per project, answer prompts (project name, command prefix, stack type, etc.), and it outputs a config file that creates shell functions like `{prefix}` (switch/create worktree), `{prefix}l` (list), `{prefix}r` (remove with .giantmem backup), and a dozen more.
+Shared library (`worktree-core.sh`) plus per-project config files (`wt-{name}.sh`) for managing git worktrees. You source `worktree-core.sh` once, then run `wt_init` to scaffold a new project config or `wt_adopt` to convert an existing repo into the bare-plus-worktree layout in place. Each project gets prefix-style shell functions: `{prefix}` (switch/create worktree), `{prefix}l` (list), `{prefix}r` (remove with `.giantmem/` backup), and a dozen more.
 
-Generated scripts use a bare repo layout (`.bare/` alongside worktree directories), auto-bootstrap `.giantmem/` in new worktrees, back up .giantmem/ to `~/giantmem_archive/` on worktree removal, and handle stack-specific setup for python/node/go/rust/ruby.
+The bare repo lives at `{base}/.bare` with worktrees as siblings. New worktrees auto-bootstrap `.giantmem/`, removed ones back up `.giantmem/` to `~/giantmem_archive/`. Stack-specific setup for python/node/lua/bash.
 
-See [git-worktrees/README.md](git-worktrees/README.md) for the full command reference, setup walkthrough, and directory layout. Architecture details in [git-worktrees/docs/](git-worktrees/docs/).
+See [git-worktrees/README.md](git-worktrees/README.md) for the full command reference, the `wt_init` and `wt_adopt` flows, and directory layout.
 
 ### giantmem-archive/
 

@@ -1,5 +1,7 @@
 #!/bin/bash
-# list-features - show feature status table from .giantmem/features/
+# list-features - show feature status table from features.json cache
+# read-only: never mutates spec.md, meta.json, or features.json
+# usage: list-features [--dir <path>]
 
 set -euo pipefail
 
@@ -27,7 +29,6 @@ done
 if [ -z "$features_dir" ]; then
   features_dir="$(pwd)/.giantmem/features"
 else
-  # append .giantmem/features if the path doesn't already end with it
   case "$features_dir" in
     */.giantmem/features) ;;
     */.giantmem/features/) ;;
@@ -40,44 +41,52 @@ if [ ! -d "$features_dir" ]; then
   return 1 2>/dev/null || exit 1
 fi
 
-# collect feature data: date, status, branch, name
-data=""
-for dir in "$features_dir"/*/; do
-  [ -d "$dir" ] || continue
-  name=$(basename "$dir")
-  [ "$name" = "_index.md" ] && continue
+cache="$features_dir/features.json"
 
-  spec="$dir/spec.md"
-  meta="$dir/meta.json"
+if [ ! -f "$cache" ]; then
+  echo "no features.json cache at: $cache" >&2
+  echo "run a feature command to initialize the cache" >&2
+  return 1 2>/dev/null || exit 1
+fi
 
-  if [ -f "$spec" ]; then
-    status=$(grep -m1 '^status:' "$spec" | awk '{print $2}' || echo "unknown")
-    modified=$(stat -f '%Sm' -t '%Y-%m-%d' "$spec" 2>/dev/null || stat -c '%Y' "$spec" 2>/dev/null | head -c10 || echo "unknown")
-  else
-    status="unknown"
-    modified="n/a"
-  fi
+# parse cache into tab-separated rows: last_session\tstatus\tbranch\tname
+# supports shapes:
+#   {"features": [{"name": "x", ...}, ...]}
+#   {"x": {...}, "y": {...}}
+#   [{"name": "x", ...}, ...]
+data=$(python3 -c "
+import json, sys
 
-  # read branch from meta.json first, fall back to facts.md
-  branch=""
-  if [ -f "$meta" ]; then
-    branch=$(grep -o '"branch"[[:space:]]*:[[:space:]]*"[^"]*"' "$meta" 2>/dev/null | head -1 | sed 's/.*"branch"[[:space:]]*:[[:space:]]*"//;s/"//' || true)
-  fi
-  if [ -z "$branch" ] && [ -f "$dir/facts.md" ]; then
-    branch=$(grep -m1 '^branch:' "$dir/facts.md" 2>/dev/null | awk '{print $2}' || true)
-  fi
-  [ -z "$branch" ] && branch="-"
+with open('$cache') as f:
+    raw = json.load(f)
 
-  data+="${modified}\t${status}\t${branch}\t${name}\n"
-done
+if isinstance(raw, dict) and 'features' in raw and isinstance(raw['features'], list):
+    items = [(feat.get('name', '?'), feat) for feat in raw['features']]
+elif isinstance(raw, dict):
+    items = list(raw.items())
+elif isinstance(raw, list):
+    items = [(feat.get('name', '?'), feat) for feat in raw]
+else:
+    sys.exit(0)
+
+if not items:
+    sys.exit(0)
+
+rows = []
+for name, feat in items:
+    status = feat.get('status', 'unknown')
+    branch = feat.get('branch', '') or '-'
+    last = feat.get('last_session', feat.get('completed', feat.get('created', 'n/a')))
+    rows.append((last, status, branch, name))
+rows.sort(key=lambda r: r[0], reverse=True)
+for r in rows:
+    print('\t'.join(r))
+")
 
 if [ -z "$data" ]; then
   echo "no features found in $features_dir"
   return 0 2>/dev/null || exit 0
 fi
-
-# sort by date descending, then render table
-sorted=$(echo -e "$data" | sort -rn)
 
 # calculate column widths
 max_name=7 max_status=6 max_branch=6
@@ -85,14 +94,13 @@ while IFS=$'\t' read -r _ status branch name; do
   (( ${#name} > max_name )) && max_name=${#name}
   (( ${#status} > max_status )) && max_status=${#status}
   (( ${#branch} > max_branch )) && max_branch=${#branch}
-done <<< "$sorted"
+done <<< "$data"
 
 nw=$((max_name + 2))
 sw=$((max_status + 2))
 bw=$((max_branch + 2))
 dw=15
 
-# box drawing
 h_line() {
   local c="$1" m="$2" r="$3"
   printf "%s" "$c"
@@ -115,4 +123,4 @@ h_line '+' '+' '+'
 while IFS=$'\t' read -r date status branch name; do
   printf "|"; pad "$name" "$nw"; printf "|"; pad "$status" "$sw"; printf "|"; pad "$branch" "$bw"; printf "|"; pad "$date" "$dw"; printf "|\n"
   h_line '+' '+' '+'
-done <<< "$sorted"
+done <<< "$data"
