@@ -13,7 +13,7 @@ Build order: Tier 1 top-to-bottom, then Tier 2, then Tier 3 as appetite allows. 
 | 3 | sessions list/show/find/resume + cwd backfill | ✓ |
 | 4 | `archive`, `worktree`, `workspace` consolidation | ✓ |
 | 5 | port Python ingester, MCP server, delete giantmem-archive dir | ✓ |
-| 6 | Tier 1 below | pending |
+| 6 | Tier 1 (doctor, MCP tools, prime, cd) | ✓ |
 | 7 | Tier 2 | pending |
 | 8 | Tier 3 | pending |
 

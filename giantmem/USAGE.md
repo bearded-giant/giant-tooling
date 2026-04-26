@@ -125,11 +125,52 @@ You should rarely need this; the live indexing hook handles ongoing writes and t
 | `giantmem ingest --sessions-only` | re-ingest Claude session JSONLs only |
 | `giantmem ingest --force` | force full session re-ingest, ignoring mtime |
 
-## MCP server
+## Health audit
+
+`giantmem doctor` walks the system and reports issues across worktrees, workspaces, archives, hooks, and DBs.
 
 | Command | What it does |
 |---------|--------------|
-| `giantmem mcp serve` | run as an MCP stdio server. Wired into `~/.claude/settings.json` as the `giantmem-search` MCP. Exposes one tool: `search_archive(query, project?, source_type?, topic?, limit?)`. |
+| `giantmem doctor` | full audit grouped by severity (errors, warnings, info). Non-zero exit if any error. |
+| `giantmem doctor --json` | machine-readable findings + summary |
+| `giantmem doctor --root PATH` | scan additional roots (default `~/dev`) |
+| `giantmem doctor --stale-days 14` | adjust staleness threshold |
+
+Categories detected: orphan worktrees, orphan `.giantmem/` dirs, broken `latest` symlinks, archives.db drift (project on disk but not indexed), stale workspaces, missing `live_index.py` hook entry, missing or stale `giantmem-search` MCP entry, DB integrity errors.
+
+## SessionStart prime
+
+Claude is auto-primed with workspace context on every session start. `~/.claude/hooks/session_prime.py` calls `giantmem prime --json` for the project dir and injects a `<system-reminder>` containing: active feature, recent live writes, recent sessions, history tail. Visible to Claude only.
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem prime` | preview the primer in plain text |
+| `giantmem prime --json` | JSON form (used by the hook) |
+| `giantmem prime <path>` | prime for a path other than `cwd` |
+
+## Fuzzy worktree jump
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem cd <pattern>` | print best-match worktree path |
+| `gj <pattern>` | shell wrapper that cd's to the printed path (defined by `giantmem worktree shell-init`) |
+| `giantmem cd --refresh` | rebuild the worktree cache (`~/.cache/giantmem/worktrees.json`, auto-rebuilt every 6h) |
+| `giantmem cd --no-fzf` | print all matches instead of opening fzf |
+
+Match priority: exact basename, project, branch, then substring of `project/branch`, branch, project, basename in that order.
+
+## MCP server
+
+`giantmem mcp serve` is the stdio MCP server wired into `~/.claude/settings.json` as `giantmem-search`. Exposes six tools so Claude can self-discover state:
+
+| Tool | What it returns |
+|------|-----------------|
+| `search_archive(query, project?, source_type?, topic?, limit?)` | FTS5 search across archives + sessions |
+| `list_sessions(project?, limit?)` | recent Claude sessions ordered newest first |
+| `get_session_summary(id_prefix)` | metadata for one session: project, cwd, topic, ts, jsonl path |
+| `recent_writes(project?, since?, limit?)` | live workspace writes within a window (`24h`, `7d`, ...) |
+| `feature_status(project?)` | features.json contents grouped by project |
+| `workspace_tree(project?, worktree_path?)` | dir-type/feature counts; from disk if `worktree_path` given |
 
 ## Live indexing hook
 

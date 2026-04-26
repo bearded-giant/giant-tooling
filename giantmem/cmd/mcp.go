@@ -51,8 +51,68 @@ Supports FTS5 syntax: AND, OR, NOT, "phrases", prefix*. Filter by project, sourc
 			),
 		)
 		s.AddTool(tool, mcp.NewTypedToolHandler(searchHandler))
+		registerExtraTools(s)
 		return server.ServeStdio(s)
 	},
+}
+
+func registerExtraTools(s *server.MCPServer) {
+	// list_sessions
+	s.AddTool(
+		mcp.NewTool("list_sessions",
+			mcp.WithDescription("List recent Claude sessions, ordered newest first."),
+			mcp.WithString("project",
+				mcp.Description(`filter by project (LIKE match: "chat-orchestrator" matches "dev/ai/chat-orchestrator")`)),
+			mcp.WithNumber("limit",
+				mcp.Description("max rows (default 20)"),
+				mcp.Min(1), mcp.Max(200)),
+		),
+		mcp.NewTypedToolHandler(listSessionsHandler),
+	)
+	// get_session_summary
+	s.AddTool(
+		mcp.NewTool("get_session_summary",
+			mcp.WithDescription("Return metadata for a session by id-prefix: project, cwd, topic, timestamp, jsonl path."),
+			mcp.WithString("id_prefix",
+				mcp.Required(),
+				mcp.Description("session id or any unique prefix (e.g. 40503b40)")),
+		),
+		mcp.NewTypedToolHandler(getSessionSummaryHandler),
+	)
+	// recent_writes
+	s.AddTool(
+		mcp.NewTool("recent_writes",
+			mcp.WithDescription("List recent live workspace writes (.giantmem/*.md indexed by the PostToolUse hook)."),
+			mcp.WithString("project",
+				mcp.Description("filter by project (LIKE)")),
+			mcp.WithString("since",
+				mcp.Description(`time window like "24h", "7d", "30m" (default 24h)`)),
+			mcp.WithNumber("limit",
+				mcp.Description("max rows (default 30)"),
+				mcp.Min(1), mcp.Max(200)),
+		),
+		mcp.NewTypedToolHandler(recentWritesHandler),
+	)
+	// feature_status
+	s.AddTool(
+		mcp.NewTool("feature_status",
+			mcp.WithDescription("Return features.json status across active workspaces. Filter by project."),
+			mcp.WithString("project",
+				mcp.Description("filter by project (LIKE)")),
+		),
+		mcp.NewTypedToolHandler(featureStatusHandler),
+	)
+	// workspace_tree
+	s.AddTool(
+		mcp.NewTool("workspace_tree",
+			mcp.WithDescription("Show .giantmem/ subdir layout and file counts per dir_type. Defaults to live_docs aggregate; with worktree_path returns on-disk counts."),
+			mcp.WithString("project",
+				mcp.Description("filter by project (LIKE)")),
+			mcp.WithString("worktree_path",
+				mcp.Description("if set, walk that worktree's .giantmem/ on disk")),
+		),
+		mcp.NewTypedToolHandler(workspaceTreeHandler),
+	)
 }
 
 type searchArgs struct {

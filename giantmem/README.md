@@ -38,7 +38,11 @@ make install                  # builds and copies to ~/.local/bin/giantmem
 - `giantmem archive run|list|open|dedup|stale` — move `.giantmem/` into the archive tree, list, find dormant workspaces.
 - `giantmem worktree list|remove|init|adopt|projects|status|branches|prune|repair|shell-init` — setup wizards plus native git ops; `remove` autoarchives the workspace.
 - `giantmem workspace status|init|migrate|tree|note|discover|complete|sync|features|gitlog|bootstrap` — workspace lifecycle.
-- Live indexing hook: `~/.claude/hooks/live_index.py` (PostToolUse, matcher `Write|Edit|MultiEdit`). Filters `.giantmem/**/*.md`, upserts into `live.db`.
+- `giantmem doctor` — health audit across worktrees, workspaces, archives, hooks, DBs.
+- `giantmem prime` — workspace context primer (used by SessionStart hook).
+- `giantmem cd <pattern>` — fuzzy-jump to any worktree under `~/dev` (pair with `gj` shell wrapper).
+- `giantmem mcp serve` — six MCP tools so Claude can self-discover state: `search_archive`, `list_sessions`, `get_session_summary`, `recent_writes`, `feature_status`, `workspace_tree`.
+- Hooks: `~/.claude/hooks/live_index.py` (PostToolUse → live.db) and `~/.claude/hooks/session_prime.py` (SessionStart → context primer).
 
 See [USAGE.md](USAGE.md) for the daily-driver cheat sheet.
 
