@@ -89,7 +89,7 @@ giantmem worktree remove <path>             # autoarchive then git worktree remo
 |------|-------------|
 | `-p, --project` | filter by project (LIKE) |
 | `-t, --type` | filter by dir_type (plans, research, reviews, history, ...) |
-| `-s, --source` | filter by source_type (workspace, session, domain) |
+| `-s, --source` | archives.db source_type filter: `workspace` (markdown from archived `.giantmem/`), `session` (Claude JSONL transcripts), `domain` (domain JSONs). For live workspaces use `--live`. |
 | `-f, --feature` | filter by feature (live.db) |
 | `-l, --latest` | only latest archive per project |
 | `-n, --limit` | max results (default 20) |
@@ -98,8 +98,10 @@ giantmem worktree remove <path>             # autoarchive then git worktree remo
 | `--full` | include matching content snippet |
 | `--paths` | print absolute paths only |
 | `--json` | JSON output |
-| `-i, --interactive` | fzf picker over per-match line snippets (rg-expanded); preview decodes `.jsonl` via jq, otherwise bat with `--highlight-line` |
-| `-o, --open` | with `-i`: open selection in `$EDITOR` at the matched line (`+N` for vi/vim/nvim/nano/emacs, `-g path:N` for code/cursor) |
+| (default) | interactive fzf picker over per-match line snippets (rg-expanded); preview decodes `.jsonl` via jq, otherwise bat with `--highlight-line`. Auto-disabled when stdout isn't a TTY or when `--json`/`--paths` is set. |
+| `-i, --no-interactive` | force script mode (plain text output) even on a TTY |
+| `--tool` | session-only filter: keep matches on lines where Claude used these tool names (`Write`, `Edit`, `Read`, `Bash`, `Grep`, ...). Repeat or comma-separate. Triggers per-line expansion in script mode too. |
+| `-o, --open` | open selection in `$EDITOR` at the matched line (`+N` for vi/vim/nvim/nano/emacs, `-g path:N` for code/cursor); ignored in script mode |
 | `--archive-base` | override archive root (env: `GIANTMEM_ARCHIVE_BASE`) |
 
 ## Config

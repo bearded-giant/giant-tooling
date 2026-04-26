@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -21,22 +23,23 @@ import (
 )
 
 var (
-	findProject     string
-	findDirType     string
-	findSourceType  string
-	findFeature     string
-	findLatest      bool
-	findLimit       int
-	findJSON        bool
-	findPaths       bool
-	findFull        bool
-	findLiveOnly    bool
-	findArchOnly    bool
-	findSince       string
-	findUntil       string
-	findInteractive bool
-	findOpenEditor  bool
-	findNoDaemon    bool
+	findProject       string
+	findDirType       string
+	findSourceType    string
+	findFeature       string
+	findLatest        bool
+	findLimit         int
+	findJSON          bool
+	findPaths         bool
+	findFull          bool
+	findLiveOnly      bool
+	findArchOnly      bool
+	findSince         string
+	findUntil         string
+	findNoInteractive bool
+	findOpenEditor    bool
+	findNoDaemon      bool
+	findTools         []string
 )
 
 var findCmd = &cobra.Command{
@@ -55,7 +58,7 @@ opens the DBs directly. Pass --no-daemon to force direct mode.`,
 func init() {
 	findCmd.Flags().StringVarP(&findProject, "project", "p", "", "filter by project (LIKE)")
 	findCmd.Flags().StringVarP(&findDirType, "type", "t", "", "filter by dir_type")
-	findCmd.Flags().StringVarP(&findSourceType, "source", "s", "", "filter by source_type (workspace|session|domain|live)")
+	findCmd.Flags().StringVarP(&findSourceType, "source", "s", "", "archives.db source_type filter: workspace | session | domain (use --live to scope to live workspaces)")
 	findCmd.Flags().StringVarP(&findFeature, "feature", "f", "", "filter by feature name (live.db)")
 	findCmd.Flags().BoolVarP(&findLatest, "latest", "l", false, "archive: only latest per project")
 	findCmd.Flags().IntVarP(&findLimit, "limit", "n", 20, "max results")
@@ -66,9 +69,11 @@ func init() {
 	findCmd.Flags().BoolVar(&findArchOnly, "archive", false, "search only archives.db")
 	findCmd.Flags().StringVar(&findSince, "since", "", `only docs newer than (e.g. "7d", "2h", RFC3339)`)
 	findCmd.Flags().StringVar(&findUntil, "until", "", `only docs older than (e.g. "1d", RFC3339)`)
-	findCmd.Flags().BoolVarP(&findInteractive, "interactive", "i", false, "fzf picker over per-match line snippets; on select prints path:line or opens with -o")
-	findCmd.Flags().BoolVarP(&findOpenEditor, "open", "o", false, "with -i: open selected hit in $EDITOR at matched line (default: print path:line)")
+	findCmd.Flags().BoolVarP(&findNoInteractive, "no-interactive", "i", false, "disable fzf picker (script mode); auto-disabled when stdout is not a TTY or when --json/--paths is set")
+	findCmd.Flags().BoolVarP(&findOpenEditor, "open", "o", false, "in interactive mode: open selected hit in $EDITOR at matched line (default: print path:line)")
 	findCmd.Flags().BoolVar(&findNoDaemon, "no-daemon", false, "skip giantmemd; open DBs directly")
+	findCmd.Flags().StringSliceVar(&findTools, "tool", nil, "session filter: only keep matches on lines where Claude used these tool names (e.g. --tool Write,Edit). Case-insensitive. Repeat or comma-separate.")
+	findCmd.AddCommand(findPreviewCmd)
 }
 
 func runFind(cmd *cobra.Command, args []string) error {
@@ -98,19 +103,77 @@ func runFind(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	interactive := shouldRunInteractive()
 	switch {
-	case findInteractive:
-		return interactivePick(hits, query, findOpenEditor)
 	case findJSON:
 		return output.JSON(hits)
 	case findPaths:
 		for _, h := range hits {
 			fmt.Println(h.Filepath)
 		}
+	case interactive || len(findTools) > 0:
+		return runMatchPipeline(hits, query, findOpenEditor, interactive)
 	default:
 		printHits(hits, findFull)
 	}
 	return nil
+}
+
+// runMatchPipeline expands file-level hits to per-line matches via ripgrep,
+// applies the --tool filter, then either drops into fzf (interactive TTY) or
+// emits plain `path:line  display` rows (script mode). Falls back to the
+// file-level picker / printer when match expansion finds nothing.
+func runMatchPipeline(hits []search.Hit, query string, openEditor, interactive bool) error {
+	if interactive {
+		if _, err := exec.LookPath("fzf"); err != nil {
+			return fmt.Errorf("fzf not found in PATH (brew install fzf)")
+		}
+	}
+
+	rows, err := expandHitsToMatches(hits, query)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "match expansion unavailable: %v\n", err)
+		if interactive {
+			return fzfPickFiles(hits, query, openEditor)
+		}
+		printHits(hits, findFull)
+		return nil
+	}
+
+	if len(rows) == 0 {
+		if len(findTools) > 0 {
+			fmt.Fprintln(os.Stderr, "no matches survived --tool filter")
+			return nil
+		}
+		if interactive {
+			return fzfPickFiles(hits, query, openEditor)
+		}
+		printHits(hits, findFull)
+		return nil
+	}
+
+	if interactive {
+		return fzfPickMatches(rows, query, openEditor)
+	}
+	for _, r := range rows {
+		fmt.Printf("%s:%d  %s\n", r.Hit.Filepath, r.Line, r.Display)
+	}
+	return nil
+}
+
+// shouldRunInteractive decides whether the fzf picker should fire. Interactive
+// is the default whenever stdout is a real TTY, but explicit --no-interactive
+// or non-TTY stdout (pipe, file redirect) flips us to plain text output for
+// scripting. --json and --paths short-circuit ahead of this check in runFind.
+func shouldRunInteractive() bool {
+	if findNoInteractive {
+		return false
+	}
+	fi, err := os.Stdout.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
 }
 
 // dispatchFind tries the daemon first (when reachable) and falls back to a
@@ -166,28 +229,15 @@ func findDirect(p search.Params) ([]search.Hit, error) {
 }
 
 // matchRow is a per-line match found by ripgrep inside a hit's file.
+// Display is the human-readable text shown in fzf's list column. For .jsonl
+// session transcripts it's the decoded role + content/tool summary; for
+// other files it's the raw matched line. Tools is the set of tool_use names
+// referenced on this line (only populated for .jsonl), used by --tool filter.
 type matchRow struct {
-	Hit  search.Hit
-	Line int
-	Text string
-}
-
-// interactivePick expands hits to per-match line rows via ripgrep and feeds
-// them into fzf with a line-aware preview. Falls back to file-level picker
-// when ripgrep finds no literal matches (e.g. FTS5 stemming, prefix matches).
-func interactivePick(hits []search.Hit, query string, openEditor bool) error {
-	if _, err := exec.LookPath("fzf"); err != nil {
-		return fmt.Errorf("fzf not found in PATH (brew install fzf)")
-	}
-
-	rows, rgErr := expandHitsToMatches(hits, query)
-	if rgErr == nil && len(rows) > 0 {
-		return fzfPickMatches(rows, query, openEditor)
-	}
-	if rgErr != nil {
-		fmt.Fprintf(os.Stderr, "match expansion unavailable, falling back to file-level picker: %v\n", rgErr)
-	}
-	return fzfPickFiles(hits, query, openEditor)
+	Hit     search.Hit
+	Line    int
+	Display string
+	Tools   []string
 }
 
 // expandHitsToMatches runs ripgrep over each hit's filepath and emits one
@@ -243,11 +293,18 @@ func expandHitsToMatches(hits []search.Hit, query string) ([]matchRow, error) {
 }
 
 // runRgOverHits executes rg per unique hit filepath. If `primary` returns no
-// rows for a file and `fallback` is non-nil, it retries with `fallback`.
+// rows for a file and `fallback` is non-nil, it retries with `fallback`. For
+// .jsonl session transcripts, each matched line is decoded so the fzf list
+// shows readable text (role + content + tool calls) instead of raw JSON, and
+// the tool names are captured for the --tool filter.
 func runRgOverHits(rg string, primary []string, hits []search.Hit, fallback []string) []matchRow {
+	wantTools := normalizeToolFilter(findTools)
+
 	collect := func(args []string, h search.Hit) []matchRow {
 		cargs := append(append([]string{}, args...), h.Filepath)
 		out, _ := exec.Command(rg, cargs...).Output()
+		isJSONL := strings.HasSuffix(strings.ToLower(h.Filepath), ".jsonl")
+
 		var rows []matchRow
 		sc := bufio.NewScanner(bytes.NewReader(out))
 		sc.Buffer(make([]byte, 0, 1<<20), 16<<20)
@@ -261,11 +318,24 @@ func runRgOverHits(rg string, primary []string, hits []search.Hit, fallback []st
 			if err != nil {
 				continue
 			}
-			text := strings.TrimSpace(ln[colon+1:])
-			if len(text) > 240 {
-				text = text[:240] + "…"
+			raw := ln[colon+1:]
+
+			row := matchRow{Hit: h, Line: num}
+			if isJSONL {
+				summary, ok := decodeSessionLine([]byte(raw))
+				if ok {
+					row.Tools = summary.Tools
+					row.Display = summary.OneLine()
+				} else {
+					row.Display = truncate(strings.TrimSpace(raw), 240)
+				}
+				if len(wantTools) > 0 && !hasAnyTool(row.Tools, wantTools) {
+					continue
+				}
+			} else {
+				row.Display = truncate(strings.TrimSpace(raw), 240)
 			}
-			rows = append(rows, matchRow{Hit: h, Line: num, Text: text})
+			rows = append(rows, row)
 		}
 		return rows
 	}
@@ -284,6 +354,40 @@ func runRgOverHits(rg string, primary []string, hits []search.Hit, fallback []st
 		rows = append(rows, r...)
 	}
 	return rows
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
+}
+
+func normalizeToolFilter(in []string) map[string]bool {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(in))
+	for _, t := range in {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			continue
+		}
+		out[strings.ToLower(t)] = true
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func hasAnyTool(have []string, want map[string]bool) bool {
+	for _, t := range have {
+		if want[strings.ToLower(t)] {
+			return true
+		}
+	}
+	return false
 }
 
 // unwrapQuotedPhrase returns the literal phrase if the query is wrapped in a
@@ -359,7 +463,7 @@ func fzfPickMatches(rows []matchRow, query string, openEditor bool) error {
 			}
 		}
 		display := fmt.Sprintf("[%6.2f] %-30s %-22s :%-6d  %s",
-			r.Hit.Score, r.Hit.Project+"/"+ts, marker, r.Line, r.Text)
+			r.Hit.Score, r.Hit.Project+"/"+ts, marker, r.Line, truncate(r.Display, 240))
 		input.WriteString(r.Hit.Filepath)
 		input.WriteString("\t")
 		input.WriteString(strconv.Itoa(r.Line))
@@ -464,53 +568,337 @@ func fzfPickFiles(hits []search.Hit, query string, openEditor bool) error {
 	return nil
 }
 
-// matchPreviewScript is the fzf preview command. {1}=path, {2}=line. For
-// .jsonl session transcripts we decode 2 lines around the match through jq
-// (role/type + content text); for everything else we use bat with a window
-// centered on the matched line and the line highlighted.
+// matchPreviewScript is the fzf preview command. {1}=path, {2}=line. We just
+// shell out to the giantmem binary's hidden `find _preview` subcommand which
+// renders cleanly in Go (decodes .jsonl into role + content + tool calls,
+// uses bat for everything else). Falls back to a hand-rolled bash window
+// only if the binary path can't be resolved.
 func matchPreviewScript() string {
-	return `
-file={1}
-line={2}
-ext="${file##*.}"
-if [ "$ext" = "jsonl" ]; then
-  start=$((line - 2)); [ $start -lt 1 ] && start=1
-  end=$((line + 2))
-  if command -v jq >/dev/null 2>&1; then
-    awk -v s=$start -v e=$end 'NR>=s && NR<=e {printf "%d\t%s\n", NR, $0}' "$file" \
-      | while IFS=$'\t' read -r n json; do
-          marker="  "
-          [ "$n" = "$line" ] && marker="▶ "
-          printf "%s── line %s ──\n" "$marker" "$n"
-          printf '%s\n' "$json" | jq -r '
-            def shorten(n): if (tostring | length) > n then (tostring)[0:n] + "…" else tostring end;
-            if (.message.role // null) then "  [\(.message.role)] \((.message.content // "" | tostring | .[0:3000]))"
-            elif (.type // null)        then "  [\(.type)] \(((.content // .summary // .text // "") | tostring | .[0:3000]))"
-            else (. | tostring | .[0:3000]) end
-          ' 2>/dev/null || printf '  %s\n' "$(printf '%s' "$json" | cut -c1-3000)"
-          echo
-        done
-  else
-    awk -v s=$start -v e=$end -v hi=$line 'NR>=s && NR<=e {
-      m = (NR==hi) ? "▶ " : "  "
-      print m "── line " NR " ──"
-      print "  " substr($0, 1, 3000)
-      print ""
-    }' "$file"
-  fi
-else
-  s=$((line - 12)); [ $s -lt 1 ] && s=1
-  e=$((line + 50))
-  if command -v bat >/dev/null 2>&1; then
-    bat --color=always --style=numbers --highlight-line "$line" --line-range "$s:$e" "$file"
-  else
-    awk -v s=$s -v e=$e -v hi=$line 'NR>=s && NR<=e {
-      m = (NR==hi) ? "▶ " : "  "
-      printf "%s%5d  %s\n", m, NR, $0
-    }' "$file"
-  fi
-fi
-`
+	gm, err := os.Executable()
+	if err != nil || gm == "" {
+		gm = "giantmem"
+	}
+	return fmt.Sprintf(`%s find _preview {1} {2} 2>/dev/null`, shellQuote(gm))
+}
+
+func shellQuote(s string) string {
+	if !strings.ContainsAny(s, " \t'\"\\$`") {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// findPreviewCmd is the hidden subcommand fzf calls per row to render the
+// preview pane. Hidden because it's an implementation detail of `-i`.
+var findPreviewCmd = &cobra.Command{
+	Use:    "_preview <path> <line>",
+	Hidden: true,
+	Args:   cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		path := args[0]
+		line, err := strconv.Atoi(args[1])
+		if err != nil {
+			return fmt.Errorf("invalid line %q: %w", args[1], err)
+		}
+		return renderPreview(os.Stdout, path, line)
+	},
+}
+
+// renderPreview writes a focused window of `path` centered on `line` to w.
+// .jsonl files get Go-decoded role/content/tool-call rendering; everything
+// else delegates to bat (color-highlighted) or a plain awk fallback.
+func renderPreview(w io.Writer, path string, line int) error {
+	lower := strings.ToLower(path)
+	if strings.HasSuffix(lower, ".jsonl") {
+		return renderJSONLPreview(w, path, line, 2)
+	}
+	return renderTextPreview(w, path, line, 12, 50)
+}
+
+func renderJSONLPreview(w io.Writer, path string, line, ctx int) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	start := line - ctx
+	if start < 1 {
+		start = 1
+	}
+	end := line + ctx
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 1<<20), 64<<20)
+	n := 0
+	for sc.Scan() {
+		n++
+		if n < start {
+			continue
+		}
+		if n > end {
+			break
+		}
+		marker := "  "
+		if n == line {
+			marker = "▶ "
+		}
+		fmt.Fprintf(w, "%s── line %d ──\n", marker, n)
+		summary, ok := decodeSessionLine(sc.Bytes())
+		if !ok {
+			fmt.Fprintf(w, "  %s\n\n", truncate(sc.Text(), 3000))
+			continue
+		}
+		summary.WriteMultiline(w, "  ", 3000)
+		fmt.Fprintln(w)
+	}
+	return sc.Err()
+}
+
+func renderTextPreview(w io.Writer, path string, line, before, after int) error {
+	if bat, err := exec.LookPath("bat"); err == nil {
+		s := line - before
+		if s < 1 {
+			s = 1
+		}
+		e := line + after
+		c := exec.Command(bat,
+			"--color=always",
+			"--style=numbers",
+			"--highlight-line", strconv.Itoa(line),
+			"--line-range", fmt.Sprintf("%d:%d", s, e),
+			path)
+		c.Stdout = w
+		c.Stderr = w
+		return c.Run()
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	s := line - before
+	if s < 1 {
+		s = 1
+	}
+	e := line + after
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 1<<20), 16<<20)
+	n := 0
+	for sc.Scan() {
+		n++
+		if n < s {
+			continue
+		}
+		if n > e {
+			break
+		}
+		marker := "  "
+		if n == line {
+			marker = "▶ "
+		}
+		fmt.Fprintf(w, "%s%5d  %s\n", marker, n, sc.Text())
+	}
+	return sc.Err()
+}
+
+// sessionLineSummary is the decoded view of a single Claude Code JSONL line.
+type sessionLineSummary struct {
+	Role  string   // assistant | user | system | summary | (blank for unknown)
+	Type  string   // raw .type field (system, summary, user, assistant, attachment, ...)
+	Text  string   // primary readable text (text blocks joined)
+	Tools []string // tool_use names referenced on this line
+	Files []string // file_paths from Write/Edit/Read tool_use
+	Calls []toolCallSummary
+}
+
+type toolCallSummary struct {
+	Name  string
+	Input map[string]any
+}
+
+// OneLine returns a compact, truncated summary suitable for the fzf list
+// column. Format: `[role] text … [Tool file=...] [Tool ...]`.
+func (s sessionLineSummary) OneLine() string {
+	var b strings.Builder
+	tag := s.Role
+	if tag == "" {
+		tag = s.Type
+	}
+	if tag != "" {
+		fmt.Fprintf(&b, "[%s] ", tag)
+	}
+	if s.Text != "" {
+		b.WriteString(strings.ReplaceAll(strings.ReplaceAll(s.Text, "\n", " "), "\t", " "))
+	}
+	for _, c := range s.Calls {
+		fmt.Fprintf(&b, " ⟨%s", c.Name)
+		switch strings.ToLower(c.Name) {
+		case "write", "edit", "read", "multiedit":
+			if fp, _ := c.Input["file_path"].(string); fp != "" {
+				fmt.Fprintf(&b, " %s", fp)
+			}
+		case "bash":
+			if cmd, _ := c.Input["command"].(string); cmd != "" {
+				fmt.Fprintf(&b, " $ %s", cmd)
+			}
+		case "grep":
+			if pat, _ := c.Input["pattern"].(string); pat != "" {
+				fmt.Fprintf(&b, " /%s/", pat)
+			}
+		case "glob":
+			if pat, _ := c.Input["pattern"].(string); pat != "" {
+				fmt.Fprintf(&b, " %s", pat)
+			}
+		}
+		b.WriteString("⟩")
+	}
+	return b.String()
+}
+
+// WriteMultiline emits a richer multi-line rendering for the preview pane.
+// Each tool call gets its own line; Write/Edit blocks include a content
+// excerpt so the user can confirm the file body.
+func (s sessionLineSummary) WriteMultiline(w io.Writer, indent string, maxText int) {
+	tag := s.Role
+	if tag == "" {
+		tag = s.Type
+	}
+	if tag != "" {
+		fmt.Fprintf(w, "%s[%s]\n", indent, tag)
+	}
+	if s.Text != "" {
+		fmt.Fprintf(w, "%s%s\n", indent, truncate(s.Text, maxText))
+	}
+	for _, c := range s.Calls {
+		fmt.Fprintf(w, "%s⟨%s⟩\n", indent, c.Name)
+		switch strings.ToLower(c.Name) {
+		case "write", "edit", "multiedit":
+			if fp, _ := c.Input["file_path"].(string); fp != "" {
+				fmt.Fprintf(w, "%s  file: %s\n", indent, fp)
+			}
+			if content, _ := c.Input["content"].(string); content != "" {
+				fmt.Fprintf(w, "%s  content:\n", indent)
+				writeIndented(w, indent+"    ", truncate(content, maxText))
+			}
+			if ns, _ := c.Input["new_string"].(string); ns != "" {
+				fmt.Fprintf(w, "%s  new_string:\n", indent)
+				writeIndented(w, indent+"    ", truncate(ns, maxText))
+			}
+			if os_, _ := c.Input["old_string"].(string); os_ != "" {
+				fmt.Fprintf(w, "%s  old_string:\n", indent)
+				writeIndented(w, indent+"    ", truncate(os_, maxText/2))
+			}
+		case "read":
+			if fp, _ := c.Input["file_path"].(string); fp != "" {
+				fmt.Fprintf(w, "%s  file: %s\n", indent, fp)
+			}
+		case "bash":
+			if cmd, _ := c.Input["command"].(string); cmd != "" {
+				fmt.Fprintf(w, "%s  $ %s\n", indent, truncate(cmd, maxText))
+			}
+		case "grep", "glob":
+			if pat, _ := c.Input["pattern"].(string); pat != "" {
+				fmt.Fprintf(w, "%s  pattern: %s\n", indent, pat)
+			}
+		default:
+			if data, err := json.Marshal(c.Input); err == nil {
+				fmt.Fprintf(w, "%s  input: %s\n", indent, truncate(string(data), maxText))
+			}
+		}
+	}
+}
+
+func writeIndented(w io.Writer, indent, s string) {
+	for _, line := range strings.Split(s, "\n") {
+		fmt.Fprintf(w, "%s%s\n", indent, line)
+	}
+}
+
+// decodeSessionLine parses a Claude Code JSONL line into a readable summary.
+// Returns (zero, false) if the line is not valid JSON. Best-effort: missing
+// fields are skipped silently because session schemas vary across Claude
+// versions and we'd rather render partial than fail.
+func decodeSessionLine(line []byte) (sessionLineSummary, bool) {
+	var raw struct {
+		Type    string          `json:"type"`
+		Summary string          `json:"summary"`
+		Content json.RawMessage `json:"content"`
+		Message struct {
+			Role    string          `json:"role"`
+			Content json.RawMessage `json:"content"`
+		} `json:"message"`
+		Attachment struct {
+			Type    string `json:"type"`
+			Stdout  string `json:"stdout"`
+			Content string `json:"content"`
+		} `json:"attachment"`
+	}
+	if err := json.Unmarshal(line, &raw); err != nil {
+		return sessionLineSummary{}, false
+	}
+	s := sessionLineSummary{Role: raw.Message.Role, Type: raw.Type}
+
+	// Inline string content (rare).
+	var direct string
+	if err := json.Unmarshal(raw.Message.Content, &direct); err == nil && direct != "" {
+		s.Text = direct
+		return s, true
+	}
+
+	// Block array (typical for assistant + user-with-tool-results).
+	var blocks []map[string]json.RawMessage
+	if err := json.Unmarshal(raw.Message.Content, &blocks); err == nil {
+		var parts []string
+		for _, b := range blocks {
+			var btype string
+			_ = json.Unmarshal(b["type"], &btype)
+			switch btype {
+			case "text":
+				var t string
+				_ = json.Unmarshal(b["text"], &t)
+				if t != "" {
+					parts = append(parts, t)
+				}
+			case "thinking":
+				var t string
+				_ = json.Unmarshal(b["thinking"], &t)
+				if t != "" {
+					parts = append(parts, "(thinking) "+t)
+				}
+			case "tool_use":
+				var name string
+				_ = json.Unmarshal(b["name"], &name)
+				var input map[string]any
+				_ = json.Unmarshal(b["input"], &input)
+				if input == nil {
+					input = map[string]any{}
+				}
+				s.Tools = append(s.Tools, name)
+				s.Calls = append(s.Calls, toolCallSummary{Name: name, Input: input})
+				if fp, _ := input["file_path"].(string); fp != "" {
+					s.Files = append(s.Files, fp)
+				}
+			case "tool_result":
+				var c string
+				if err := json.Unmarshal(b["content"], &c); err == nil && c != "" {
+					parts = append(parts, "(result) "+c)
+				}
+			}
+		}
+		s.Text = strings.Join(parts, " ")
+	}
+
+	// summary lines (compact resume metadata) and attachment hooks.
+	if s.Text == "" && raw.Summary != "" {
+		s.Text = raw.Summary
+	}
+	if s.Text == "" && raw.Attachment.Stdout != "" {
+		s.Text = raw.Attachment.Stdout
+	}
+	if s.Text == "" && raw.Attachment.Content != "" {
+		s.Text = raw.Attachment.Content
+	}
+
+	return s, true
 }
 
 // openInEditor launches $EDITOR at the given line. Uses VS Code's -g

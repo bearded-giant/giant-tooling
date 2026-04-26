@@ -36,10 +36,13 @@ Binary: `~/.local/bin/giantmem`. Source: `~/dev/giant-tooling/giantmem/`.
 | `giantmem find "x" --paths` | print absolute paths only (great for piping) |
 | `giantmem find "x" --json` | JSON output |
 | `giantmem find "x" --paths \| xargs $EDITOR` | open all hits in editor |
+| `giantmem find "x" -s session --tool Write,Edit` | session matches restricted to Claude tool calls of those names |
+| `giantmem find "hub-and-spoke" -s session` | hyphenated / punctuation queries auto-quoted for FTS5 |
+| `giantmem find '"exact phrase here"' -s session` | wrap in double-quotes for literal substring matching |
 
 `dir_type` values: `plans`, `context`, `research`, `reviews`, `filebox`, `history`, `prompts`, `features`, `domains`, `root`.
 
-`source` values: `workspace`, `session`, `domain`, `live`.
+`source` values: `workspace`, `session`, `domain`. (`live` is a separate db — use `--live` flag, not `-s live`.)
 
 ## Sessions: find buried conversations and resume them
 
@@ -199,12 +202,37 @@ Duration units: `s`, `m`, `h`, `d`, `w`. Combinations like `2h30m` work too.
 
 ## Interactive search
 
+Interactive is the **default** when stdout is a TTY. Each match is expanded to a per-line hit via ripgrep, fed into fzf with a context-aware preview pane.
+
 | Flag | Description |
 |------|-------------|
-| `giantmem find <q> -i` | open fzf with bat preview; on select, prints the path |
-| `giantmem find <q> -i -o` | open the selected hit in `$EDITOR` |
+| `giantmem find <q>` | fzf picker over per-match line snippets (default on TTY) |
+| `giantmem find <q> -o` | open selection in `$EDITOR` at the matched line on Enter |
+| `giantmem find <q> -i` | force script mode (plain text), even on a TTY |
+| `giantmem find <q> --tool Write,Edit` | session-only filter — keep only matches on lines where Claude used these tool names |
+| `giantmem find <q> \| ...` | piped → script mode auto-detected (no `-i` needed) |
 
-Soft dependency on `fzf` (required) and `bat` (optional, falls back to `sed`).
+What the panes show:
+
+- **Left (list)**: `[score] project/timestamp source :line  [role] excerpt ⟨ToolName file_or_command⟩` for `.jsonl` session matches; raw line text for everything else.
+- **Right (preview)**: for `.jsonl`, ±2 surrounding lines with role + content + decoded tool calls (Write/Edit show file path + content excerpt; Bash shows the command; Grep/Glob show the pattern). For other files, `bat` with `--highlight-line` and ±12/+50 context.
+- Enter without `-o` → prints `path:line` (pipeable).
+- Enter with `-o` → opens `$EDITOR +N path` (or `code -g path:N` when `$EDITOR` looks like VS Code / Cursor).
+
+External tool deps (all installable via `brew install fzf ripgrep bat jq`):
+
+| Tool | Required for | Fallback |
+|------|--------------|----------|
+| `fzf` | interactive picker | hard requirement (errors out) |
+| `rg` (ripgrep) | per-line match expansion + `--tool` filter | falls back to file-level picker |
+| `bat` | preview for non-jsonl hits | plain awk window with `▶` line marker |
+| `jq` | (legacy fallback only — preview now renders in Go) | no longer required |
+
+Tool filter notes:
+
+- Tool names match Claude Code's tool catalog: `Write`, `Edit`, `MultiEdit`, `Read`, `Bash`, `Grep`, `Glob`, plus any MCP/agent tools. Match is case-insensitive.
+- `--tool` triggers per-line expansion in **script mode** too — output becomes `path:line  [role] excerpt ⟨tool ...⟩` per row, suitable for `xargs`/`awk`.
+- A blank `Edit` ≠ `Write`. Files claude already touched come through as `Edit`. New files come through as `Write`. When unsure, pass both: `--tool Write,Edit`.
 
 ## Live tail
 
