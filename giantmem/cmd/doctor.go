@@ -11,9 +11,13 @@ import (
 )
 
 var (
-	doctorJSON      bool
-	doctorRoots     []string
-	doctorStaleDays int
+	doctorJSON       bool
+	doctorRoots      []string
+	doctorStaleDays  int
+	doctorFix        bool
+	doctorFixCats    []string
+	doctorFixAuto    bool
+	doctorFixDryRun  bool
 )
 
 var doctorCmd = &cobra.Command{
@@ -37,6 +41,41 @@ any error-severity finding.`,
 			StaleDays:   doctorStaleDays,
 		})
 		summary := health.Summarize(findings)
+
+		if doctorFix {
+			cats := map[string]bool{}
+			for _, c := range doctorFixCats {
+				cats[c] = true
+			}
+			results := health.Fix(findings, health.FixOptions{
+				Categories: cats,
+				Auto:       doctorFixAuto,
+				DryRun:     doctorFixDryRun,
+			})
+			if doctorJSON {
+				return output.JSON(map[string]any{
+					"findings": findings,
+					"fix_results": results,
+				})
+			}
+			fmt.Println("\n== FIXES ==")
+			for _, r := range results {
+				prefix := "  ✓"
+				if r.Err != nil {
+					prefix = "  ✗"
+				} else if r.Skipped {
+					prefix = "  ·"
+				}
+				fmt.Printf("%s [%s] %s\n", prefix, r.Category, r.Path)
+				if r.Note != "" {
+					fmt.Printf("       %s\n", r.Note)
+				}
+				if r.Err != nil {
+					fmt.Printf("       err: %v\n", r.Err)
+				}
+			}
+			return nil
+		}
 
 		if doctorJSON {
 			return output.JSON(map[string]any{
@@ -87,5 +126,9 @@ func init() {
 	doctorCmd.Flags().BoolVar(&doctorJSON, "json", false, "JSON output")
 	doctorCmd.Flags().StringSliceVar(&doctorRoots, "root", nil, "roots to scan for orphan workspaces (default ~/dev)")
 	doctorCmd.Flags().IntVar(&doctorStaleDays, "stale-days", 30, "minimum age (days) to mark a workspace stale")
+	doctorCmd.Flags().BoolVar(&doctorFix, "fix", false, "apply fixers for findings instead of just reporting")
+	doctorCmd.Flags().StringSliceVar(&doctorFixCats, "fix-categories", nil, "limit --fix to these categories (e.g. symlink,drift)")
+	doctorCmd.Flags().BoolVar(&doctorFixAuto, "auto", false, "with --fix: skip prompts, archive orphans automatically")
+	doctorCmd.Flags().BoolVar(&doctorFixDryRun, "fix-dry-run", false, "with --fix: show planned actions, change nothing")
 	rootCmd.AddCommand(doctorCmd)
 }

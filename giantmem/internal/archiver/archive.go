@@ -98,6 +98,10 @@ func Run(src, archiveBase, projectOverride string, dryRun, reinit bool) (string,
 		fmt.Fprintf(os.Stderr, "warn: latest symlink: %v\n", err)
 	}
 
+	if err := pruneLiveDocsUnder(abs); err != nil {
+		fmt.Fprintf(os.Stderr, "warn: prune live.db: %v\n", err)
+	}
+
 	IngestProject("", projectName)
 
 	if reinit {
@@ -446,6 +450,38 @@ func reinitWorkspace(dir string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+// pruneLiveDocsUnder removes live_docs rows whose path is under the (now-moved)
+// workspace dir. Triggers cascade FTS row cleanup.
+func pruneLiveDocsUnder(archivedPath string) error {
+	home, _ := os.UserHomeDir()
+	base := os.Getenv("GIANTMEM_ARCHIVE_BASE")
+	if base == "" {
+		base = filepath.Join(home, "giantmem_archive")
+	}
+	livePath := filepath.Join(base, "live.db")
+	if _, err := os.Stat(livePath); err != nil {
+		return nil
+	}
+	d, err := db.Open(livePath)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	worktree := filepath.Dir(archivedPath)
+	res, err := d.Exec(
+		`DELETE FROM live_docs WHERE worktree_path = ? OR path LIKE ?`,
+		worktree, archivedPath+string(filepath.Separator)+"%",
+	)
+	if err != nil {
+		return err
+	}
+	n, _ := res.RowsAffected()
+	if n > 0 {
+		fmt.Fprintf(os.Stderr, "pruned %d live.db rows under %s\n", n, archivedPath)
+	}
+	return nil
 }
 
 // WorkspaceLibPath returns the location of workspace-lib.sh.

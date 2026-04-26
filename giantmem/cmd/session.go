@@ -5,12 +5,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"text/tabwriter"
+	"time"
 
 	"github.com/bryangrimes/gm/internal/db"
 	"github.com/bryangrimes/gm/internal/output"
+	sessionsExport "github.com/bryangrimes/gm/internal/sessions"
 	"github.com/spf13/cobra"
 )
 
@@ -202,8 +205,11 @@ var sessResumeCmd = &cobra.Command{
 	},
 }
 
-// resolveCwd applies fallbacks when the recorded cwd no longer exists:
-// first try <cwd>-wt/main and <cwd>-wt/master (bare-with-worktrees layout).
+// resolveCwd applies fallbacks when the recorded cwd no longer exists.
+//
+// 1. try <cwd>-wt/main, <cwd>-wt/master (legacy bare-with-worktrees layout)
+// 2. fall back to giantmem-cd matcher: feed the cwd basename and pick a unique
+//    worktree (no fzf, --no-fzf single-match only)
 func resolveCwd(cwd string) string {
 	if dirExists(cwd) {
 		return cwd
@@ -213,6 +219,18 @@ func resolveCwd(cwd string) string {
 		if dirExists(alt) {
 			return alt
 		}
+	}
+	// fallback: use the cd matcher with the basename
+	home, _ := os.UserHomeDir()
+	roots := []string{filepath.Join(home, "dev")}
+	pattern := filepath.Base(cwd)
+	entries, err := loadOrBuildCache(home, roots, false)
+	if err != nil {
+		return cwd
+	}
+	matches := matchEntries(entries, pattern)
+	if len(matches) == 1 {
+		return matches[0].Path
 	}
 	return cwd
 }
@@ -274,6 +292,183 @@ func printSessions(hits []sessRow) {
 	w.Flush()
 }
 
+var (
+	sessExportOut   string
+	sessExportTools bool
+	sessDiffJSON    bool
+)
+
+var sessExportCmd = &cobra.Command{
+	Use:   "export <id-prefix>",
+	Short: "Export a session as a clean markdown transcript",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		a, err := db.Open(archiveDBPath())
+		if err != nil {
+			return err
+		}
+		if err := db.EnsureArchive(a); err != nil {
+			a.Close()
+			return err
+		}
+		r, err := lookupSession(a, args[0])
+		a.Close()
+		if err != nil {
+			return err
+		}
+		t, err := sessionsExport.Parse(r.JSONLPath)
+		if err != nil {
+			return fmt.Errorf("parse jsonl: %w", err)
+		}
+		var w *os.File
+		if sessExportOut == "" {
+			w = os.Stdout
+		} else {
+			w, err = os.Create(sessExportOut)
+			if err != nil {
+				return err
+			}
+			defer w.Close()
+		}
+		sessionsExport.Markdown(w, t, sessExportTools)
+		if sessExportOut != "" {
+			fmt.Fprintf(os.Stderr, "wrote %s\n", sessExportOut)
+		}
+		return nil
+	},
+}
+
+var sessDiffCmd = &cobra.Command{
+	Use:   "diff <id-a> <id-b>",
+	Short: "Compare two sessions: file sets, topics, lengths",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		a, err := db.Open(archiveDBPath())
+		if err != nil {
+			return err
+		}
+		if err := db.EnsureArchive(a); err != nil {
+			a.Close()
+			return err
+		}
+		ra, err := lookupSession(a, args[0])
+		if err != nil {
+			a.Close()
+			return err
+		}
+		rb, err := lookupSession(a, args[1])
+		a.Close()
+		if err != nil {
+			return err
+		}
+		ta, err := sessionsExport.Parse(ra.JSONLPath)
+		if err != nil {
+			return err
+		}
+		tb, err := sessionsExport.Parse(rb.JSONLPath)
+		if err != nil {
+			return err
+		}
+		report := buildSessionDiff(ra, rb, ta, tb)
+		if sessDiffJSON {
+			return output.JSON(report)
+		}
+		printSessionDiff(report)
+		return nil
+	},
+}
+
+type sessionDiffReport struct {
+	A    diffSide   `json:"a"`
+	B    diffSide   `json:"b"`
+	Only diffShared `json:"only"`
+	Both []string   `json:"shared_files"`
+}
+
+type diffSide struct {
+	ID       string   `json:"id"`
+	Topic    string   `json:"topic"`
+	Project  string   `json:"project"`
+	UserMsgs int      `json:"user_msgs"`
+	AsstMsgs int      `json:"assistant_msgs"`
+	Bash     int      `json:"bash_count"`
+	Files    []string `json:"files,omitempty"`
+	Duration string   `json:"duration,omitempty"`
+}
+
+type diffShared struct {
+	A []string `json:"a_only"`
+	B []string `json:"b_only"`
+}
+
+func buildSessionDiff(ra, rb sessRow, ta, tb *sessionsExport.Transcript) sessionDiffReport {
+	mkSet := func(items []string) map[string]bool {
+		s := map[string]bool{}
+		for _, x := range items {
+			s[x] = true
+		}
+		return s
+	}
+	sa, sb := mkSet(ta.FilesTouched), mkSet(tb.FilesTouched)
+	var aOnly, bOnly, both []string
+	for f := range sa {
+		if sb[f] {
+			both = append(both, f)
+		} else {
+			aOnly = append(aOnly, f)
+		}
+	}
+	for f := range sb {
+		if !sa[f] {
+			bOnly = append(bOnly, f)
+		}
+	}
+	dur := func(t *sessionsExport.Transcript) string {
+		if t.StartedAt.IsZero() || t.EndedAt.IsZero() {
+			return ""
+		}
+		return t.EndedAt.Sub(t.StartedAt).Round(time.Second).String()
+	}
+	return sessionDiffReport{
+		A: diffSide{
+			ID: ra.ID, Topic: ra.Topic, Project: ra.Project,
+			UserMsgs: ta.UserMsgs, AsstMsgs: ta.AssistantMsgs, Bash: ta.BashCount,
+			Files: ta.FilesTouched, Duration: dur(ta),
+		},
+		B: diffSide{
+			ID: rb.ID, Topic: rb.Topic, Project: rb.Project,
+			UserMsgs: tb.UserMsgs, AsstMsgs: tb.AssistantMsgs, Bash: tb.BashCount,
+			Files: tb.FilesTouched, Duration: dur(tb),
+		},
+		Only: diffShared{A: aOnly, B: bOnly},
+		Both: both,
+	}
+}
+
+func printSessionDiff(r sessionDiffReport) {
+	fmt.Printf("== A: %s ==\n", r.A.ID)
+	fmt.Printf("  project: %s    topic: %s    duration: %s\n", r.A.Project, r.A.Topic, r.A.Duration)
+	fmt.Printf("  msgs: %d user / %d asst    bash: %d    files: %d\n",
+		r.A.UserMsgs, r.A.AsstMsgs, r.A.Bash, len(r.A.Files))
+	fmt.Printf("== B: %s ==\n", r.B.ID)
+	fmt.Printf("  project: %s    topic: %s    duration: %s\n", r.B.Project, r.B.Topic, r.B.Duration)
+	fmt.Printf("  msgs: %d user / %d asst    bash: %d    files: %d\n",
+		r.B.UserMsgs, r.B.AsstMsgs, r.B.Bash, len(r.B.Files))
+	fmt.Printf("\nshared files: %d\n", len(r.Both))
+	if len(r.Only.A) > 0 {
+		fmt.Printf("\nA-only files (%d):\n", len(r.Only.A))
+		for _, f := range r.Only.A {
+			fmt.Println("  ", f)
+		}
+	}
+	if len(r.Only.B) > 0 {
+		fmt.Printf("\nB-only files (%d):\n", len(r.Only.B))
+		for _, f := range r.Only.B {
+			fmt.Println("  ", f)
+		}
+	}
+}
+
 func init() {
 	sessListCmd.Flags().StringVarP(&sessListProject, "project", "p", "", "filter by project (LIKE)")
 	sessListCmd.Flags().IntVarP(&sessListLimit, "limit", "n", 20, "max rows")
@@ -282,9 +477,15 @@ func init() {
 	sessFindCmd.Flags().IntVarP(&sessFindLimit, "limit", "n", 20, "max rows")
 	sessFindCmd.Flags().BoolVar(&sessJSON, "json", false, "JSON output")
 
+	sessExportCmd.Flags().StringVarP(&sessExportOut, "out", "o", "", "write to file instead of stdout")
+	sessExportCmd.Flags().BoolVar(&sessExportTools, "tools", true, "include tool-call summary blocks")
+	sessDiffCmd.Flags().BoolVar(&sessDiffJSON, "json", false, "JSON output")
+
 	sessionCmd.AddCommand(sessListCmd)
 	sessionCmd.AddCommand(sessFindCmd)
 	sessionCmd.AddCommand(sessShowCmd)
 	sessionCmd.AddCommand(sessResumeCmd)
+	sessionCmd.AddCommand(sessExportCmd)
+	sessionCmd.AddCommand(sessDiffCmd)
 	rootCmd.AddCommand(sessionCmd)
 }

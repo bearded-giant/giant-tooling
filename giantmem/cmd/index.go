@@ -23,9 +23,10 @@ var indexCmd = &cobra.Command{
 }
 
 var (
-	migrateDryRun bool
-	sessionsForce bool
-	liveRoots     []string
+	migrateDryRun     bool
+	migrateCanonical  bool
+	sessionsForce     bool
+	liveRoots         []string
 )
 
 var indexInitCmd = &cobra.Command{
@@ -134,8 +135,106 @@ var indexMigrateCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("migrated %d project(s)\n", len(moves))
+
+		if migrateCanonical {
+			n, err := backfillCanonical(a)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("canonicalized %d row(s) in archives.db\n", n)
+
+			l, err := db.Open(liveDBPath())
+			if err == nil {
+				defer l.Close()
+				ln, err := backfillCanonicalLive(l)
+				if err != nil {
+					return err
+				}
+				fmt.Printf("canonicalized %d row(s) in live.db\n", ln)
+			}
+		}
 		return nil
 	},
+}
+
+// backfillCanonical writes canonical_project for every documents row.
+func backfillCanonical(a *sql.DB) (int, error) {
+	rows, err := a.Query(`SELECT DISTINCT project FROM documents`)
+	if err != nil {
+		return 0, err
+	}
+	var projects []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		projects = append(projects, p)
+	}
+	rows.Close()
+
+	tx, err := a.Begin()
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, p := range projects {
+		canon := canonicalProjectName(p)
+		res, err := tx.Exec(
+			`UPDATE documents SET canonical_project = ? WHERE project = ?`,
+			canon, p,
+		)
+		if err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+		n, _ := res.RowsAffected()
+		total += int(n)
+	}
+	return total, tx.Commit()
+}
+
+// backfillCanonicalLive does the same for live.db.
+func backfillCanonicalLive(l *sql.DB) (int, error) {
+	rows, err := l.Query(`SELECT DISTINCT project FROM live_docs`)
+	if err != nil {
+		return 0, err
+	}
+	var projects []string
+	for rows.Next() {
+		var p string
+		if err := rows.Scan(&p); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		projects = append(projects, p)
+	}
+	rows.Close()
+
+	tx, err := l.Begin()
+	if err != nil {
+		return 0, err
+	}
+	total := 0
+	for _, p := range projects {
+		canon := canonicalProjectName(p)
+		res, err := tx.Exec(
+			`UPDATE live_docs SET canonical_project = ? WHERE project = ?`,
+			canon, p,
+		)
+		if err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+		n, _ := res.RowsAffected()
+		total += int(n)
+	}
+	return total, tx.Commit()
+}
+
+func canonicalProjectName(name string) string {
+	return project.Canonicalize(name, archiveBasePath())
 }
 
 var indexSessionsCmd = &cobra.Command{
@@ -342,6 +441,7 @@ func dirTypeFromPath(p string) string {
 
 func init() {
 	indexMigrateCmd.Flags().BoolVar(&migrateDryRun, "dry-run", false, "show planned changes only")
+	indexMigrateCmd.Flags().BoolVar(&migrateCanonical, "canonicalize", false, "also backfill canonical_project on existing rows")
 	indexSessionsCmd.Flags().BoolVar(&sessionsForce, "force", false, "re-extract cwd even if set")
 
 	indexCmd.AddCommand(indexInitCmd)

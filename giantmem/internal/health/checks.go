@@ -209,14 +209,17 @@ func checkOrphanGiantmem(opt Options) []Finding {
 			if name != ".giantmem" {
 				return nil
 			}
-			// found .giantmem; check for .git in parent or any ancestor up to root
+			ig := LoadIgnoreFor(p)
+			if ig.OrphanOK {
+				return fs.SkipDir
+			}
 			if !hasGitAncestor(filepath.Dir(p), root) {
 				out = append(out, Finding{
 					Severity: SevWarn,
 					Category: "orphan",
 					Message:  ".giantmem/ exists but no .git in any ancestor (worktree removed?)",
 					Path:     p,
-					Hint:     "run: giantmem archive run --project <name> " + p + "  to capture before deleting",
+					Hint:     "run: giantmem archive run --project <name> " + p + "  to capture before deleting (or add `# orphan-ok` to .giantmem-ignore)",
 				})
 			}
 			return fs.SkipDir
@@ -329,6 +332,10 @@ func checkStaleWorkspaces(opt Options) []Finding {
 			if name != ".giantmem" {
 				return nil
 			}
+			ig := LoadIgnoreFor(p)
+			if ig.StaleOK {
+				return fs.SkipDir
+			}
 			latest := newestMD(p)
 			if !latest.IsZero() && latest.Before(cutoff) {
 				days := int(time.Since(latest).Hours() / 24)
@@ -337,7 +344,7 @@ func checkStaleWorkspaces(opt Options) []Finding {
 					Category: "stale",
 					Message:  fmt.Sprintf("workspace inactive for %d days", days),
 					Path:     p,
-					Hint:     "consider giantmem archive run from its parent dir",
+					Hint:     "consider giantmem archive run from its parent dir (or add `# stale-ok` to .giantmem-ignore)",
 				})
 			}
 			return fs.SkipDir

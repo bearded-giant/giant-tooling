@@ -4,13 +4,17 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
 
+// Open opens the named SQLite db with WAL + busy timeout, then runs any pending
+// migrations to bring it up to head. If the file is missing, it's created.
 func Open(path string) (*sql.DB, error) {
-	if _, err := os.Stat(path); err != nil {
-		return nil, fmt.Errorf("database not found at %s: %w", path, err)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
 	}
 	d, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
 	if err != nil {
@@ -19,23 +23,31 @@ func Open(path string) (*sql.DB, error) {
 	if err := d.Ping(); err != nil {
 		d.Close()
 		return nil, err
+	}
+	if err := migrateFor(d, path); err != nil {
+		d.Close()
+		return nil, fmt.Errorf("migrate %s: %w", path, err)
 	}
 	return d, nil
 }
 
-// OpenOrInit opens path; if missing, returns nil and the caller should init schema.
+// migrateFor picks the right migration list based on the db filename.
+func migrateFor(d *sql.DB, path string) error {
+	base := strings.ToLower(filepath.Base(path))
+	switch base {
+	case "archives.db":
+		return MigrateArchive(d)
+	case "live.db":
+		return MigrateLive(d)
+	}
+	// unknown db: do nothing — caller manages schema
+	return nil
+}
+
+// OpenOrInit kept for compatibility; Open now creates if missing.
 func OpenOrInit(path string) (*sql.DB, bool, error) {
-	exists := true
-	if _, err := os.Stat(path); err != nil {
-		exists = false
-	}
-	d, err := sql.Open("sqlite", path+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)")
-	if err != nil {
-		return nil, exists, err
-	}
-	if err := d.Ping(); err != nil {
-		d.Close()
-		return nil, exists, err
-	}
-	return d, exists, nil
+	_, err := os.Stat(path)
+	exists := err == nil
+	d, err := Open(path)
+	return d, exists, err
 }

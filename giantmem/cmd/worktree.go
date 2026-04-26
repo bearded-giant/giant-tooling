@@ -262,29 +262,104 @@ var worktreeRepairCmd = &cobra.Command{
 	},
 }
 
+var (
+	shellInitInstall bool
+	shellInitTarget  string
+	shellInitDryRun  bool
+)
+
 var worktreeShellInitCmd = &cobra.Command{
 	Use:   "shell-init",
-	Short: "Print the bashrc/zshrc snippet that sources worktree-core.sh",
+	Short: "Print (or --install) the bashrc/zshrc snippet that sources worktree-core.sh and binds gj()",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		core := worktreeCorePath()
-		fmt.Printf(`# giantmem worktree shell init
-# Source the core library (provides wt_init, wt_adopt, wt_projects, wt_register).
+		snippet := buildShellSnippet()
+		if !shellInitInstall {
+			fmt.Print(snippet)
+			return nil
+		}
+		target := shellInitTarget
+		if target == "" {
+			target = pickShellRC()
+		}
+		return installSnippet(target, snippet, shellInitDryRun)
+	},
+}
+
+const shellSentinelOpen = "# >>> giantmem shell-init >>>"
+const shellSentinelClose = "# <<< giantmem shell-init <<<"
+
+func buildShellSnippet() string {
+	core := worktreeCorePath()
+	body := fmt.Sprintf(`%s
+# Sources worktree-core.sh and binds gj() (fuzzy-jump to a worktree).
 source %q
 
-# Then source any per-project configs you have (one file per prefix):
-# for cfg in ~/dev/giant-tooling/git-worktrees/wt-*.sh; do source "$cfg"; done
-#
-# After this, per-prefix shell functions ({prefix}, {prefix}l, {prefix}r, ...)
-# are available in every shell. Run: wt_init  to wizard a new project.
-`, core)
+gj() {
+  local target
+  target=$(giantmem cd "$@") || return $?
+  cd "$target"
+}
+%s
+`, shellSentinelOpen, core, shellSentinelClose)
+	return body
+}
+
+func pickShellRC() string {
+	home, _ := os.UserHomeDir()
+	shell := os.Getenv("SHELL")
+	if strings.Contains(shell, "zsh") {
+		return filepath.Join(home, ".zshrc")
+	}
+	return filepath.Join(home, ".bashrc")
+}
+
+func installSnippet(target, snippet string, dryRun bool) error {
+	existing, err := os.ReadFile(target)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	body := string(existing)
+
+	openIdx := strings.Index(body, shellSentinelOpen)
+	closeIdx := strings.Index(body, shellSentinelClose)
+	if openIdx >= 0 && closeIdx > openIdx {
+		// replace existing block
+		newBody := body[:openIdx] + strings.TrimRight(snippet, "\n") + body[closeIdx+len(shellSentinelClose):]
+		if dryRun {
+			fmt.Printf("would replace existing block in %s\n", target)
+			return nil
+		}
+		if err := os.WriteFile(target, []byte(newBody), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("updated existing block in %s\n", target)
 		return nil
-	},
+	}
+	// append
+	if dryRun {
+		fmt.Printf("would append %d lines to %s\n", strings.Count(snippet, "\n"), target)
+		return nil
+	}
+	if !strings.HasSuffix(body, "\n") && body != "" {
+		body += "\n"
+	}
+	body += "\n" + snippet
+	if err := os.WriteFile(target, []byte(body), 0o644); err != nil {
+		return err
+	}
+	fmt.Printf("appended block to %s\n", target)
+	fmt.Println("source it now with:  source", target)
+	return nil
 }
 
 func init() {
 	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveDryRun, "dry-run", false, "show planned actions")
 	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveForce, "force", false, "force git worktree remove and continue on archive failure")
 	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveKeep, "keep", false, "skip archive, just remove worktree")
+
+	worktreeShellInitCmd.Flags().BoolVar(&shellInitInstall, "install", false, "append/update sentinel block in target rc file")
+	worktreeShellInitCmd.Flags().StringVar(&shellInitTarget, "target", "", "rc file to install into (default: $SHELL-aware ~/.bashrc or ~/.zshrc)")
+	worktreeShellInitCmd.Flags().BoolVar(&shellInitDryRun, "dry-run", false, "show what install would do, change nothing")
 
 	worktreeCmd.AddCommand(worktreeListCmd)
 	worktreeCmd.AddCommand(worktreeRemoveCmd)

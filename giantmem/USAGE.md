@@ -125,6 +125,46 @@ You should rarely need this; the live indexing hook handles ongoing writes and t
 | `giantmem ingest --sessions-only` | re-ingest Claude session JSONLs only |
 | `giantmem ingest --force` | force full session re-ingest, ignoring mtime |
 
+## Backup
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem backup init [remote-url]` | initialize `~/giantmem_archive_backup` (clones a remote, or creates an empty repo). `--force` removes existing dir |
+| `giantmem backup push` | copy `archives.db` (and `live.db` if present) into the backup repo, commit, push (skips push if no remote) |
+| `giantmem backup push --no-push --message "..."` | commit only, with custom message |
+| `giantmem backup status` | show last commit, dirty state, configured remotes |
+| `giantmem backup --dir <path>` | use a different backup directory |
+
+Pair with `/schedule` to snapshot weekly.
+
+## Session export / diff
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem session export <id>` | clean markdown transcript on stdout |
+| `giantmem session export <id> -o session.md` | write to file |
+| `giantmem session export <id> --tools=false` | omit collapsed tool-call blocks |
+| `giantmem session diff <a> <b>` | compare two sessions: msg counts, bash counts, file sets |
+| `giantmem session diff <a> <b> --json` | structured output for scripts |
+
+## Plan aggregation
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem plan list` | tail every `plans/current.md` across all live worktrees, newest first |
+| `giantmem plan list -p chat-orch` | filter by project (LIKE) |
+| `giantmem plan list -n 10` | tail 10 lines per plan (0 = full) |
+| `giantmem plan list --root ~/work` | scan an additional root |
+
+## Activity timeline
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem timeline` | last 14 days, all projects, sessions+archives |
+| `giantmem timeline -d 30 -p chat-orch -s session` | filtered window |
+
+Bars: `·` 0, `▁` 1-2, `▂` 3-5, `▃` 6-9, `▅` 10-19, `█` 20+.
+
 ## Recency filter
 
 | Flag | Description |
@@ -184,6 +224,46 @@ The Claude Code statusline (`~/.claude/hooks/statusline.js`) consumes the cached
 | `giantmem doctor --json` | machine-readable findings + summary |
 | `giantmem doctor --root PATH` | scan additional roots (default `~/dev`) |
 | `giantmem doctor --stale-days 14` | adjust staleness threshold |
+| `giantmem doctor --fix` | apply fixers for findings (rebind broken latest, ingest drifted projects, prune dead worktrees, etc.) |
+| `giantmem doctor --fix --auto` | also auto-archive orphan `.giantmem/` dirs without prompting |
+| `giantmem doctor --fix --fix-categories=symlink,drift` | restrict fixers to listed categories |
+| `giantmem doctor --fix --fix-dry-run` | preview fix actions without changing anything |
+
+## Per-workspace ignore
+
+Drop a `.giantmem-ignore` at the root of any workspace (sibling to `.giantmem/`) to silence doctor for that dir. Directives:
+
+- `# stale-ok` — workspace is intentionally inactive
+- `# orphan-ok` — `.giantmem/` without `.git` ancestor is intentional
+
+Global file at `~/.config/giantmem/global-ignore` applies system-wide.
+
+## Resolved configuration
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem config` | show binary version, paths, db sizes/schemas, hook + MCP wiring, library locations |
+| `giantmem config --json` | structured output for scripts |
+
+## Shell completion
+
+Generate completion scripts:
+
+```
+giantmem completion bash > ~/.bash_completion.d/giantmem
+giantmem completion zsh > ~/.zfunc/_giantmem
+```
+
+Once installed, `--project` and `--feature` flags complete from indexed values; session id-prefixes complete from recent sessions; archive subcommand args complete from project dir names.
+
+## Shell init: install
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem worktree shell-init` | print the snippet (source + `gj()`) |
+| `giantmem worktree shell-init --install` | append/update sentinel-bracketed block in `~/.bashrc` or `~/.zshrc` (auto-detected) |
+| `giantmem worktree shell-init --install --target ~/.zshrc` | force a specific target |
+| `giantmem worktree shell-init --install --dry-run` | preview the change |
 
 Categories detected: orphan worktrees, orphan `.giantmem/` dirs, broken `latest` symlinks, archives.db drift (project on disk but not indexed), stale workspaces, missing `live_index.py` hook entry, missing or stale `giantmem-search` MCP entry, DB integrity errors.
 

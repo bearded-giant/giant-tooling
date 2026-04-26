@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/bryangrimes/gm/internal/project"
 )
 
 var (
@@ -395,13 +397,15 @@ func ingestFile(db *sql.DB, fp string, parsed *ParsedPath, sourceType, sessionID
 		}
 		content = filepath.Base(fp) + "\n" + string(raw)
 	}
+	canonical := canonicalProjectFor(parsed.Project)
 	res, err := db.Exec(
 		`INSERT INTO documents
             (project, timestamp, source_type, dir_type, filepath, filename,
-             is_latest, session_id, topic, indexed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             is_latest, session_id, topic, indexed_at, canonical_project)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		parsed.Project, parsed.Timestamp, sourceType, nilIfEmpty(parsed.DirType),
 		fp, filepath.Base(fp), isLatest, nilIfEmpty(sessionID), nilIfEmpty(topic), now,
+		canonical,
 	)
 	if err != nil {
 		return false
@@ -414,6 +418,15 @@ func ingestFile(db *sql.DB, fp string, parsed *ParsedPath, sourceType, sessionID
 		return false
 	}
 	return true
+}
+
+func canonicalProjectFor(name string) string {
+	home, _ := os.UserHomeDir()
+	base := os.Getenv("GIANTMEM_ARCHIVE_BASE")
+	if base == "" {
+		base = filepath.Join(home, "giantmem_archive")
+	}
+	return project.Canonicalize(name, base)
 }
 
 func nilIfEmpty(s string) any {

@@ -102,9 +102,13 @@ func runFind(cmd *cobra.Command, args []string) error {
 	}
 
 	var hits []hit
+	livePaths := map[string]bool{}
 
 	if scope == "live" || scope == "both" {
 		if h, err := queryLive(query); err == nil {
+			for _, x := range h {
+				livePaths[x.Filepath] = true
+			}
 			hits = append(hits, h...)
 		} else if scope == "live" {
 			return err
@@ -112,7 +116,13 @@ func runFind(cmd *cobra.Command, args []string) error {
 	}
 	if scope == "archive" || scope == "both" {
 		if h, err := queryArchive(query); err == nil {
-			hits = append(hits, h...)
+			// drop archive hits whose path is also live (path moved or not yet pruned)
+			for _, x := range h {
+				if livePaths[x.Filepath] {
+					continue
+				}
+				hits = append(hits, x)
+			}
 		} else if scope == "archive" {
 			return err
 		}
