@@ -195,6 +195,11 @@ func replaceFirstN(s, old, new string, n int) string {
 	return s
 }
 
+// FileMtime returns the file's mtime. Exported for source plugins.
+func FileMtime(path string) (time.Time, error) {
+	return fileMtime(path)
+}
+
 // fileMtime returns the file's mtime as a unix timestamp.
 func fileMtime(path string) (time.Time, error) {
 	st, err := os.Stat(path)

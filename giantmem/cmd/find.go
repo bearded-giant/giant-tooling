@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 	"time"
 
+	"github.com/bryangrimes/gm/internal/daemon"
 	"github.com/bryangrimes/gm/internal/db"
 	"github.com/bryangrimes/gm/internal/output"
+	"github.com/bryangrimes/gm/internal/search"
 	"github.com/spf13/cobra"
 )
 
@@ -30,6 +31,7 @@ var (
 	findUntil       string
 	findInteractive bool
 	findOpenEditor  bool
+	findNoDaemon    bool
 )
 
 var findCmd = &cobra.Command{
@@ -38,16 +40,9 @@ var findCmd = &cobra.Command{
 	Long: `Search live workspace docs (live.db) and archived docs + Claude session
 transcripts (archives.db). Default queries both and merges by score.
 
-Examples:
-  gm find "jwt"
-  gm find "hub and spoke" -p chat-orchestrator-wt
-  gm find "auth" -t plans -l
-  gm find "migration" -s session            # session transcripts only
-  gm find "scratch" --live                  # only live workspaces
-  gm find "v1" --archive                    # only archives
-  gm find "feature x" -f better-search       # by feature name
-  gm find "x" --paths | xargs $EDITOR
-  gm find "x" --json`,
+If giantmemd is running and reachable, the search runs over the daemon's
+already-open DB handles (sub-millisecond after connect). Otherwise the CLI
+opens the DBs directly. Pass --no-daemon to force direct mode.`,
 	Args: cobra.MinimumNArgs(1),
 	RunE: runFind,
 }
@@ -68,69 +63,29 @@ func init() {
 	findCmd.Flags().StringVar(&findUntil, "until", "", `only docs older than (e.g. "1d", RFC3339)`)
 	findCmd.Flags().BoolVarP(&findInteractive, "interactive", "i", false, "fzf+bat picker; on select prints path or opens with -o")
 	findCmd.Flags().BoolVarP(&findOpenEditor, "open", "o", false, "with -i: open selected hit in $EDITOR (default: print path)")
-}
-
-type hit struct {
-	Score      float64 `json:"score"`
-	Source     string  `json:"source"` // "live" or "archive"
-	Project    string  `json:"project"`
-	Timestamp  string  `json:"timestamp,omitempty"`
-	DirType    string  `json:"dir_type,omitempty"`
-	Feature    string  `json:"feature,omitempty"`
-	Filepath   string  `json:"filepath"`
-	Filename   string  `json:"filename"`
-	IsLatest   bool    `json:"is_latest,omitempty"`
-	SourceType string  `json:"source_type,omitempty"`
-	SessionID  string  `json:"session_id,omitempty"`
-	Cwd        string  `json:"cwd,omitempty"`
-	Topic      string  `json:"topic,omitempty"`
-	Snippet    string  `json:"snippet,omitempty"`
+	findCmd.Flags().BoolVar(&findNoDaemon, "no-daemon", false, "skip giantmemd; open DBs directly")
 }
 
 func runFind(cmd *cobra.Command, args []string) error {
 	query := strings.Join(args, " ")
-	scope := "both"
-	if findLiveOnly {
-		scope = "live"
-	}
-	if findArchOnly {
-		scope = "archive"
-	}
-	// session source filter implicitly disables live
-	if findSourceType == "session" {
-		scope = "archive"
-	}
-
-	var hits []hit
-	livePaths := map[string]bool{}
-
-	if scope == "live" || scope == "both" {
-		if h, err := queryLive(query); err == nil {
-			for _, x := range h {
-				livePaths[x.Filepath] = true
-			}
-			hits = append(hits, h...)
-		} else if scope == "live" {
-			return err
-		}
-	}
-	if scope == "archive" || scope == "both" {
-		if h, err := queryArchive(query); err == nil {
-			// drop archive hits whose path is also live (path moved or not yet pruned)
-			for _, x := range h {
-				if livePaths[x.Filepath] {
-					continue
-				}
-				hits = append(hits, x)
-			}
-		} else if scope == "archive" {
-			return err
-		}
+	params := search.Params{
+		Query:       query,
+		Project:     findProject,
+		DirType:     findDirType,
+		SourceType:  findSourceType,
+		Feature:     findFeature,
+		Latest:      findLatest,
+		LiveOnly:    findLiveOnly,
+		ArchiveOnly: findArchOnly,
+		Since:       findSince,
+		Until:       findUntil,
+		Limit:       findLimit,
+		IncludeFull: findFull,
 	}
 
-	sort.SliceStable(hits, func(i, j int) bool { return hits[i].Score < hits[j].Score })
-	if len(hits) > findLimit {
-		hits = hits[:findLimit]
+	hits, err := dispatchFind(params)
+	if err != nil {
+		return err
 	}
 
 	if len(hits) == 0 {
@@ -153,21 +108,60 @@ func runFind(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// parseSinceUntil accepts duration ("7d", "2h", "30m") or RFC3339 timestamp.
-// duration mode subtracts (since=true) or adds the duration from now.
-func parseSinceUntil(s string, _ bool) (time.Time, error) {
-	if t, err := time.Parse(time.RFC3339, s); err == nil {
-		return t, nil
+// dispatchFind tries the daemon first (when reachable) and falls back to a
+// direct DB open. Schema-drift errors trip the fallback automatically.
+func dispatchFind(p search.Params) ([]search.Hit, error) {
+	if !findNoDaemon && os.Getenv("GIANTMEM_NO_DAEMON") == "" {
+		sock := daemon.DefaultSocketPath()
+		if daemon.SocketAlive(sock, 250*time.Millisecond) {
+			cli := daemon.NewClient(sock, 5*time.Second)
+			var out struct {
+				Hits []search.Hit `json:"hits"`
+			}
+			err := cli.Call("find", &daemon.FindParams{
+				Query:       p.Query,
+				Project:     p.Project,
+				DirType:     p.DirType,
+				SourceType:  p.SourceType,
+				Feature:     p.Feature,
+				Latest:      p.Latest,
+				LiveOnly:    p.LiveOnly,
+				ArchiveOnly: p.ArchiveOnly,
+				Since:       p.Since,
+				Until:       p.Until,
+				Limit:       p.Limit,
+				IncludeFull: p.IncludeFull,
+			}, &out)
+			if err == nil {
+				return out.Hits, nil
+			}
+			if !daemon.IsSchemaDrift(err) {
+				fmt.Fprintf(os.Stderr, "daemon error, falling back: %v\n", err)
+			}
+		}
 	}
-	dur, err := parseDuration(s)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("bad time spec %q: must be duration like 7d/2h or RFC3339", s)
+	return findDirect(p)
+}
+
+func findDirect(p search.Params) ([]search.Hit, error) {
+	var archive, live *sql.DB
+	if _, err := os.Stat(archiveDBPath()); err == nil {
+		if d, err := db.Open(archiveDBPath()); err == nil {
+			archive = d
+			defer archive.Close()
+		}
 	}
-	return time.Now().Add(-dur), nil
+	if _, err := os.Stat(liveDBPath()); err == nil {
+		if d, err := db.Open(liveDBPath()); err == nil {
+			live = d
+			defer live.Close()
+		}
+	}
+	return search.Run(archive, live, p)
 }
 
 // interactivePick fans hits into fzf with a bat preview.
-func interactivePick(hits []hit, query string, openEditor bool) error {
+func interactivePick(hits []search.Hit, query string, openEditor bool) error {
 	fzf, err := exec.LookPath("fzf")
 	if err != nil {
 		return fmt.Errorf("fzf not found in PATH (brew install fzf)")
@@ -190,7 +184,6 @@ func interactivePick(hits []hit, query string, openEditor bool) error {
 			}
 		}
 		display := fmt.Sprintf("[%6.2f] %-30s %s", h.Score, h.Project+"/"+ts, marker)
-		// path TAB display
 		input.WriteString(h.Filepath)
 		input.WriteString("\t")
 		input.WriteString(display)
@@ -198,9 +191,9 @@ func interactivePick(hits []hit, query string, openEditor bool) error {
 	}
 
 	preview := fmt.Sprintf(
-		"file=$(echo {} | cut -f1); "+
-			"if command -v bat >/dev/null; then "+
-			"bat --color=always --style=numbers --line-range=:200 \"$file\" 2>/dev/null; "+
+		"file=$(echo {} | cut -f1); " +
+			"if command -v bat >/dev/null; then " +
+			"bat --color=always --style=numbers --line-range=:200 \"$file\" 2>/dev/null; " +
 			"else sed -n '1,120p' \"$file\"; fi")
 
 	cmd := exec.Command(fzf,
@@ -216,7 +209,6 @@ func interactivePick(hits []hit, query string, openEditor bool) error {
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
-		// 130 = user cancelled
 		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 130 {
 			return nil
 		}
@@ -242,164 +234,7 @@ func interactivePick(hits []hit, query string, openEditor bool) error {
 	return nil
 }
 
-func queryLive(query string) ([]hit, error) {
-	if _, err := os.Stat(liveDBPath()); err != nil {
-		return nil, nil
-	}
-	d, err := db.Open(liveDBPath())
-	if err != nil {
-		return nil, err
-	}
-	defer d.Close()
-
-	conds := []string{"live_docs_fts MATCH ?"}
-	qargs := []any{query}
-	if findProject != "" {
-		conds = append(conds, "ld.project LIKE ?")
-		qargs = append(qargs, "%"+findProject+"%")
-	}
-	if findDirType != "" {
-		conds = append(conds, "ld.dir_type = ?")
-		qargs = append(qargs, findDirType)
-	}
-	if findFeature != "" {
-		conds = append(conds, "ld.feature = ?")
-		qargs = append(qargs, findFeature)
-	}
-	if findSince != "" {
-		t, err := parseSinceUntil(findSince, true)
-		if err != nil {
-			return nil, err
-		}
-		conds = append(conds, "ld.mtime >= ?")
-		qargs = append(qargs, t.Unix())
-	}
-	if findUntil != "" {
-		t, err := parseSinceUntil(findUntil, false)
-		if err != nil {
-			return nil, err
-		}
-		conds = append(conds, "ld.mtime < ?")
-		qargs = append(qargs, t.Unix())
-	}
-	snippet := "''"
-	if findFull {
-		snippet = "snippet(live_docs_fts, 4, '<', '>', '...', 12)"
-	}
-	q := fmt.Sprintf(`
-        SELECT bm25(live_docs_fts), ld.project, COALESCE(ld.dir_type,''),
-               COALESCE(ld.feature,''), ld.path, COALESCE(ld.session_id,''),
-               %s
-          FROM live_docs_fts
-          JOIN live_docs ld ON ld.rowid = live_docs_fts.rowid
-         WHERE %s
-         ORDER BY bm25(live_docs_fts)
-         LIMIT ?`, snippet, strings.Join(conds, " AND "))
-	qargs = append(qargs, findLimit)
-
-	rows, err := d.Query(q, qargs...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []hit
-	for rows.Next() {
-		var h hit
-		if err := rows.Scan(&h.Score, &h.Project, &h.DirType, &h.Feature, &h.Filepath, &h.SessionID, &h.Snippet); err != nil {
-			return nil, err
-		}
-		h.Source = "live"
-		h.SourceType = "live"
-		out = append(out, h)
-	}
-	return out, rows.Err()
-}
-
-func queryArchive(query string) ([]hit, error) {
-	if _, err := os.Stat(archiveDBPath()); err != nil {
-		return nil, nil
-	}
-	d, err := db.Open(archiveDBPath())
-	if err != nil {
-		return nil, err
-	}
-	defer d.Close()
-	if err := db.EnsureArchive(d); err != nil {
-		return nil, err
-	}
-
-	conds := []string{"documents_fts MATCH ?"}
-	qargs := []any{query}
-	if findProject != "" {
-		conds = append(conds, "d.project LIKE ?")
-		qargs = append(qargs, "%"+findProject+"%")
-	}
-	if findDirType != "" {
-		conds = append(conds, "d.dir_type = ?")
-		qargs = append(qargs, findDirType)
-	}
-	if findSourceType != "" {
-		conds = append(conds, "d.source_type = ?")
-		qargs = append(qargs, findSourceType)
-	}
-	if findLatest {
-		conds = append(conds, "d.is_latest = 1")
-	}
-	if findSince != "" {
-		t, err := parseSinceUntil(findSince, true)
-		if err != nil {
-			return nil, err
-		}
-		conds = append(conds, "d.timestamp >= ?")
-		qargs = append(qargs, t.Format("20060102_150405"))
-	}
-	if findUntil != "" {
-		t, err := parseSinceUntil(findUntil, false)
-		if err != nil {
-			return nil, err
-		}
-		conds = append(conds, "d.timestamp < ?")
-		qargs = append(qargs, t.Format("20060102_150405"))
-	}
-
-	snippet := "''"
-	if findFull {
-		snippet = "snippet(documents_fts, 0, '<', '>', '...', 12)"
-	}
-
-	q := fmt.Sprintf(`
-        SELECT bm25(documents_fts), d.project, d.timestamp, COALESCE(d.dir_type,''),
-               d.filepath, d.filename, d.is_latest, d.source_type,
-               COALESCE(d.session_id,''), COALESCE(d.cwd,''), COALESCE(d.topic,''),
-               %s
-          FROM documents_fts
-          JOIN documents d ON d.id = documents_fts.rowid
-         WHERE %s
-         ORDER BY bm25(documents_fts)
-         LIMIT ?`, snippet, strings.Join(conds, " AND "))
-	qargs = append(qargs, findLimit)
-
-	rows, err := d.Query(q, qargs...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []hit
-	for rows.Next() {
-		var h hit
-		var isLatest int
-		if err := rows.Scan(&h.Score, &h.Project, &h.Timestamp, &h.DirType, &h.Filepath,
-			&h.Filename, &isLatest, &h.SourceType, &h.SessionID, &h.Cwd, &h.Topic, &h.Snippet); err != nil {
-			return nil, err
-		}
-		h.Source = "archive"
-		h.IsLatest = isLatest == 1
-		out = append(out, h)
-	}
-	return out, rows.Err()
-}
-
-func printHits(hits []hit, full bool) {
+func printHits(hits []search.Hit, full bool) {
 	for _, h := range hits {
 		var marker string
 		switch h.Source {
@@ -430,6 +265,3 @@ func printHits(hits []hit, full bool) {
 		}
 	}
 }
-
-// keep db reference compile-clean for future helpers
-var _ = (*sql.DB)(nil)

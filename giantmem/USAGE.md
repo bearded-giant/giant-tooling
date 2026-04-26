@@ -120,10 +120,31 @@ You should rarely need this; the live indexing hook handles ongoing writes and t
 | `giantmem index sessions` | backfill `cwd` on session rows from JSONL files |
 | `giantmem index live` | rescan `~/dev` for `.giantmem/**/*.md` and rebuild live.db |
 | `giantmem index live <root>...` | rescan only the given roots |
-| `giantmem ingest` | full re-index of archives.db (workspaces + sessions) |
+| `giantmem ingest` | full re-index of archives.db across all enabled sources |
 | `giantmem ingest -p foo` | re-index a single project |
-| `giantmem ingest --sessions-only` | re-ingest Claude session JSONLs only |
+| `giantmem ingest -s claude-jsonl` | run only the named source (repeatable / comma-separated) |
+| `giantmem ingest --sessions-only` | shortcut for `-s claude-jsonl` |
+| `giantmem ingest --workspaces-only` | shortcut for `-s workspace-md,domain-json` |
 | `giantmem ingest --force` | force full session re-ingest, ignoring mtime |
+
+Sources are configured at `~/.config/giantmem/sources.toml`. Without that file the three builtins (`workspace-md`, `claude-jsonl`, `domain-json`) are used. Add an `[[source]]` block with `kind = "external"`, `ingest_cmd = "..."`, and a `mapping` table to plug in any subprocess that emits JSONL on stdout — see `PLAN-2.md` §12.
+
+## Daemon mode
+
+`giantmemd` is a long-running RPC server. When it's reachable, `giantmem find` calls it over a unix socket instead of opening sqlite from scratch each time.
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem daemon start` | spawn detached daemon, write pidfile + log under `~/.cache/giantmem/` |
+| `giantmem daemon stop` | SIGTERM the running daemon, wait for socket to close |
+| `giantmem daemon restart` | stop then start |
+| `giantmem daemon status` | print uptime, RSS, request count, schema versions |
+| `giantmem daemon health --benchmark` | JSON health + p50/p99 over 200 calls |
+| `giantmem daemon install` | macOS: write `~/Library/LaunchAgents/com.giantmem.daemon.plist` and load it |
+| `giantmem daemon uninstall` | unload + remove the LaunchAgent |
+| `giantmem daemon serve` | foreground mode (used by launchd / `start`) |
+
+Find auto-routes through the daemon when its socket is alive. Pass `--no-daemon` (or set `GIANTMEM_NO_DAEMON=1`) to bypass. Schema migrations are detected at request time: the daemon returns a "schema migration pending; restart giantmemd" error until you `daemon restart`.
 
 ## Backup
 

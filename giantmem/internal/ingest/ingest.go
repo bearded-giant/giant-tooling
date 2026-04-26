@@ -282,6 +282,12 @@ func ingestWorkspaces(db *sql.DB, archiveBase, scanRoot string, latest map[strin
 	return count, errs
 }
 
+// ResolveLatestTimestamps maps absolute timestamp dirs that "latest" symlinks
+// resolve to. Exported for use by source plugins.
+func ResolveLatestTimestamps(archiveBase string) map[string]bool {
+	return resolveLatestTimestamps(archiveBase)
+}
+
 func resolveLatestTimestamps(archiveBase string) map[string]bool {
 	out := map[string]bool{}
 	filepath.WalkDir(archiveBase, func(p string, d fs.DirEntry, err error) error {
@@ -434,6 +440,11 @@ func nilIfEmpty(s string) any {
 		return nil
 	}
 	return s
+}
+
+// FlattenDomainJSON exposes flattenDomainJSON for source plugins.
+func FlattenDomainJSON(path string) (string, error) {
+	return flattenDomainJSON(path)
 }
 
 // flattenDomainJSON emits FTS-friendly text from a domain JSON file.

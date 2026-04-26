@@ -11,8 +11,8 @@ This is the second-phase plan, following [PLAN.md](PLAN.md). Phase numbering con
 | 9 | Hardening: staleness, dedup, hook hygiene, naming canonicalization | ✓ |
 | 10 | Workflow completeness: doctor --fix, ignore file, config, resume cd, install, completions | ✓ |
 | 11 | Schema versioning + migration framework | ✓ |
-| 12 | Ingest plugin model | pending |
-| 13 | Daemon mode (`giantmemd`) | pending |
+| 12 | Ingest plugin model | ✓ |
+| 13 | Daemon mode (`giantmemd`) | ✓ |
 
 Cross-machine sync intentionally skipped per user direction.
 
