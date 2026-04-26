@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/bryangrimes/gm/internal/db"
-	"github.com/bryangrimes/gm/internal/sources"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/sources"
 	"github.com/spf13/cobra"
 )
 

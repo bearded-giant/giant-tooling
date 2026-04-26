@@ -4,7 +4,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/bryangrimes/gm/internal/daemon"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/daemon"
 )
 
 // runDaemonBench fires N find + health calls and reports p50/p99 latencies.

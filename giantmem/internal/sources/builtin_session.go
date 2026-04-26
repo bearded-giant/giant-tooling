@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bryangrimes/gm/internal/ingest"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/ingest"
 )
 
 func init() {

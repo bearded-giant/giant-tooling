@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/bryangrimes/gm/internal/health"
-	"github.com/bryangrimes/gm/internal/output"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/health"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
 	"github.com/spf13/cobra"
 )
 

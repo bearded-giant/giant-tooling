@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bryangrimes/gm/internal/daemon"
-	"github.com/bryangrimes/gm/internal/db"
-	"github.com/bryangrimes/gm/internal/output"
-	"github.com/bryangrimes/gm/internal/search"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/daemon"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 	"github.com/spf13/cobra"
 )
 
@@ -134,7 +134,12 @@ func runMatchPipeline(hits []search.Hit, query string, openEditor, interactive b
 		}
 	}
 
-	rows, err := expandHitsToMatches(hits, query)
+	filters := MatchFilters{
+		Tools:       findTools,
+		Exts:        findExts,
+		IncludeRead: findIncludeRead,
+	}
+	rows, err := expandHitsToMatches(hits, query, filters)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "match expansion unavailable: %v\n", err)
 		if interactive {
@@ -232,6 +237,15 @@ func findDirect(p search.Params) ([]search.Hit, error) {
 	return search.Run(archive, live, p)
 }
 
+// MatchFilters bundles the session-aware post-filters applied during rg
+// expansion. Lifted out of CLI globals so the MCP handler can pass its own
+// values per-request.
+type MatchFilters struct {
+	Tools       []string
+	Exts        []string
+	IncludeRead bool
+}
+
 // matchRow is a per-line match found by ripgrep inside a hit's file.
 // Display is the human-readable text shown in fzf's list column. For .jsonl
 // session transcripts it's the decoded role + content/tool summary; for
@@ -259,7 +273,7 @@ type matchRow struct {
 //  3. Literal per-token OR fallback. If the phrase regex finds nothing, try
 //     matching any single token. Catches files surfaced by FTS5 stemming
 //     where the literal phrase doesn't appear.
-func expandHitsToMatches(hits []search.Hit, query string) ([]matchRow, error) {
+func expandHitsToMatches(hits []search.Hit, query string, f MatchFilters) ([]matchRow, error) {
 	rg, err := exec.LookPath("rg")
 	if err != nil {
 		return nil, fmt.Errorf("rg not found (brew install ripgrep)")
@@ -274,7 +288,7 @@ func expandHitsToMatches(hits []search.Hit, query string) ([]matchRow, error) {
 
 	if phrase, ok := unwrapQuotedPhrase(query); ok {
 		args := append(append([]string{}, baseArgs...), "-F", "-e", phrase)
-		return runRgOverHits(rg, args, hits, nil), nil
+		return runRgOverHits(rg, args, hits, nil, f), nil
 	}
 
 	tokens := tokenizeFTSQuery(query)
@@ -293,7 +307,7 @@ func expandHitsToMatches(hits []search.Hit, query string) ([]matchRow, error) {
 	if len(tokens) > 1 {
 		fallback = literalArgs
 	}
-	return runRgOverHits(rg, phraseArgs, hits, fallback), nil
+	return runRgOverHits(rg, phraseArgs, hits, fallback, f), nil
 }
 
 // runRgOverHits executes rg per unique hit filepath. If `primary` returns no
@@ -301,10 +315,10 @@ func expandHitsToMatches(hits []search.Hit, query string) ([]matchRow, error) {
 // .jsonl session transcripts, each matched line is decoded so the fzf list
 // shows readable text (role + content + tool calls) instead of raw JSON, and
 // the tool names are captured for the --tool filter.
-func runRgOverHits(rg string, primary []string, hits []search.Hit, fallback []string) []matchRow {
-	wantTools := normalizeToolFilter(findTools)
-	wantExts := normalizeExtFilter(findExts)
-	includeRead := findIncludeRead || (wantTools != nil && wantTools["read"])
+func runRgOverHits(rg string, primary []string, hits []search.Hit, fallback []string, f MatchFilters) []matchRow {
+	wantTools := normalizeToolFilter(f.Tools)
+	wantExts := normalizeExtFilter(f.Exts)
+	includeRead := f.IncludeRead || (wantTools != nil && wantTools["read"])
 
 	collect := func(args []string, h search.Hit) []matchRow {
 		cargs := append(append([]string{}, args...), h.Filepath)

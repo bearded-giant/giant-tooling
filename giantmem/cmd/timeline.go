@@ -8,7 +8,7 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/bryangrimes/gm/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/spf13/cobra"
 )
 

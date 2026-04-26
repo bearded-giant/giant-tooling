@@ -11,7 +11,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/bryangrimes/gm/internal/daemon"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/daemon"
 	"github.com/spf13/cobra"
 )
 

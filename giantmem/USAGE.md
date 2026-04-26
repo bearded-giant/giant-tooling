@@ -369,16 +369,109 @@ Match priority: exact basename, project, branch, then substring of `project/bran
 
 ## MCP server
 
-`giantmem mcp serve` is the stdio MCP server wired into `~/.claude/settings.json` as `giantmem-search`. Exposes six tools so Claude can self-discover state:
+`giantmem mcp serve` is the stdio MCP server wired into `~/.claude/settings.json` as `giantmem-search`. Six read-only tools let a Claude session find prior docs, prior conversations, and current workspace state without leaving the editor.
 
-| Tool | What it returns |
-|------|-----------------|
-| `search_archive(query, project?, source_type?, topic?, limit?)` | FTS5 search across archives + sessions |
-| `list_sessions(project?, limit?)` | recent Claude sessions ordered newest first |
-| `get_session_summary(id_prefix)` | metadata for one session: project, cwd, topic, ts, jsonl path |
-| `recent_writes(project?, since?, limit?)` | live workspace writes within a window (`24h`, `7d`, ...) |
-| `feature_status(project?)` | features.json contents grouped by project |
-| `workspace_tree(project?, worktree_path?)` | dir-type/feature counts; from disk if `worktree_path` given |
+### Wiring
+
+```jsonc
+// ~/.claude/settings.json
+{
+  "mcpServers": {
+    "giantmem-search": {
+      "command": "giantmem",
+      "args": ["mcp", "serve"]
+    }
+  }
+}
+```
+
+`giantmem doctor --fix` will install or repair this entry automatically.
+
+### Tools
+
+| Tool | Purpose |
+|------|---------|
+| `search_archive` | FTS5 over archived workspaces + Claude session JSONL + domain knowledge. **Per-line decoded results** when `tool_filter` or `ext_filter` set. |
+| `list_sessions` | recent Claude sessions, newest first |
+| `get_session_summary` | metadata for one session by id-prefix |
+| `recent_writes` | live `.giantmem/*.md` writes in a time window (`24h`, `7d`, ...) |
+| `feature_status` | `features.json` per project |
+| `workspace_tree` | `.giantmem/` dir-type counts (from live.db or on-disk) |
+
+### `search_archive` parameters
+
+| Param | Type | Notes |
+|-------|------|-------|
+| `query` | string, required | plain text auto-quoted (handles `hub-and-spoke`); FTS5 syntax (`AND`, `OR`, `NOT`, `"phrase"`, `prefix*`) passes through; wrap your own `"exact phrase"` for literal substring |
+| `project` | string | LIKE filter — `chat-orchestrator` matches `dev/ai/chat-orchestrator` |
+| `source_type` | string | `workspace` / `session` / `domain` |
+| `topic` | string | session topic (`auth`, `api`, `bug`, `feature`, ...) |
+| `tool_filter` | string | comma-separated Claude tool names (`Write,Edit,MultiEdit`); session-only; **triggers per-line expansion** |
+| `ext_filter` | string | comma-separated file extensions (`md,go`); session-only; composes with `tool_filter` via AND; **triggers per-line expansion** |
+| `include_read` | bool | surface `Read` tool calls (hidden by default); auto-enabled when `Read` is in `tool_filter` |
+| `limit` | number | max results, default 10, cap 100 |
+
+### Result shapes
+
+**Default (file-level)** — when no per-line filter is set:
+
+```json
+{
+  "results": [
+    {
+      "filepath": "...",
+      "project": "dev/ai/chat-orchestrator",
+      "source_type": "session",
+      "session_id": "40503b40-...",
+      "timestamp": "20260425_162607",
+      "score": 4.67,
+      "snippet": "...>>>hub-and-spoke<<<..."
+    }
+  ],
+  "total": 1
+}
+```
+
+**Per-line (decoded)** — when `tool_filter` or `ext_filter` is set; session hits get expanded via ripgrep, decoded, filtered:
+
+```json
+{
+  "per_line": true,
+  "applied_filters": {"tools": ["Write","Edit","MultiEdit"], "exts": ["md"], "include_read": false},
+  "sanitized_query": "\"hub-and-spoke\"",
+  "results": [
+    {
+      "filepath": ".../40503b40-....jsonl",
+      "project": "dev/ai/chat-orchestrator",
+      "session_id": "40503b40-...",
+      "timestamp": "20260425_162607",
+      "line": 481,
+      "role": "assistant",
+      "tools": ["Edit"],
+      "files": ["/Users/bryan/dev/.../customcheckout_service_auth_unify_design.md"],
+      "excerpt": "[assistant]  ⟨Edit /Users/.../design.md⟩"
+    }
+  ],
+  "total": 1
+}
+```
+
+### Common call patterns
+
+| Goal | Args |
+|------|------|
+| "Find any older doc mentioning hub-and-spoke" | `{"query": "hub-and-spoke"}` |
+| "Sessions in chat-orchestrator that touched JWT" | `{"query": "JWT", "project": "chat-orchestrator", "source_type": "session"}` |
+| "What .md did Claude author about X" | `{"query": "X", "source_type": "session", "tool_filter": "Write,Edit,MultiEdit", "ext_filter": "md"}` |
+| "What Bash commands related to migrations ran" | `{"query": "migration", "source_type": "session", "tool_filter": "Bash"}` |
+| "Recent live workspace writes" | (use `recent_writes` instead — it's the right tool) |
+
+### Tips for Claude callers
+
+- Default to no `tool_filter` / `ext_filter` for breadth, narrow only when first-pass results are noisy.
+- `Read` is hidden by default — most matches inside Read tool inputs are file-content noise. Pass `include_read: true` only when you specifically need to know what Claude opened.
+- `limit` returns up to 100. Per-line expansion can produce many rows per file — increase `limit` if filters are tight.
+- The MCP server is read-only and idempotent. Safe to retry; safe to call in parallel.
 
 ## Live indexing hook
 

@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bryangrimes/gm/internal/db"
-	"github.com/bryangrimes/gm/internal/ingest"
-	"github.com/bryangrimes/gm/internal/project"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/ingest"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 )
 
 var TimestampRe = regexp.MustCompile(`^[0-9]{8}_[0-9]{6}$`)

@@ -11,9 +11,9 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/bryangrimes/gm/internal/db"
-	"github.com/bryangrimes/gm/internal/output"
-	sessionsExport "github.com/bryangrimes/gm/internal/sessions"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
+	sessionsExport "github.com/bearded-giant/giant-tooling/giantmem/internal/sessions"
 	"github.com/spf13/cobra"
 )
 

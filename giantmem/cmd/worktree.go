@@ -8,7 +8,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	archive "github.com/bryangrimes/gm/internal/archiver"
+	archive "github.com/bearded-giant/giant-tooling/giantmem/internal/archiver"
 	"github.com/spf13/cobra"
 )
 

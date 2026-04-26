@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bryangrimes/gm/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 

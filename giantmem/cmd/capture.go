@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/bryangrimes/gm/internal/project"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 	"github.com/spf13/cobra"
 )
 

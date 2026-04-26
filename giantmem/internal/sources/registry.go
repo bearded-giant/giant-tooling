@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/bryangrimes/gm/internal/project"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 )
 
 // Registry holds the resolved source instances after applying config.

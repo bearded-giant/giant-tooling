@@ -1,4 +1,4 @@
-module github.com/bryangrimes/gm
+module github.com/bearded-giant/giant-tooling/giantmem
 
 go 1.26.1
 

@@ -7,9 +7,9 @@ COMMIT  := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 DATE    := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 
 LDFLAGS := -s -w \
-  -X github.com/bryangrimes/gm/cmd.Version=$(VERSION) \
-  -X github.com/bryangrimes/gm/cmd.Commit=$(COMMIT) \
-  -X github.com/bryangrimes/gm/cmd.BuildDate=$(DATE)
+  -X github.com/bearded-giant/giant-tooling/giantmem/cmd.Version=$(VERSION) \
+  -X github.com/bearded-giant/giant-tooling/giantmem/cmd.Commit=$(COMMIT) \
+  -X github.com/bearded-giant/giant-tooling/giantmem/cmd.BuildDate=$(DATE)
 
 .PHONY: all build install uninstall test clean tidy run
 

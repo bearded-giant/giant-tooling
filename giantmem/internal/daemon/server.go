@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	gmdb "github.com/bryangrimes/gm/internal/db"
+	gmdb "github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 )
 
 // Server is the giantmemd unix-socket JSON-RPC server.

@@ -3,7 +3,7 @@ package daemon
 import (
 	"encoding/json"
 
-	"github.com/bryangrimes/gm/internal/search"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 )
 
 func (s *Server) handleFind(req *Request) *Response {
