@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"os/exec"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bryangrimes/gm/internal/db"
 	"github.com/bryangrimes/gm/internal/output"
@@ -13,17 +15,21 @@ import (
 )
 
 var (
-	findProject    string
-	findDirType    string
-	findSourceType string
-	findFeature    string
-	findLatest     bool
-	findLimit      int
-	findJSON       bool
-	findPaths      bool
-	findFull       bool
-	findLiveOnly   bool
-	findArchOnly   bool
+	findProject     string
+	findDirType     string
+	findSourceType  string
+	findFeature     string
+	findLatest      bool
+	findLimit       int
+	findJSON        bool
+	findPaths       bool
+	findFull        bool
+	findLiveOnly    bool
+	findArchOnly    bool
+	findSince       string
+	findUntil       string
+	findInteractive bool
+	findOpenEditor  bool
 )
 
 var findCmd = &cobra.Command{
@@ -58,6 +64,10 @@ func init() {
 	findCmd.Flags().BoolVar(&findFull, "full", false, "include matching content snippet")
 	findCmd.Flags().BoolVar(&findLiveOnly, "live", false, "search only live.db")
 	findCmd.Flags().BoolVar(&findArchOnly, "archive", false, "search only archives.db")
+	findCmd.Flags().StringVar(&findSince, "since", "", `only docs newer than (e.g. "7d", "2h", RFC3339)`)
+	findCmd.Flags().StringVar(&findUntil, "until", "", `only docs older than (e.g. "1d", RFC3339)`)
+	findCmd.Flags().BoolVarP(&findInteractive, "interactive", "i", false, "fzf+bat picker; on select prints path or opens with -o")
+	findCmd.Flags().BoolVarP(&findOpenEditor, "open", "o", false, "with -i: open selected hit in $EDITOR (default: print path)")
 }
 
 type hit struct {
@@ -113,7 +123,14 @@ func runFind(cmd *cobra.Command, args []string) error {
 		hits = hits[:findLimit]
 	}
 
+	if len(hits) == 0 {
+		fmt.Fprintln(os.Stderr, "no results")
+		return nil
+	}
+
 	switch {
+	case findInteractive:
+		return interactivePick(hits, query, findOpenEditor)
 	case findJSON:
 		return output.JSON(hits)
 	case findPaths:
@@ -123,9 +140,95 @@ func runFind(cmd *cobra.Command, args []string) error {
 	default:
 		printHits(hits, findFull)
 	}
-	if len(hits) == 0 {
-		fmt.Fprintln(os.Stderr, "no results")
+	return nil
+}
+
+// parseSinceUntil accepts duration ("7d", "2h", "30m") or RFC3339 timestamp.
+// duration mode subtracts (since=true) or adds the duration from now.
+func parseSinceUntil(s string, _ bool) (time.Time, error) {
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
 	}
+	dur, err := parseDuration(s)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("bad time spec %q: must be duration like 7d/2h or RFC3339", s)
+	}
+	return time.Now().Add(-dur), nil
+}
+
+// interactivePick fans hits into fzf with a bat preview.
+func interactivePick(hits []hit, query string, openEditor bool) error {
+	fzf, err := exec.LookPath("fzf")
+	if err != nil {
+		return fmt.Errorf("fzf not found in PATH (brew install fzf)")
+	}
+
+	var input strings.Builder
+	for _, h := range hits {
+		marker := h.SourceType
+		if h.DirType != "" && h.DirType != "root" {
+			marker = h.SourceType + "/" + h.DirType
+		}
+		ts := h.Timestamp
+		if h.Source == "live" {
+			ts = "live"
+			marker = "live"
+			if h.Feature != "" {
+				marker = "live/" + h.Feature
+			} else if h.DirType != "" {
+				marker = "live/" + h.DirType
+			}
+		}
+		display := fmt.Sprintf("[%6.2f] %-30s %s", h.Score, h.Project+"/"+ts, marker)
+		// path TAB display
+		input.WriteString(h.Filepath)
+		input.WriteString("\t")
+		input.WriteString(display)
+		input.WriteString("\n")
+	}
+
+	preview := fmt.Sprintf(
+		"file=$(echo {} | cut -f1); "+
+			"if command -v bat >/dev/null; then "+
+			"bat --color=always --style=numbers --line-range=:200 \"$file\" 2>/dev/null; "+
+			"else sed -n '1,120p' \"$file\"; fi")
+
+	cmd := exec.Command(fzf,
+		"--ansi",
+		"--delimiter", "\t",
+		"--with-nth", "2",
+		"--preview", preview,
+		"--preview-window", "right:60%:wrap",
+		"--header", "query: "+query+" | enter: select | esc: cancel",
+		"--bind", "ctrl-u:preview-half-page-up,ctrl-d:preview-half-page-down",
+	)
+	cmd.Stdin = strings.NewReader(input.String())
+	cmd.Stderr = os.Stderr
+	out, err := cmd.Output()
+	if err != nil {
+		// 130 = user cancelled
+		if ee, ok := err.(*exec.ExitError); ok && ee.ExitCode() == 130 {
+			return nil
+		}
+		return err
+	}
+	line := strings.TrimSpace(string(out))
+	if line == "" {
+		return nil
+	}
+	path := strings.SplitN(line, "\t", 2)[0]
+	if openEditor {
+		ed := os.Getenv("EDITOR")
+		if ed == "" {
+			ed = "vi"
+		}
+		c := exec.Command(ed, path)
+		c.Stdin = os.Stdin
+		c.Stdout = os.Stdout
+		c.Stderr = os.Stderr
+		return c.Run()
+	}
+	fmt.Println(path)
 	return nil
 }
 
@@ -152,6 +255,22 @@ func queryLive(query string) ([]hit, error) {
 	if findFeature != "" {
 		conds = append(conds, "ld.feature = ?")
 		qargs = append(qargs, findFeature)
+	}
+	if findSince != "" {
+		t, err := parseSinceUntil(findSince, true)
+		if err != nil {
+			return nil, err
+		}
+		conds = append(conds, "ld.mtime >= ?")
+		qargs = append(qargs, t.Unix())
+	}
+	if findUntil != "" {
+		t, err := parseSinceUntil(findUntil, false)
+		if err != nil {
+			return nil, err
+		}
+		conds = append(conds, "ld.mtime < ?")
+		qargs = append(qargs, t.Unix())
 	}
 	snippet := "''"
 	if findFull {
@@ -215,6 +334,22 @@ func queryArchive(query string) ([]hit, error) {
 	}
 	if findLatest {
 		conds = append(conds, "d.is_latest = 1")
+	}
+	if findSince != "" {
+		t, err := parseSinceUntil(findSince, true)
+		if err != nil {
+			return nil, err
+		}
+		conds = append(conds, "d.timestamp >= ?")
+		qargs = append(qargs, t.Format("20060102_150405"))
+	}
+	if findUntil != "" {
+		t, err := parseSinceUntil(findUntil, false)
+		if err != nil {
+			return nil, err
+		}
+		conds = append(conds, "d.timestamp < ?")
+		qargs = append(qargs, t.Format("20060102_150405"))
 	}
 
 	snippet := "''"

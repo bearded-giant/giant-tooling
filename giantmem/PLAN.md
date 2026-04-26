@@ -14,7 +14,7 @@ Build order: Tier 1 top-to-bottom, then Tier 2, then Tier 3 as appetite allows. 
 | 4 | `archive`, `worktree`, `workspace` consolidation | ✓ |
 | 5 | port Python ingester, MCP server, delete giantmem-archive dir | ✓ |
 | 6 | Tier 1 (doctor, MCP tools, prime, cd) | ✓ |
-| 7 | Tier 2 | pending |
+| 7 | Tier 2 (status, tail, capture, since/until, interactive) | ✓ |
 | 8 | Tier 3 | pending |
 
 ## Locked design decisions

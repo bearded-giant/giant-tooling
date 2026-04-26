@@ -125,6 +125,55 @@ You should rarely need this; the live indexing hook handles ongoing writes and t
 | `giantmem ingest --sessions-only` | re-ingest Claude session JSONLs only |
 | `giantmem ingest --force` | force full session re-ingest, ignoring mtime |
 
+## Recency filter
+
+| Flag | Description |
+|------|-------------|
+| `giantmem find <q> --since 7d` | only docs/sessions newer than 7 days |
+| `giantmem find <q> --since 2h` | last 2 hours |
+| `giantmem find <q> --until 1d` | only older than 1 day |
+| `giantmem find <q> --since 2026-04-20T00:00:00Z` | RFC3339 timestamp |
+
+Duration units: `s`, `m`, `h`, `d`, `w`. Combinations like `2h30m` work too.
+
+## Interactive search
+
+| Flag | Description |
+|------|-------------|
+| `giantmem find <q> -i` | open fzf with bat preview; on select, prints the path |
+| `giantmem find <q> -i -o` | open the selected hit in `$EDITOR` |
+
+Soft dependency on `fzf` (required) and `bat` (optional, falls back to `sed`).
+
+## Live tail
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem tail` | stream new live workspace writes as the hook indexes them |
+| `giantmem tail -p chat-orch` | filter by project (LIKE) |
+| `giantmem tail -f better-search` | filter by active feature |
+| `giantmem tail --since 10m` | start from 10 minutes ago instead of "now" |
+| `giantmem tail --interval 500ms` | poll faster |
+
+## Quick capture
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem capture "idea: ..."` | append timestamped block to active feature's `notes.md` (or `.giantmem/notes.md` if none) |
+| `echo "..." \| giantmem capture` | reads from stdin |
+| `giantmem capture -f better-search "spec: ..."` | force a specific feature |
+| `giantmem capture -g "global note"` | force `.giantmem/notes.md` |
+
+## Statusline snapshot
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem status` | human-readable snapshot for the current dir |
+| `giantmem status --json` | JSON for scripts |
+| `giantmem status --json --stale-days 30 --write-cache <path>` | atomically write JSON to a path; used by the statusline (cached 30s, fired in background) |
+
+The Claude Code statusline (`~/.claude/hooks/statusline.js`) consumes the cached JSON to render: active feature name and live-docs-today count.
+
 ## Health audit
 
 `giantmem doctor` walks the system and reports issues across worktrees, workspaces, archives, hooks, and DBs.
