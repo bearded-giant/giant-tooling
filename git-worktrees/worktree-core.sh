@@ -148,6 +148,23 @@ __wt_setup() {
         fi
     fi
 
+    # python framework setup (uv auto-installs; poetry/pip leave to user)
+    local py_framework=$(__wt_config "$prefix" PY_FRAMEWORK "")
+    case "$py_framework" in
+        uv)
+            if ! command -v uv &>/dev/null; then
+                echo "Warning: PY_FRAMEWORK=uv but 'uv' not on PATH, skipping venv setup"
+            elif [ -f "$target_dir/pyproject.toml" ]; then
+                echo "Creating uv venv..."
+                (cd "$target_dir" && uv venv) || echo "Warning: uv venv failed"
+                echo "Running uv sync..."
+                (cd "$target_dir" && uv sync) || echo "Warning: uv sync failed"
+            else
+                echo "uv: no pyproject.toml found, skipping venv/sync"
+            fi
+            ;;
+    esac
+
     # workspace init
     if type workspace_init &>/dev/null; then
         workspace_init "$target_dir" "$branch"
@@ -1620,14 +1637,37 @@ wt_init() {
         [[ ! "$confirm" =~ ^[Yy]$ ]] && return 1
     fi
 
-    local base_default="${PWD}-wt"
+    # detect adopt scenario: if PWD's parent has .bare/, user is inside
+    # a worktree from wt_adopt and the base should be the parent
+    local base_default
+    if [ -d "$(dirname "$PWD")/.bare" ]; then
+        base_default="$(dirname "$PWD")"
+    else
+        base_default="${PWD}-wt"
+    fi
+    echo ""
+    echo "Worktree base: parent dir holding .bare/ + worktree subdirs"
+    echo "  ex: /path/{name}-wt   (NOT /path/{name}-wt/.bare)"
     read -rp "Worktree base directory [$base_default]: " base_dir
     base_dir="${base_dir:-$base_default}"
     base_dir="${base_dir/#\~/$HOME}"
+    # strip trailing /.bare in case user pasted full bare path
+    base_dir="${base_dir%/.bare}"
 
     echo "Stack options: python, node, lua, bash, other"
     read -rp "Stack [python]: " stack
     stack="${stack:-python}"
+
+    local py_framework=""
+    if [ "$stack" = "python" ]; then
+        echo "Python framework: uv, poetry, pip, none"
+        read -rp "Framework [uv]: " py_framework
+        py_framework="${py_framework:-uv}"
+        case "$py_framework" in
+            uv|poetry|pip|none) ;;
+            *) echo "Unknown framework '$py_framework', defaulting to none"; py_framework="none" ;;
+        esac
+    fi
 
     local default_br_default="main master develop"
     [ "$stack" = "python" ] && default_br_default="stage main master"
@@ -1661,6 +1701,14 @@ wt_init() {
             vfile_default=""
             vcontent_default=""
             ;;
+        python)
+            # uv reads python version from pyproject.toml requires-python; skip pinning
+            # none = bare python, no version pin needed
+            if [ "$py_framework" = "uv" ] || [ "$py_framework" = "none" ]; then
+                vfile_default=""
+                vcontent_default=""
+            fi
+            ;;
     esac
     if [ -n "$vfile_default" ]; then
         read -rp "Version file [$vfile_default]: " version_file
@@ -1674,7 +1722,13 @@ wt_init() {
 
     local hint_default=""
     case "$stack" in
-        python) hint_default="Run 'posh' to activate the Poetry shell" ;;
+        python)
+            case "$py_framework" in
+                uv)     hint_default="Run 'uv sync' to install dependencies" ;;
+                poetry) hint_default="Run 'posh' to activate the Poetry shell" ;;
+                pip)    hint_default="Activate venv: source .venv/bin/activate && pip install -r requirements.txt" ;;
+            esac
+            ;;
         node)   hint_default="Run 'pnpm install' to set up dependencies" ;;
     esac
     local pkg_hint=""
@@ -1700,6 +1754,7 @@ source "\${BASH_SOURCE[0]%/*}/worktree-core.sh"
 
 ${uc}_BASE="${base_dir}"
 ${uc}_STACK="${stack}"
+${uc}_PY_FRAMEWORK="${py_framework}"
 ${uc}_DEFAULT_BRANCHES="${default_branches}"
 ${uc}_ENV_FILES="${env_files}"
 ${uc}_DIRENV="${direnv_val}"
