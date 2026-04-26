@@ -78,10 +78,12 @@ alias gms='giantmem-archive search'
 alias gmq='~/dev/giant-tooling/giantmem-archive/giantmem-search.py'
 ```
 
-Generate worktree helpers for your projects:
+Source the worktree library, then create or adopt projects:
 
 ```bash
-~/dev/giant-tooling/git-worktrees/worktree-helper-generator.sh
+source ~/dev/giant-tooling/git-worktrees/worktree-core.sh
+wt_init                              # wizard for a fresh clone
+wt_adopt /path/to/existing/repo      # convert an existing clone in place
 ```
 
 Make the domain search CLI available:
