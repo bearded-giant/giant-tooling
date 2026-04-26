@@ -5,6 +5,7 @@ package search
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -50,6 +51,7 @@ func Run(archive, live *sql.DB, p Params) ([]Hit, error) {
 	if p.Limit <= 0 {
 		p.Limit = 20
 	}
+	p.Query = SanitizeFTSQuery(p.Query)
 	scope := "both"
 	if p.LiveOnly {
 		scope = "live"
@@ -251,4 +253,37 @@ func parseDuration(s string) (time.Duration, error) {
 		return time.Duration(n) * 24 * time.Hour, nil
 	}
 	return time.ParseDuration(s)
+}
+
+// ftsOperatorRE detects whether the user is already speaking FTS5 query
+// language (operators, column qualifiers, prefix matches, phrases, parens,
+// negation). When any of these appear we pass the query through untouched so
+// power users keep full control.
+var ftsOperatorRE = regexp.MustCompile(`(?:^|\s)(?:AND|OR|NOT|NEAR)(?:\s|$)|[()"*^:]`)
+
+// SanitizeFTSQuery makes plain-text queries safe for FTS5 MATCH. FTS5 treats
+// `-` as NOT and bare words like `and` as column references, so an input like
+// `hub-and-spoke` parses as `hub NOT and NOT spoke` and errors out. We split
+// on whitespace and wrap each token as a quoted phrase, which forces FTS5 to
+// tokenize internally and drops punctuation. Queries that already contain
+// FTS5 operators are returned as-is so advanced users can still write
+// `(hub OR spoke) NOT legacy` and so on.
+func SanitizeFTSQuery(q string) string {
+	q = strings.TrimSpace(q)
+	if q == "" {
+		return q
+	}
+	if ftsOperatorRE.MatchString(q) {
+		return q
+	}
+	fields := strings.Fields(q)
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		f = strings.ReplaceAll(f, `"`, "")
+		if f == "" {
+			continue
+		}
+		out = append(out, `"`+f+`"`)
+	}
+	return strings.Join(out, " ")
 }

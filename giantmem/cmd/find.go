@@ -191,16 +191,24 @@ func interactivePick(hits []search.Hit, query string, openEditor bool) error {
 }
 
 // expandHitsToMatches runs ripgrep over each hit's filepath and emits one
-// matchRow per matched line. Tokenizes the FTS query into literal words and
-// passes them as -F -e patterns so the snippet matches what the user typed.
+// matchRow per matched line.
+//
+// Three matching strategies, in priority order:
+//  1. Quoted-phrase short-circuit. If the user wrapped their whole query in
+//     double-quotes (e.g. `"thing that foo thing or whatever"`), match the
+//     unwrapped content as a fixed string. No tokenization, no operator
+//     dropping. This mirrors how the FTS sanitizer treats `"..."` as a
+//     literal phrase.
+//  2. Phrase regex with flexible separators (default for unquoted queries).
+//     Tokens are joined with `[\W_]+` so `hub-and-spoke` matches `hub and
+//     spoke`, `hub_and_spoke`, `hub-and-spoke`, etc.
+//  3. Literal per-token OR fallback. If the phrase regex finds nothing, try
+//     matching any single token. Catches files surfaced by FTS5 stemming
+//     where the literal phrase doesn't appear.
 func expandHitsToMatches(hits []search.Hit, query string) ([]matchRow, error) {
 	rg, err := exec.LookPath("rg")
 	if err != nil {
 		return nil, fmt.Errorf("rg not found (brew install ripgrep)")
-	}
-	tokens := tokenizeFTSQuery(query)
-	if len(tokens) == 0 {
-		return nil, fmt.Errorf("query has no searchable tokens")
 	}
 
 	baseArgs := []string{
@@ -208,23 +216,39 @@ func expandHitsToMatches(hits []search.Hit, query string) ([]matchRow, error) {
 		"--no-heading", "--no-filename",
 		"--color=never",
 		"--max-columns=4000",
-		"-F",
 	}
+
+	if phrase, ok := unwrapQuotedPhrase(query); ok {
+		args := append(append([]string{}, baseArgs...), "-F", "-e", phrase)
+		return runRgOverHits(rg, args, hits, nil), nil
+	}
+
+	tokens := tokenizeFTSQuery(query)
+	if len(tokens) == 0 {
+		return nil, fmt.Errorf("query has no searchable tokens")
+	}
+
+	phraseArgs := append(append([]string{}, baseArgs...), "-e", buildPhraseRegex(tokens))
+	literalArgs := append([]string{}, baseArgs...)
+	literalArgs = append(literalArgs, "-F")
 	for _, t := range tokens {
-		baseArgs = append(baseArgs, "-e", t)
+		literalArgs = append(literalArgs, "-e", t)
 	}
 
-	var rows []matchRow
-	seen := map[string]bool{}
-	for _, h := range hits {
-		key := h.Filepath
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
+	var fallback []string
+	if len(tokens) > 1 {
+		fallback = literalArgs
+	}
+	return runRgOverHits(rg, phraseArgs, hits, fallback), nil
+}
 
-		args := append(append([]string{}, baseArgs...), h.Filepath)
-		out, _ := exec.Command(rg, args...).Output()
+// runRgOverHits executes rg per unique hit filepath. If `primary` returns no
+// rows for a file and `fallback` is non-nil, it retries with `fallback`.
+func runRgOverHits(rg string, primary []string, hits []search.Hit, fallback []string) []matchRow {
+	collect := func(args []string, h search.Hit) []matchRow {
+		cargs := append(append([]string{}, args...), h.Filepath)
+		out, _ := exec.Command(rg, cargs...).Output()
+		var rows []matchRow
 		sc := bufio.NewScanner(bytes.NewReader(out))
 		sc.Buffer(make([]byte, 0, 1<<20), 16<<20)
 		for sc.Scan() {
@@ -243,8 +267,52 @@ func expandHitsToMatches(hits []search.Hit, query string) ([]matchRow, error) {
 			}
 			rows = append(rows, matchRow{Hit: h, Line: num, Text: text})
 		}
+		return rows
 	}
-	return rows, nil
+
+	var rows []matchRow
+	seen := map[string]bool{}
+	for _, h := range hits {
+		if seen[h.Filepath] {
+			continue
+		}
+		seen[h.Filepath] = true
+		r := collect(primary, h)
+		if len(r) == 0 && fallback != nil {
+			r = collect(fallback, h)
+		}
+		rows = append(rows, r...)
+	}
+	return rows
+}
+
+// unwrapQuotedPhrase returns the literal phrase if the query is wrapped in a
+// matching pair of double-quotes (and the inner text is non-empty). Returns
+// "", false otherwise. This lets users escape FTS query parsing entirely:
+// `"thing that foo or whatever"` is a literal substring search, not
+// tokenized.
+func unwrapQuotedPhrase(q string) (string, bool) {
+	q = strings.TrimSpace(q)
+	if len(q) < 2 || q[0] != '"' || q[len(q)-1] != '"' {
+		return "", false
+	}
+	inner := q[1 : len(q)-1]
+	if inner == "" || strings.Contains(inner, `"`) {
+		return "", false
+	}
+	return inner, true
+}
+
+// buildPhraseRegex joins tokens with `[\W_]+` so the phrase matches across
+// any non-word separators (space, hyphen, underscore, slash, comma, ...).
+// Tokens are regex-escaped first because tokenizeFTSQuery may include
+// alphanumerics that, while safe today, should not depend on that invariant.
+func buildPhraseRegex(tokens []string) string {
+	escaped := make([]string, len(tokens))
+	for i, t := range tokens {
+		escaped[i] = regexp.QuoteMeta(t)
+	}
+	return strings.Join(escaped, `[\W_]+`)
 }
 
 var ftsTokenRE = regexp.MustCompile(`[\p{L}\p{N}_]+`)
