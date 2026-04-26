@@ -30,6 +30,19 @@ make install                  # builds and copies to ~/.local/bin/giantmem
 
 `~/.local/bin` must be on `$PATH`. Tab-completion turns `gia<tab>` into `giantmem` after one shell init.
 
+### External tool deps
+
+The CLI shells out to a few standard tools. All are optional unless noted.
+
+| Tool | Required for | Fallback if missing |
+|------|--------------|---------------------|
+| `fzf` | `giantmem find -i` (interactive picker) | hard-required; command errors out |
+| `rg` (ripgrep) | `giantmem find -i` per-line match expansion | falls back to file-level picker |
+| `bat` | `giantmem find -i` syntax-highlighted preview for non-jsonl hits | uses `awk` plain-text preview |
+| `jq` | `giantmem find -i` decoded preview for `.jsonl` session transcripts (role + content text) | uses raw line truncation |
+
+Install on macOS: `brew install fzf ripgrep bat jq`.
+
 ## Capabilities
 
 - `giantmem find` — FTS5 across live + archive + sessions, merged + ranked. Auto-routes through `giantmemd` when available; `--no-daemon` bypasses.
@@ -85,6 +98,8 @@ giantmem worktree remove <path>             # autoarchive then git worktree remo
 | `--full` | include matching content snippet |
 | `--paths` | print absolute paths only |
 | `--json` | JSON output |
+| `-i, --interactive` | fzf picker over per-match line snippets (rg-expanded); preview decodes `.jsonl` via jq, otherwise bat with `--highlight-line` |
+| `-o, --open` | with `-i`: open selection in `$EDITOR` at the matched line (`+N` for vi/vim/nvim/nano/emacs, `-g path:N` for code/cursor) |
 | `--archive-base` | override archive root (env: `GIANTMEM_ARCHIVE_BASE`) |
 
 ## Config
