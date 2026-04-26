@@ -100,7 +100,9 @@ giantmem worktree remove <path>             # autoarchive then git worktree remo
 | `--json` | JSON output |
 | (default) | interactive fzf picker over per-match line snippets (rg-expanded); preview decodes `.jsonl` via jq, otherwise bat with `--highlight-line`. Auto-disabled when stdout isn't a TTY or when `--json`/`--paths` is set. |
 | `-i, --no-interactive` | force script mode (plain text output) even on a TTY |
-| `--tool` | session-only filter: keep matches on lines where Claude used these tool names (`Write`, `Edit`, `Read`, `Bash`, `Grep`, ...). Repeat or comma-separate. Triggers per-line expansion in script mode too. |
+| `--tool` | session-only filter: keep matches on lines where Claude used these tool names (`Write`, `Edit`, `MultiEdit`, `Read`, `Bash`, `Grep`, ...). Repeat or comma-separate. Triggers per-line expansion in script mode too. See USAGE.md for full tool catalog. |
+| `--ext` | session-only filter: keep matches where a tool_use touched a file with these extensions (e.g. `--ext md,go`). Composes with `--tool` via AND. Leading dot optional. |
+| `--include-read` | include Claude's `Read` tool calls in session output (default: hidden, since Read is high-volume noise). Auto-enabled when `Read` appears in `--tool`. |
 | `-o, --open` | open selection in `$EDITOR` at the matched line (`+N` for vi/vim/nvim/nano/emacs, `-g path:N` for code/cursor); ignored in script mode |
 | `--archive-base` | override archive root (env: `GIANTMEM_ARCHIVE_BASE`) |
 

@@ -40,6 +40,8 @@ var (
 	findOpenEditor    bool
 	findNoDaemon      bool
 	findTools         []string
+	findExts          []string
+	findIncludeRead   bool
 )
 
 var findCmd = &cobra.Command{
@@ -73,6 +75,8 @@ func init() {
 	findCmd.Flags().BoolVarP(&findOpenEditor, "open", "o", false, "in interactive mode: open selected hit in $EDITOR at matched line (default: print path:line)")
 	findCmd.Flags().BoolVar(&findNoDaemon, "no-daemon", false, "skip giantmemd; open DBs directly")
 	findCmd.Flags().StringSliceVar(&findTools, "tool", nil, "session filter: only keep matches on lines where Claude used these tool names (e.g. --tool Write,Edit). Case-insensitive. Repeat or comma-separate.")
+	findCmd.Flags().StringSliceVar(&findExts, "ext", nil, "session filter: only keep matches where a tool_use touched a file with these extensions (e.g. --ext md,go). Leading dot optional. Composes with --tool.")
+	findCmd.Flags().BoolVar(&findIncludeRead, "include-read", false, "include Claude's Read tool calls in session results (default: hidden because Read is high-volume noise)")
 	findCmd.AddCommand(findPreviewCmd)
 }
 
@@ -111,7 +115,7 @@ func runFind(cmd *cobra.Command, args []string) error {
 		for _, h := range hits {
 			fmt.Println(h.Filepath)
 		}
-	case interactive || len(findTools) > 0:
+	case interactive || len(findTools) > 0 || len(findExts) > 0:
 		return runMatchPipeline(hits, query, findOpenEditor, interactive)
 	default:
 		printHits(hits, findFull)
@@ -141,8 +145,8 @@ func runMatchPipeline(hits []search.Hit, query string, openEditor, interactive b
 	}
 
 	if len(rows) == 0 {
-		if len(findTools) > 0 {
-			fmt.Fprintln(os.Stderr, "no matches survived --tool filter")
+		if len(findTools) > 0 || len(findExts) > 0 {
+			fmt.Fprintln(os.Stderr, "no matches survived --tool/--ext filter")
 			return nil
 		}
 		if interactive {
@@ -299,6 +303,8 @@ func expandHitsToMatches(hits []search.Hit, query string) ([]matchRow, error) {
 // the tool names are captured for the --tool filter.
 func runRgOverHits(rg string, primary []string, hits []search.Hit, fallback []string) []matchRow {
 	wantTools := normalizeToolFilter(findTools)
+	wantExts := normalizeExtFilter(findExts)
+	includeRead := findIncludeRead || (wantTools != nil && wantTools["read"])
 
 	collect := func(args []string, h search.Hit) []matchRow {
 		cargs := append(append([]string{}, args...), h.Filepath)
@@ -324,12 +330,21 @@ func runRgOverHits(rg string, primary []string, hits []search.Hit, fallback []st
 			if isJSONL {
 				summary, ok := decodeSessionLine([]byte(raw))
 				if ok {
+					if !includeRead {
+						summary = summary.WithoutReads()
+						if summary.IsEmpty() {
+							continue
+						}
+					}
 					row.Tools = summary.Tools
 					row.Display = summary.OneLine()
 				} else {
 					row.Display = truncate(strings.TrimSpace(raw), 240)
 				}
 				if len(wantTools) > 0 && !hasAnyTool(row.Tools, wantTools) {
+					continue
+				}
+				if len(wantExts) > 0 && !hasAnyExt(summary.Files, wantExts) {
 					continue
 				}
 			} else {
@@ -384,6 +399,42 @@ func normalizeToolFilter(in []string) map[string]bool {
 func hasAnyTool(have []string, want map[string]bool) bool {
 	for _, t := range have {
 		if want[strings.ToLower(t)] {
+			return true
+		}
+	}
+	return false
+}
+
+// normalizeExtFilter accepts comma-or-repeat input like ["md", ".go", "py"]
+// and returns a lowercase-normalized set without leading dots.
+func normalizeExtFilter(in []string) map[string]bool {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(in))
+	for _, e := range in {
+		e = strings.TrimSpace(e)
+		e = strings.TrimPrefix(e, ".")
+		if e == "" {
+			continue
+		}
+		out[strings.ToLower(e)] = true
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// hasAnyExt returns true if any file_path in `paths` ends in one of the
+// wanted extensions (case-insensitive, no leading dot in the set).
+func hasAnyExt(paths []string, want map[string]bool) bool {
+	for _, p := range paths {
+		ext := strings.ToLower(strings.TrimPrefix(filepath.Ext(p), "."))
+		if ext == "" {
+			continue
+		}
+		if want[ext] {
 			return true
 		}
 	}
@@ -578,7 +629,20 @@ func matchPreviewScript() string {
 	if err != nil || gm == "" {
 		gm = "giantmem"
 	}
-	return fmt.Sprintf(`%s find _preview {1} {2} 2>/dev/null`, shellQuote(gm))
+	extra := ""
+	if findIncludeRead || toolFilterIncludesRead(findTools) {
+		extra = " --include-read"
+	}
+	return fmt.Sprintf(`%s find _preview%s {1} {2} 2>/dev/null`, shellQuote(gm), extra)
+}
+
+func toolFilterIncludesRead(tools []string) bool {
+	for _, t := range tools {
+		if strings.EqualFold(strings.TrimSpace(t), "Read") {
+			return true
+		}
+	}
+	return false
 }
 
 func shellQuote(s string) string {
@@ -588,8 +652,12 @@ func shellQuote(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
+var findPreviewIncludeRead bool
+
 // findPreviewCmd is the hidden subcommand fzf calls per row to render the
-// preview pane. Hidden because it's an implementation detail of `-i`.
+// preview pane. Hidden because it's an implementation detail of `-i`. The
+// `--include-read` flag mirrors the parent flag and is wired into the fzf
+// preview command line so the preview pane matches the list behavior.
 var findPreviewCmd = &cobra.Command{
 	Use:    "_preview <path> <line>",
 	Hidden: true,
@@ -600,22 +668,26 @@ var findPreviewCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("invalid line %q: %w", args[1], err)
 		}
-		return renderPreview(os.Stdout, path, line)
+		return renderPreview(os.Stdout, path, line, findPreviewIncludeRead)
 	},
+}
+
+func init() {
+	findPreviewCmd.Flags().BoolVar(&findPreviewIncludeRead, "include-read", false, "include Read tool calls in preview rendering (default: hidden)")
 }
 
 // renderPreview writes a focused window of `path` centered on `line` to w.
 // .jsonl files get Go-decoded role/content/tool-call rendering; everything
 // else delegates to bat (color-highlighted) or a plain awk fallback.
-func renderPreview(w io.Writer, path string, line int) error {
+func renderPreview(w io.Writer, path string, line int, includeRead bool) error {
 	lower := strings.ToLower(path)
 	if strings.HasSuffix(lower, ".jsonl") {
-		return renderJSONLPreview(w, path, line, 2)
+		return renderJSONLPreview(w, path, line, 2, includeRead)
 	}
 	return renderTextPreview(w, path, line, 12, 50)
 }
 
-func renderJSONLPreview(w io.Writer, path string, line, ctx int) error {
+func renderJSONLPreview(w io.Writer, path string, line, ctx int, includeRead bool) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -646,6 +718,13 @@ func renderJSONLPreview(w io.Writer, path string, line, ctx int) error {
 		if !ok {
 			fmt.Fprintf(w, "  %s\n\n", truncate(sc.Text(), 3000))
 			continue
+		}
+		if !includeRead {
+			summary = summary.WithoutReads()
+			if summary.IsEmpty() {
+				fmt.Fprintf(w, "  (Read suppressed — pass --include-read)\n\n")
+				continue
+			}
 		}
 		summary.WriteMultiline(w, "  ", 3000)
 		fmt.Fprintln(w)
@@ -713,6 +792,47 @@ type sessionLineSummary struct {
 type toolCallSummary struct {
 	Name  string
 	Input map[string]any
+}
+
+// IsEmpty reports whether the summary carries no content worth displaying.
+// Used to drop session lines that became blank after Read-suppression.
+func (s sessionLineSummary) IsEmpty() bool {
+	return s.Text == "" && len(s.Tools) == 0 && len(s.Calls) == 0
+}
+
+// WithoutReads returns a copy with Read tool_use entries stripped from
+// Tools, Calls, and Files. Text and other tools are preserved. Used to
+// honor the default-hidden-Read behavior; users who want them back pass
+// --include-read.
+func (s sessionLineSummary) WithoutReads() sessionLineSummary {
+	out := s
+	out.Tools = filterStrings(s.Tools, func(t string) bool {
+		return !strings.EqualFold(t, "Read")
+	})
+	out.Calls = make([]toolCallSummary, 0, len(s.Calls))
+	for _, c := range s.Calls {
+		if strings.EqualFold(c.Name, "Read") {
+			continue
+		}
+		out.Calls = append(out.Calls, c)
+	}
+	out.Files = nil
+	for _, c := range out.Calls {
+		if fp, _ := c.Input["file_path"].(string); fp != "" {
+			out.Files = append(out.Files, fp)
+		}
+	}
+	return out
+}
+
+func filterStrings(in []string, keep func(string) bool) []string {
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if keep(s) {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // OneLine returns a compact, truncated summary suitable for the fzf list

@@ -37,6 +37,7 @@ Binary: `~/.local/bin/giantmem`. Source: `~/dev/giant-tooling/giantmem/`.
 | `giantmem find "x" --json` | JSON output |
 | `giantmem find "x" --paths \| xargs $EDITOR` | open all hits in editor |
 | `giantmem find "x" -s session --tool Write,Edit` | session matches restricted to Claude tool calls of those names |
+| `giantmem find "x" -s session --tool Write,Edit,MultiEdit --ext md` | filter further to file_paths ending in `.md` |
 | `giantmem find "hub-and-spoke" -s session` | hyphenated / punctuation queries auto-quoted for FTS5 |
 | `giantmem find '"exact phrase here"' -s session` | wrap in double-quotes for literal substring matching |
 
@@ -230,9 +231,38 @@ External tool deps (all installable via `brew install fzf ripgrep bat jq`):
 
 Tool filter notes:
 
-- Tool names match Claude Code's tool catalog: `Write`, `Edit`, `MultiEdit`, `Read`, `Bash`, `Grep`, `Glob`, plus any MCP/agent tools. Match is case-insensitive.
+- Match is case-insensitive. Names match Claude Code's tool catalog (below).
 - `--tool` triggers per-line expansion in **script mode** too — output becomes `path:line  [role] excerpt ⟨tool ...⟩` per row, suitable for `xargs`/`awk`.
-- A blank `Edit` ≠ `Write`. Files claude already touched come through as `Edit`. New files come through as `Write`. When unsure, pass both: `--tool Write,Edit`.
+- `Edit` ≠ `Write`. Files Claude already touched come through as `Edit`. New files come through as `Write`. When unsure, pass both: `--tool Write,Edit` (add `MultiEdit` for batched edits).
+- `Read` is hidden by default in session match output (list + preview). Pass `--include-read` to bring it back, or just include `Read` in your `--tool` list — that's interpreted as an explicit opt-in. Lines whose only content was a Read call are dropped entirely; lines with text + Read keep the text and strip the Read render.
+
+### Tool catalog
+
+| Category | Tool names | Notes |
+|----------|------------|-------|
+| File mutation | `Write`, `Edit`, `MultiEdit`, `NotebookEdit` | the 95% case for "find sessions where Claude wrote a file"; `MultiEdit` is rare (batched non-overlapping edits to one file) |
+| File read | `Read` | **hidden by default** because Claude reads files constantly. Pass `--include-read` to see them, or include `Read` in `--tool` (auto-overrides). |
+| Search | `Grep`, `Glob`, `LS` | input has `pattern` / `path`; renders as `⟨Grep /pattern/⟩` |
+| Shell | `Bash`, `BashOutput`, `KillShell` | `Bash` input has `command`; renders as `⟨Bash $ cmd⟩` |
+| Web | `WebFetch`, `WebSearch` | input has `url` or `query` |
+| Agent / planning | `Agent` (Task), `TaskCreate`, `TaskUpdate`, `TaskList`, `TaskGet`, `TaskOutput`, `TaskStop`, `ExitPlanMode`, `AskUserQuestion` | sub-agent dispatch + plan mode controls |
+| Skills / MCP | `Skill`, `mcp__<server>__<tool>`, `ToolSearch` | MCP tool names are namespaced (e.g. `mcp__plugin_kai_sourcebot__grep`); pass the full name |
+| Misc | `ScheduleWakeup`, `Monitor`, `PushNotification`, `RemoteTrigger`, `EnterPlanMode`, `EnterWorktree`, `ExitWorktree`, `CronCreate`, `CronList`, `CronDelete` | rarely useful for content search |
+
+For "Claude wrote/edited a markdown file mentioning X":
+
+```
+giantmem find "X" -s session --tool Write,Edit,MultiEdit --ext md
+```
+
+### File-extension filter (`--ext`)
+
+| Flag | Description |
+|------|-------------|
+| `--ext md` | only matches where a `tool_use.input.file_path` ends in `.md` |
+| `--ext md,go,py` | any of the listed extensions (case-insensitive, leading dot optional) |
+
+Composes with `--tool` via AND — line must satisfy both filters. Useful for narrowing to docs (`md`), code (`go,py,ts`), config (`yml,toml`), tests (`py` then grep further), etc. Independent of `--tool`, but typically paired since `--ext` only meaningfully applies to file-touching tools.
 
 ## Live tail
 
