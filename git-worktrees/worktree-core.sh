@@ -1637,10 +1637,12 @@ wt_init() {
         [[ ! "$confirm" =~ ^[Yy]$ ]] && return 1
     fi
 
-    # detect adopt scenario: if PWD's parent has .bare/, user is inside
-    # a worktree from wt_adopt and the base should be the parent
+    # detect adopt scenario: if PWD itself has .bare/, user is at the base
+    # dir; if PWD's parent has .bare/, user is inside a worktree subdir.
     local base_default
-    if [ -d "$(dirname "$PWD")/.bare" ]; then
+    if [ -d "$PWD/.bare" ]; then
+        base_default="$PWD"
+    elif [ -d "$(dirname "$PWD")/.bare" ]; then
         base_default="$(dirname "$PWD")"
     else
         base_default="${PWD}-wt"
@@ -1710,14 +1712,16 @@ wt_init() {
             fi
             ;;
     esac
+    version_file=""
+    version_content=""
     if [ -n "$vfile_default" ]; then
-        read -rp "Version file [$vfile_default]: " version_file
-        version_file="${version_file:-$vfile_default}"
-        read -rp "Version content [$vcontent_default]: " version_content
-        version_content="${version_content:-$vcontent_default}"
-    else
-        version_file=""
-        version_content=""
+        read -rp "Pin runtime version via $vfile_default? (y/N): " pin_version
+        if [[ "$pin_version" =~ ^[Yy]$ ]]; then
+            read -rp "Version file [$vfile_default]: " version_file
+            version_file="${version_file:-$vfile_default}"
+            read -rp "Version content [$vcontent_default]: " version_content
+            version_content="${version_content:-$vcontent_default}"
+        fi
     fi
 
     local hint_default=""
