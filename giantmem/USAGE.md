@@ -61,6 +61,42 @@ The whole point of session search: stop hunting through `~/.claude/projects/**` 
 
 If the recorded cwd no longer exists (e.g. you converted a regular repo to a bare-with-worktrees layout), `giantmem session resume` falls back to `<cwd>-wt/main` then `<cwd>-wt/master` automatically.
 
+## Recent (cross-repo pickup)
+
+`giantmem recent` ranks live workspaces by mtime. Built for jumping back into the doc/repo you last touched in another tmux pane without copying paths around. Pairs with the `/recent-docs` slash command (loads doc + auto-pairs the repo).
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem recent docs` | recent `.giantmem/*.md` docs across all live projects |
+| `giantmem recent docs -t research,plans` | filter by `dir_type` (CSV) |
+| `giantmem recent docs --exclude-current` | drop docs from current repo |
+| `giantmem recent docs --since 7d -n 15` | window + limit |
+| `giantmem recent docs --paths` | absolute paths only (one per line, pipe-friendly) |
+| `giantmem recent docs --json` | structured (used by slash commands) |
+| `giantmem recent docs -i` | interactive fzf picker w/ preview; selection → `pbcopy` + stdout |
+| `giantmem recent repos` | recently active repos (any layout — bare worktrees AND plain repos) |
+| `giantmem recent repos --exclude-current --json -n 10` | typical slash-command call |
+
+Repos derive from `live_docs.worktree_path` grouped by `MAX(mtime)`, so anything with a recent `.giantmem` write shows up regardless of git layout.
+
+### Ignore globs
+
+`recent docs` honors a user-config ignore list at `~/.config/giantmem/config.toml` (or `$XDG_CONFIG_HOME/giantmem/config.toml`):
+
+```toml
+[recent]
+# replaces defaults
+ignore_docs = ["*/features/_index.md", "*notes.md"]
+# OR adds to defaults
+append_ignore_docs = ["*notes.md"]
+```
+
+Pattern semantics:
+- no `/` in pattern → basename glob via `filepath.Match` (e.g. `*notes.md`)
+- has `/` → tail-segment glob (e.g. `*/features/_index.md` matches anywhere in the path)
+
+Built-in defaults: `*/features/_index.md`. Use `append_ignore_docs` to add without losing the default.
+
 ## Stats
 
 | Command | What it shows |
