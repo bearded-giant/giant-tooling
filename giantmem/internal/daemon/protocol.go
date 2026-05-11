@@ -65,9 +65,43 @@ type HealthResult struct {
 
 // Bench is optional benchmark numbers attached to health.
 type Bench struct {
-	FindP50Ms    float64 `json:"find_p50_ms"`
-	FindP99Ms    float64 `json:"find_p99_ms"`
-	StatusP50Ms  float64 `json:"status_p50_ms"`
-	StatusP99Ms  float64 `json:"status_p99_ms"`
-	Iterations   int     `json:"iterations"`
+	FindP50Ms   float64 `json:"find_p50_ms"`
+	FindP99Ms   float64 `json:"find_p99_ms"`
+	StatusP50Ms float64 `json:"status_p50_ms"`
+	StatusP99Ms float64 `json:"status_p99_ms"`
+	Iterations  int     `json:"iterations"`
+}
+
+// StatusParams is the wire shape for the "status" method.
+type StatusParams struct {
+	Root    string `json:"root,omitempty"`
+	Project string `json:"project,omitempty"`
+	StaleD  int    `json:"stale_days,omitempty"`
+}
+
+// PrimeParams is the wire shape for the "prime" method.
+type PrimeParams struct {
+	Cwd      string `json:"cwd"`
+	RecentN  int    `json:"recent_n,omitempty"`
+	SessionN int    `json:"session_n,omitempty"`
+	HistoryN int    `json:"history_n,omitempty"`
+}
+
+// SessionListParams is the wire shape for the "session.list" method.
+type SessionListParams struct {
+	Project string `json:"project,omitempty"`
+	Limit   int    `json:"limit,omitempty"`
+}
+
+// SessionFindParams is the wire shape for the "session.find" method.
+type SessionFindParams struct {
+	Query string `json:"query"`
+	Limit int    `json:"limit,omitempty"`
+}
+
+// TimelineParams is the wire shape for the "timeline" method.
+type TimelineParams struct {
+	Days    int    `json:"days,omitempty"`
+	Project string `json:"project,omitempty"`
+	Source  string `json:"source,omitempty"`
 }

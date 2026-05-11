@@ -1,15 +1,17 @@
 package cmd
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"time"
 
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/daemon"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
-	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/statusinfo"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +25,7 @@ var (
 	statusRoot      string
 	statusProject   string
 	statusWriteFile string
+	statusNoDaemon  bool
 )
 
 var statusCmd = &cobra.Command{
@@ -31,15 +34,18 @@ var statusCmd = &cobra.Command{
 	Long: `Returns active_feature for cwd, live_docs written today, last ingest time,
 and a count of stale workspaces. Designed to be cheap (<50ms) for statusline use.
 
-Defaults to the current dir. Pass --root <path> to query a different worktree.`,
+Defaults to the current dir. Pass --root <path> to query a different worktree.
+
+If giantmemd is running the query runs over the daemon's already-open DB handles.
+Pass --no-daemon to open DBs directly.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
 		if statusRoot != "" {
 			cwd = statusRoot
 		}
-		s := buildStatus(cwd)
+		s := dispatchStatus(cwd)
 		if statusWriteFile != "" {
-			data, err := jsonMarshalIndent(s)
+			data, err := jsonMarshal(s)
 			if err != nil {
 				return err
 			}
@@ -60,111 +66,43 @@ func jsonMarshalIndent(v any) ([]byte, error) {
 	return jsonMarshal(v)
 }
 
-type statusPayload struct {
-	Project          string `json:"project"`
-	WorktreePath     string `json:"worktree_path,omitempty"`
-	ActiveFeature    string `json:"active_feature,omitempty"`
-	LiveDocsToday    int    `json:"live_docs_today"`
-	LiveDocsTotal    int    `json:"live_docs_total"`
-	StaleWorkspaces  int    `json:"stale_workspaces"`
-	LastIndexedAt    string `json:"last_indexed_at,omitempty"`
-	LastLiveWriteAt  string `json:"last_live_write_at,omitempty"`
+// dispatchStatus tries the daemon first, falls back to direct DB open.
+func dispatchStatus(cwd string) statusinfo.Status {
+	if !statusNoDaemon && os.Getenv("GIANTMEM_NO_DAEMON") == "" {
+		sock := daemon.DefaultSocketPath()
+		if daemon.SocketAlive(sock, 250*time.Millisecond) {
+			cli := daemon.NewClient(sock, 5*time.Second)
+			var s statusinfo.Status
+			err := cli.Call("status", &daemon.StatusParams{
+				Root:    cwd,
+				Project: statusProject,
+				StaleD:  statusStaleD,
+			}, &s)
+			if err == nil {
+				return s
+			}
+			if !daemon.IsSchemaDrift(err) {
+				fmt.Fprintf(os.Stderr, "daemon error, falling back: %v\n", err)
+			}
+		}
+	}
+	return statusDirect(cwd)
 }
 
-func buildStatus(cwd string) statusPayload {
-	info := project.Detect(cwd, archiveBasePath())
-	s := statusPayload{
-		Project:       info.Project,
-		WorktreePath:  info.WorktreePath,
-		ActiveFeature: project.FeatureFromGiantmem(info.WorktreePath),
+func statusDirect(cwd string) statusinfo.Status {
+	var archive, live *sql.DB
+	if d, err := db.Open(archiveDBPath()); err == nil {
+		archive = d
+		defer archive.Close()
 	}
-
-	if live, err := db.Open(liveDBPath()); err == nil {
+	if d, err := db.Open(liveDBPath()); err == nil {
+		live = d
 		defer live.Close()
-		startOfDay := time.Now().Truncate(24 * time.Hour).Unix()
-		filter := statusProject
-		if filter == "" {
-			filter = info.Project
-		}
-		// today
-		row := live.QueryRow(
-			`SELECT COUNT(*) FROM live_docs WHERE project LIKE ? AND mtime >= ?`,
-			"%"+filter+"%", startOfDay,
-		)
-		row.Scan(&s.LiveDocsToday)
-		// total
-		row = live.QueryRow(
-			`SELECT COUNT(*) FROM live_docs WHERE project LIKE ?`,
-			"%"+filter+"%",
-		)
-		row.Scan(&s.LiveDocsTotal)
-		// last write
-		var lastMtime int64
-		live.QueryRow(
-			`SELECT MAX(mtime) FROM live_docs WHERE project LIKE ?`,
-			"%"+filter+"%",
-		).Scan(&lastMtime)
-		if lastMtime > 0 {
-			s.LastLiveWriteAt = time.Unix(lastMtime, 0).Format(time.RFC3339)
-		}
 	}
-
-	if arc, err := db.Open(archiveDBPath()); err == nil {
-		defer arc.Close()
-		var ia string
-		arc.QueryRow(`SELECT MAX(indexed_at) FROM documents`).Scan(&ia)
-		s.LastIndexedAt = ia
-	}
-
-	if statusStaleD > 0 {
-		home, _ := os.UserHomeDir()
-		root := filepath.Join(home, "dev")
-		s.StaleWorkspaces = countStaleWorkspaces(root, statusStaleD)
-	}
-
-	return s
+	return statusinfo.Build(archive, live, cwd, archiveBasePath(), statusProject, statusStaleD)
 }
 
-func countStaleWorkspaces(root string, days int) int {
-	cutoff := time.Now().AddDate(0, 0, -days)
-	count := 0
-	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if name == "node_modules" || name == ".git" || name == ".venv" || name == "venv" {
-			return filepath.SkipDir
-		}
-		if name != ".giantmem" {
-			return nil
-		}
-		var newest time.Time
-		filepath.WalkDir(p, func(p2 string, d2 os.DirEntry, _ error) error {
-			if d2.IsDir() {
-				return nil
-			}
-			if filepath.Ext(p2) != ".md" {
-				return nil
-			}
-			info, err := d2.Info()
-			if err != nil {
-				return nil
-			}
-			if info.ModTime().After(newest) {
-				newest = info.ModTime()
-			}
-			return nil
-		})
-		if !newest.IsZero() && newest.Before(cutoff) {
-			count++
-		}
-		return filepath.SkipDir
-	})
-	return count
-}
-
-func printStatus(s statusPayload) {
+func printStatus(s statusinfo.Status) {
 	fmt.Printf("project:           %s\n", s.Project)
 	if s.ActiveFeature != "" {
 		fmt.Printf("active feature:    %s\n", s.ActiveFeature)
@@ -188,5 +126,6 @@ func init() {
 	statusCmd.Flags().StringVar(&statusRoot, "root", "", "use this dir instead of cwd for project detection")
 	statusCmd.Flags().StringVar(&statusProject, "project", "", "override project filter")
 	statusCmd.Flags().StringVar(&statusWriteFile, "write-cache", "", "write JSON to this file (used by statusline)")
+	statusCmd.Flags().BoolVar(&statusNoDaemon, "no-daemon", false, "skip giantmemd; open DBs directly")
 	rootCmd.AddCommand(statusCmd)
 }
