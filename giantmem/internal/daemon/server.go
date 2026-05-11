@@ -182,6 +182,18 @@ func (s *Server) dispatch(req *Request) *Response {
 		return s.handleHealth(req)
 	case "ping":
 		return okReply(req.ID, map[string]string{"pong": "ok"})
+	case "status":
+		return s.handleStatus(req)
+	case "prime":
+		return s.handlePrime(req)
+	case "stats":
+		return s.handleStats(req)
+	case "session.list":
+		return s.handleSessionList(req)
+	case "session.find":
+		return s.handleSessionFind(req)
+	case "timeline":
+		return s.handleTimeline(req)
 	default:
 		return errorReply(req.ID, NotFound, "unknown method: "+req.Method)
 	}

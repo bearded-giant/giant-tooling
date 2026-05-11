@@ -11,8 +11,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/daemon"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/sessioninfo"
 	sessionsExport "github.com/bearded-giant/giant-tooling/giantmem/internal/sessions"
 	"github.com/spf13/cobra"
 )
@@ -27,60 +29,16 @@ var (
 	sessListLimit   int
 	sessFindLimit   int
 	sessJSON        bool
+	sessNoDaemon    bool
 )
-
-type sessRow struct {
-	ID        string `json:"id"`
-	JSONLPath string `json:"jsonl_path"`
-	Project   string `json:"project"`
-	Cwd       string `json:"cwd,omitempty"`
-	Topic     string `json:"topic,omitempty"`
-	Timestamp string `json:"timestamp"`
-}
 
 var sessListCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List recent sessions",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		a, err := db.Open(archiveDBPath())
+		hits, err := dispatchSessionList()
 		if err != nil {
 			return err
-		}
-		defer a.Close()
-		if err := db.EnsureArchive(a); err != nil {
-			return err
-		}
-
-		var (
-			conds []string
-			qargs []any
-		)
-		conds = append(conds, "source_type = 'session'")
-		if sessListProject != "" {
-			conds = append(conds, "project LIKE ?")
-			qargs = append(qargs, "%"+sessListProject+"%")
-		}
-		q := fmt.Sprintf(`
-            SELECT COALESCE(session_id,''), filepath, project, COALESCE(cwd,''),
-                   COALESCE(topic,''), timestamp
-              FROM documents
-             WHERE %s
-             ORDER BY timestamp DESC
-             LIMIT ?`, strings.Join(conds, " AND "))
-		qargs = append(qargs, sessListLimit)
-		rows, err := a.Query(q, qargs...)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-
-		var hits []sessRow
-		for rows.Next() {
-			var r sessRow
-			if err := rows.Scan(&r.ID, &r.JSONLPath, &r.Project, &r.Cwd, &r.Topic, &r.Timestamp); err != nil {
-				return err
-			}
-			hits = append(hits, r)
 		}
 		if sessJSON {
 			return output.JSON(hits)
@@ -96,38 +54,9 @@ var sessFindCmd = &cobra.Command{
 	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := strings.Join(args, " ")
-		a, err := db.Open(archiveDBPath())
+		hits, err := dispatchSessionFind(query)
 		if err != nil {
 			return err
-		}
-		defer a.Close()
-		if err := db.EnsureArchive(a); err != nil {
-			return err
-		}
-
-		q := `
-            SELECT bm25(documents_fts), COALESCE(d.session_id,''), d.filepath, d.project,
-                   COALESCE(d.cwd,''), COALESCE(d.topic,''), d.timestamp
-              FROM documents_fts
-              JOIN documents d ON d.id = documents_fts.rowid
-             WHERE documents_fts MATCH ?
-               AND d.source_type = 'session'
-             ORDER BY bm25(documents_fts)
-             LIMIT ?`
-		rows, err := a.Query(q, query, sessFindLimit)
-		if err != nil {
-			return err
-		}
-		defer rows.Close()
-
-		var hits []sessRow
-		for rows.Next() {
-			var r sessRow
-			var score float64
-			if err := rows.Scan(&score, &r.ID, &r.JSONLPath, &r.Project, &r.Cwd, &r.Topic, &r.Timestamp); err != nil {
-				return err
-			}
-			hits = append(hits, r)
 		}
 		if sessJSON {
 			return output.JSON(hits)
@@ -135,6 +64,78 @@ var sessFindCmd = &cobra.Command{
 		printSessions(hits)
 		return nil
 	},
+}
+
+// dispatchSessionList tries the daemon first, falls back to direct DB.
+func dispatchSessionList() ([]sessioninfo.Row, error) {
+	if !sessNoDaemon && os.Getenv("GIANTMEM_NO_DAEMON") == "" {
+		sock := daemon.DefaultSocketPath()
+		if daemon.SocketAlive(sock, 250*time.Millisecond) {
+			cli := daemon.NewClient(sock, 5*time.Second)
+			var out struct {
+				Rows []sessioninfo.Row `json:"rows"`
+			}
+			err := cli.Call("session.list", &daemon.SessionListParams{
+				Project: sessListProject,
+				Limit:   sessListLimit,
+			}, &out)
+			if err == nil {
+				return out.Rows, nil
+			}
+			if !daemon.IsSchemaDrift(err) {
+				fmt.Fprintf(os.Stderr, "daemon error, falling back: %v\n", err)
+			}
+		}
+	}
+	return sessionListDirect()
+}
+
+func sessionListDirect() ([]sessioninfo.Row, error) {
+	a, err := db.Open(archiveDBPath())
+	if err != nil {
+		return nil, err
+	}
+	defer a.Close()
+	if err := db.EnsureArchive(a); err != nil {
+		return nil, err
+	}
+	return sessioninfo.List(a, sessListProject, sessListLimit)
+}
+
+// dispatchSessionFind tries the daemon first, falls back to direct DB.
+func dispatchSessionFind(query string) ([]sessioninfo.Row, error) {
+	if !sessNoDaemon && os.Getenv("GIANTMEM_NO_DAEMON") == "" {
+		sock := daemon.DefaultSocketPath()
+		if daemon.SocketAlive(sock, 250*time.Millisecond) {
+			cli := daemon.NewClient(sock, 5*time.Second)
+			var out struct {
+				Rows []sessioninfo.Row `json:"rows"`
+			}
+			err := cli.Call("session.find", &daemon.SessionFindParams{
+				Query: query,
+				Limit: sessFindLimit,
+			}, &out)
+			if err == nil {
+				return out.Rows, nil
+			}
+			if !daemon.IsSchemaDrift(err) {
+				fmt.Fprintf(os.Stderr, "daemon error, falling back: %v\n", err)
+			}
+		}
+	}
+	return sessionFindDirect(query)
+}
+
+func sessionFindDirect(query string) ([]sessioninfo.Row, error) {
+	a, err := db.Open(archiveDBPath())
+	if err != nil {
+		return nil, err
+	}
+	defer a.Close()
+	if err := db.EnsureArchive(a); err != nil {
+		return nil, err
+	}
+	return sessioninfo.Find(a, query, sessFindLimit)
 }
 
 var sessShowCmd = &cobra.Command{
@@ -206,10 +207,6 @@ var sessResumeCmd = &cobra.Command{
 }
 
 // resolveCwd applies fallbacks when the recorded cwd no longer exists.
-//
-// 1. try <cwd>-wt/main, <cwd>-wt/master (legacy bare-with-worktrees layout)
-// 2. fall back to giantmem-cd matcher: feed the cwd basename and pick a unique
-//    worktree (no fzf, --no-fzf single-match only)
 func resolveCwd(cwd string) string {
 	if dirExists(cwd) {
 		return cwd
@@ -220,7 +217,6 @@ func resolveCwd(cwd string) string {
 			return alt
 		}
 	}
-	// fallback: use the cd matcher with the basename
 	home, _ := os.UserHomeDir()
 	roots := []string{filepath.Join(home, "dev")}
 	pattern := filepath.Base(cwd)
@@ -240,7 +236,7 @@ func dirExists(p string) bool {
 	return err == nil && st.IsDir()
 }
 
-func lookupSession(a *sql.DB, prefix string) (sessRow, error) {
+func lookupSession(a *sql.DB, prefix string) (sessioninfo.Row, error) {
 	q := `
         SELECT COALESCE(session_id,''), filepath, project, COALESCE(cwd,''),
                COALESCE(topic,''), timestamp
@@ -251,31 +247,31 @@ func lookupSession(a *sql.DB, prefix string) (sessRow, error) {
          LIMIT 5`
 	rows, err := a.Query(q, prefix+"%", "%"+prefix+"%")
 	if err != nil {
-		return sessRow{}, err
+		return sessioninfo.Row{}, err
 	}
 	defer rows.Close()
-	var matches []sessRow
+	var matches []sessioninfo.Row
 	for rows.Next() {
-		var r sessRow
+		var r sessioninfo.Row
 		if err := rows.Scan(&r.ID, &r.JSONLPath, &r.Project, &r.Cwd, &r.Topic, &r.Timestamp); err != nil {
-			return sessRow{}, err
+			return sessioninfo.Row{}, err
 		}
 		matches = append(matches, r)
 	}
 	if len(matches) == 0 {
-		return sessRow{}, fmt.Errorf("no session matching %q", prefix)
+		return sessioninfo.Row{}, fmt.Errorf("no session matching %q", prefix)
 	}
 	if len(matches) > 1 {
 		fmt.Fprintln(os.Stderr, "multiple matches:")
 		for _, m := range matches {
 			fmt.Fprintf(os.Stderr, "  %s  %s  %s\n", m.ID, m.Project, m.Timestamp)
 		}
-		return sessRow{}, fmt.Errorf("ambiguous prefix %q (%d matches); use a longer prefix", prefix, len(matches))
+		return sessioninfo.Row{}, fmt.Errorf("ambiguous prefix %q (%d matches); use a longer prefix", prefix, len(matches))
 	}
 	return matches[0], nil
 }
 
-func printSessions(hits []sessRow) {
+func printSessions(hits []sessioninfo.Row) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tPROJECT\tCWD\tTOPIC\tTIMESTAMP")
 	for _, h := range hits {
@@ -401,7 +397,7 @@ type diffShared struct {
 	B []string `json:"b_only"`
 }
 
-func buildSessionDiff(ra, rb sessRow, ta, tb *sessionsExport.Transcript) sessionDiffReport {
+func buildSessionDiff(ra, rb sessioninfo.Row, ta, tb *sessionsExport.Transcript) sessionDiffReport {
 	mkSet := func(items []string) map[string]bool {
 		s := map[string]bool{}
 		for _, x := range items {
@@ -473,9 +469,11 @@ func init() {
 	sessListCmd.Flags().StringVarP(&sessListProject, "project", "p", "", "filter by project (LIKE)")
 	sessListCmd.Flags().IntVarP(&sessListLimit, "limit", "n", 20, "max rows")
 	sessListCmd.Flags().BoolVar(&sessJSON, "json", false, "JSON output")
+	sessListCmd.Flags().BoolVar(&sessNoDaemon, "no-daemon", false, "skip giantmemd; open DBs directly")
 
 	sessFindCmd.Flags().IntVarP(&sessFindLimit, "limit", "n", 20, "max rows")
 	sessFindCmd.Flags().BoolVar(&sessJSON, "json", false, "JSON output")
+	sessFindCmd.Flags().BoolVar(&sessNoDaemon, "no-daemon", false, "skip giantmemd; open DBs directly")
 
 	sessExportCmd.Flags().StringVarP(&sessExportOut, "out", "o", "", "write to file instead of stdout")
 	sessExportCmd.Flags().BoolVar(&sessExportTools, "tools", true, "include tool-call summary blocks")

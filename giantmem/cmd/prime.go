@@ -1,22 +1,24 @@
 package cmd
 
 import (
-	"encoding/json"
+	"database/sql"
 	"fmt"
 	"os"
-	"path/filepath"
+	"time"
 
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/daemon"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
-	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/primeinfo"
 	"github.com/spf13/cobra"
 )
 
 var (
-	primeJSON       bool
-	primeRecentN    int
-	primeSessionsN  int
-	primeHistoryN   int
+	primeJSON      bool
+	primeRecentN   int
+	primeSessionsN int
+	primeHistoryN  int
+	primeNoDaemon  bool
 )
 
 var primeCmd = &cobra.Command{
@@ -25,14 +27,17 @@ var primeCmd = &cobra.Command{
 	Long: `Designed for Claude Code SessionStart hooks. Walks up from cwd (or the
 given path), detects project, reads features.json, queries live.db for the
 project's recent docs, archives.db for recent sessions, and the .giantmem/history
-log if present.`,
+log if present.
+
+If giantmemd is running the query runs over the daemon's already-open DB handles.
+Pass --no-daemon to open DBs directly.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		cwd, _ := os.Getwd()
 		if len(args) > 0 {
 			cwd = args[0]
 		}
-		p, err := buildPrime(cwd)
+		p, err := dispatchPrime(cwd)
 		if err != nil {
 			return err
 		}
@@ -44,118 +49,44 @@ log if present.`,
 	},
 }
 
-type primePayload struct {
-	Cwd            string             `json:"cwd"`
-	Project        string             `json:"project"`
-	WorktreePath   string             `json:"worktree_path"`
-	ActiveFeature  string             `json:"active_feature,omitempty"`
-	RecentDocs     []primeDoc         `json:"recent_docs"`
-	RecentSessions []primeSess        `json:"recent_sessions"`
-	HistoryTail    []string           `json:"history_tail,omitempty"`
-}
-
-type primeDoc struct {
-	Path    string `json:"path"`
-	DirType string `json:"dir_type,omitempty"`
-	Feature string `json:"feature,omitempty"`
-	Mtime   int64  `json:"mtime"`
-}
-
-type primeSess struct {
-	SessionID string `json:"session_id"`
-	Topic     string `json:"topic,omitempty"`
-	Cwd       string `json:"cwd,omitempty"`
-	Timestamp string `json:"timestamp"`
-}
-
-func buildPrime(cwd string) (*primePayload, error) {
-	info := project.Detect(cwd, archiveBasePath())
-	p := &primePayload{
-		Cwd:          cwd,
-		Project:      info.Project,
-		WorktreePath: info.WorktreePath,
-		ActiveFeature: project.FeatureFromGiantmem(info.WorktreePath),
+// dispatchPrime tries the daemon first, falls back to direct DB open.
+func dispatchPrime(cwd string) (*primeinfo.Payload, error) {
+	if !primeNoDaemon && os.Getenv("GIANTMEM_NO_DAEMON") == "" {
+		sock := daemon.DefaultSocketPath()
+		if daemon.SocketAlive(sock, 250*time.Millisecond) {
+			cli := daemon.NewClient(sock, 5*time.Second)
+			var p primeinfo.Payload
+			err := cli.Call("prime", &daemon.PrimeParams{
+				Cwd:      cwd,
+				RecentN:  primeRecentN,
+				SessionN: primeSessionsN,
+				HistoryN: primeHistoryN,
+			}, &p)
+			if err == nil {
+				return &p, nil
+			}
+			if !daemon.IsSchemaDrift(err) {
+				fmt.Fprintf(os.Stderr, "daemon error, falling back: %v\n", err)
+			}
+		}
 	}
+	return primeDirect(cwd)
+}
 
-	// recent docs from live.db
-	if live, err := db.Open(liveDBPath()); err == nil {
+func primeDirect(cwd string) (*primeinfo.Payload, error) {
+	var archive, live *sql.DB
+	if d, err := db.Open(archiveDBPath()); err == nil {
+		archive = d
+		defer archive.Close()
+	}
+	if d, err := db.Open(liveDBPath()); err == nil {
+		live = d
 		defer live.Close()
-		rows, err := live.Query(
-			`SELECT path, COALESCE(dir_type,''), COALESCE(feature,''), mtime
-               FROM live_docs
-              WHERE project LIKE ?
-              ORDER BY mtime DESC LIMIT ?`,
-			"%"+info.Project+"%", primeRecentN,
-		)
-		if err == nil {
-			for rows.Next() {
-				var d primeDoc
-				if err := rows.Scan(&d.Path, &d.DirType, &d.Feature, &d.Mtime); err == nil {
-					p.RecentDocs = append(p.RecentDocs, d)
-				}
-			}
-			rows.Close()
-		}
 	}
-
-	// recent sessions from archives.db
-	if arc, err := db.Open(archiveDBPath()); err == nil {
-		defer arc.Close()
-		rows, err := arc.Query(
-			`SELECT COALESCE(session_id,''), COALESCE(topic,''),
-                    COALESCE(cwd,''), timestamp
-               FROM documents
-              WHERE source_type = 'session'
-                AND (project LIKE ? OR cwd LIKE ?)
-              ORDER BY timestamp DESC LIMIT ?`,
-			"%"+info.Project+"%", "%"+info.WorktreePath+"%", primeSessionsN,
-		)
-		if err == nil {
-			for rows.Next() {
-				var s primeSess
-				if err := rows.Scan(&s.SessionID, &s.Topic, &s.Cwd, &s.Timestamp); err == nil {
-					p.RecentSessions = append(p.RecentSessions, s)
-				}
-			}
-			rows.Close()
-		}
-	}
-
-	// history tail
-	histPath := filepath.Join(info.WorktreePath, ".giantmem", "history", "sessions.md")
-	if raw, err := os.ReadFile(histPath); err == nil {
-		lines := splitLines(string(raw))
-		// trim empty trailing lines
-		for len(lines) > 0 && lines[len(lines)-1] == "" {
-			lines = lines[:len(lines)-1]
-		}
-		if len(lines) > primeHistoryN {
-			lines = lines[len(lines)-primeHistoryN:]
-		}
-		p.HistoryTail = lines
-	}
-
-	return p, nil
+	return primeinfo.Build(archive, live, cwd, archiveBasePath(), primeRecentN, primeSessionsN, primeHistoryN)
 }
 
-func splitLines(s string) []string {
-	var out []string
-	cur := ""
-	for _, r := range s {
-		if r == '\n' {
-			out = append(out, cur)
-			cur = ""
-			continue
-		}
-		cur += string(r)
-	}
-	if cur != "" {
-		out = append(out, cur)
-	}
-	return out
-}
-
-func printPrimeText(p *primePayload) {
+func printPrimeText(p *primeinfo.Payload) {
 	fmt.Printf("project: %s\n", p.Project)
 	fmt.Printf("worktree: %s\n", p.WorktreePath)
 	if p.ActiveFeature != "" {
@@ -170,7 +101,11 @@ func printPrimeText(p *primePayload) {
 	if len(p.RecentSessions) > 0 {
 		fmt.Println("\nrecent sessions:")
 		for _, s := range p.RecentSessions {
-			fmt.Printf("  %s  %s  %s\n", s.SessionID[:8], s.Topic, s.Timestamp)
+			id := s.SessionID
+			if len(id) > 8 {
+				id = id[:8]
+			}
+			fmt.Printf("  %s  %s  %s\n", id, s.Topic, s.Timestamp)
 		}
 	}
 	if len(p.HistoryTail) > 0 {
@@ -189,8 +124,6 @@ func init() {
 	primeCmd.Flags().IntVar(&primeRecentN, "recent", 3, "max recent live docs")
 	primeCmd.Flags().IntVar(&primeSessionsN, "sessions", 2, "max recent sessions")
 	primeCmd.Flags().IntVar(&primeHistoryN, "history", 5, "max history.md tail lines")
+	primeCmd.Flags().BoolVar(&primeNoDaemon, "no-daemon", false, "skip giantmemd; open DBs directly")
 	rootCmd.AddCommand(primeCmd)
 }
-
-// silence unused
-var _ = json.Marshal
