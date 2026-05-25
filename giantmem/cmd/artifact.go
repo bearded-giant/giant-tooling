@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/spf13/cobra"
 )
 
@@ -206,6 +208,8 @@ func runArtifactList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	rows := filterArtifacts(idx.Artifacts)
+	rows = enrichWithAccessCounts(rows)
+	logListAccess(rows, artifactListFilterSummary())
 
 	if artifactJSON {
 		out := struct {
@@ -248,6 +252,8 @@ func runArtifactListAll() error {
 	}
 	_ = archives
 	rows := filterArtifacts(all)
+	rows = enrichWithAccessCounts(rows)
+	logListAccess(rows, artifactListFilterSummary())
 
 	if artifactJSON {
 		out := struct {
@@ -311,9 +317,96 @@ func runArtifactShow(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	logShowAccess(match.ID)
 	fmt.Printf("# %s\n# path: %s\n# status: %s\n\n", match.ID, abs, match.Status)
 	os.Stdout.Write(raw)
 	return nil
+}
+
+func openLiveDBQuiet() *sql.DB {
+	d, err := db.Open(liveDBPath())
+	if err != nil {
+		return nil
+	}
+	return d
+}
+
+func enrichWithAccessCounts(rows []artifacts.Artifact) []artifacts.Artifact {
+	if len(rows) == 0 {
+		return rows
+	}
+	d := openLiveDBQuiet()
+	if d == nil {
+		return rows
+	}
+	defer d.Close()
+	since := time.Now().AddDate(0, 0, -30)
+	counts, err := artifacts.AccessCounts(d, since)
+	if err != nil {
+		return rows
+	}
+	for i := range rows {
+		if n, ok := counts[rows[i].ID]; ok {
+			rows[i].AccessCount = n
+		}
+	}
+	return rows
+}
+
+func logListAccess(rows []artifacts.Artifact, query string) {
+	if len(rows) == 0 {
+		return
+	}
+	d := openLiveDBQuiet()
+	if d == nil {
+		return
+	}
+	defer d.Close()
+	ids := make([]string, len(rows))
+	ranks := make([]int, len(rows))
+	for i, a := range rows {
+		ids[i] = a.ID
+		ranks[i] = i + 1
+	}
+	_ = artifacts.LogAccesses(d, ids, ranks, query)
+}
+
+func logShowAccess(id string) {
+	d := openLiveDBQuiet()
+	if d == nil {
+		return
+	}
+	defer d.Close()
+	_ = artifacts.LogAccess(d, id, "", 0)
+}
+
+func artifactListFilterSummary() string {
+	pairs := map[string]string{}
+	if len(artifactType) > 0 {
+		pairs["type"] = strings.Join(artifactType, ",")
+	}
+	if len(artifactStatus) > 0 {
+		pairs["status"] = strings.Join(artifactStatus, ",")
+	}
+	if artifactFeature != "" {
+		pairs["feature"] = artifactFeature
+	}
+	if artifactDomain != "" {
+		pairs["domain"] = artifactDomain
+	}
+	if artifactRepo != "" {
+		pairs["repo"] = artifactRepo
+	}
+	if artifactBranch != "" {
+		pairs["branch"] = artifactBranch
+	}
+	if artifactScope != "" {
+		pairs["scope"] = artifactScope
+	}
+	if len(artifactLifecycle) > 0 {
+		pairs["lifecycle"] = strings.Join(artifactLifecycle, ",")
+	}
+	return artifacts.AccessFilterSummary(pairs)
 }
 
 func runArtifactReindex(cmd *cobra.Command, args []string) error {

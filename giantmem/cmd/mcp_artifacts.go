@@ -13,27 +13,32 @@ import (
 // ----- find_artifact ---------------------------------------------------------
 
 type findArtifactArgs struct {
-	Type    string  `json:"type"`
-	Domain  string  `json:"domain"`
-	Status  string  `json:"status"`
-	Feature string  `json:"feature"`
-	Repo    string  `json:"repo"`
-	Branch  string  `json:"branch"`
-	Query   string  `json:"query"`
-	Limit   float64 `json:"limit"`
+	Type      string  `json:"type"`
+	Domain    string  `json:"domain"`
+	Status    string  `json:"status"`
+	Feature   string  `json:"feature"`
+	Repo      string  `json:"repo"`
+	Branch    string  `json:"branch"`
+	Scope     string  `json:"scope"`
+	Lifecycle string  `json:"lifecycle"`
+	Query     string  `json:"query"`
+	Limit     float64 `json:"limit"`
 }
 
 type artifactHit struct {
-	ID      string `json:"id"`
-	Type    string `json:"type"`
-	Feature string `json:"feature,omitempty"`
-	Domain  string `json:"domain,omitempty"`
-	Status  string `json:"status"`
-	Path    string `json:"path"`
-	Repo    string `json:"repo"`
-	Branch  string `json:"branch,omitempty"`
-	Updated string `json:"updated,omitempty"`
-	Snippet string `json:"snippet,omitempty"`
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Feature     string `json:"feature,omitempty"`
+	Domain      string `json:"domain,omitempty"`
+	Status      string `json:"status"`
+	Path        string `json:"path"`
+	Repo        string `json:"repo"`
+	Branch      string `json:"branch,omitempty"`
+	Scope       string `json:"scope,omitempty"`
+	Lifecycle   string `json:"lifecycle,omitempty"`
+	AccessCount int    `json:"access_count,omitempty"`
+	Updated     string `json:"updated,omitempty"`
+	Snippet     string `json:"snippet,omitempty"`
 }
 
 func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArtifactArgs) (*mcp.CallToolResult, error) {
@@ -73,6 +78,12 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 	out := make([]artifactHit, 0, len(rows))
 	wantTypes := mcpSplitCSV(args.Type)
 	wantStatus := mcpSplitCSV(args.Status)
+	wantLifecycle := mcpSplitCSV(args.Lifecycle)
+
+	var registry *artifacts.ScopeRegistry
+	if args.Scope != "" {
+		registry, _ = artifacts.LoadScopeRegistry(artifacts.ScopesYAMLPath())
+	}
 
 	for _, a := range rows {
 		if len(wantTypes) > 0 && !mcpContains(wantTypes, a.Type) {
@@ -80,6 +91,15 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 		}
 		if len(wantStatus) > 0 && !mcpContains(wantStatus, a.Status) {
 			continue
+		}
+		if len(wantLifecycle) > 0 {
+			lc := a.Lifecycle
+			if lc == "" {
+				lc = artifacts.LifecycleDurable
+			}
+			if !mcpContains(wantLifecycle, lc) {
+				continue
+			}
 		}
 		if args.Feature != "" && a.Feature != args.Feature {
 			continue
@@ -89,6 +109,15 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 		}
 		if args.Branch != "" && a.Branch != args.Branch {
 			continue
+		}
+		if args.Scope != "" {
+			if a.Scope != "" {
+				if a.Scope != args.Scope {
+					continue
+				}
+			} else if registry == nil || !registry.MatchScope(a.Repo, a.Scope, args.Scope) {
+				continue
+			}
 		}
 		if args.Query != "" {
 			snip, ok := mcpGrepSnippet(a, args.Query)
@@ -103,24 +132,64 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 			break
 		}
 	}
+
+	mcpLogArtifactAccess(out, mcpFindFilterSummary(args))
+
 	return jsonResult(map[string]any{
 		"results": out,
 		"total":   len(out),
 	})
 }
 
+func mcpFindFilterSummary(args findArtifactArgs) string {
+	pairs := map[string]string{
+		"type":      args.Type,
+		"domain":    args.Domain,
+		"status":    args.Status,
+		"feature":   args.Feature,
+		"repo":      args.Repo,
+		"branch":    args.Branch,
+		"scope":     args.Scope,
+		"lifecycle": args.Lifecycle,
+		"query":     args.Query,
+	}
+	return artifacts.AccessFilterSummary(pairs)
+}
+
+func mcpLogArtifactAccess(hits []artifactHit, query string) {
+	if len(hits) == 0 {
+		return
+	}
+	live := openLiveDBQuiet()
+	if live == nil {
+		return
+	}
+	defer live.Close()
+	ids := make([]string, len(hits))
+	ranks := make([]int, len(hits))
+	for i, h := range hits {
+		ids[i] = h.ID
+		ranks[i] = i + 1
+	}
+	_ = artifacts.LogAccesses(live, ids, ranks, query)
+}
+
+
 func mcpArtifactHit(a artifacts.Artifact, snippet string) artifactHit {
 	return artifactHit{
-		ID:      a.ID,
-		Type:    a.Type,
-		Feature: a.Feature,
-		Domain:  a.Domain,
-		Status:  a.Status,
-		Path:    a.Path,
-		Repo:    a.Repo,
-		Branch:  a.Branch,
-		Updated: a.Updated,
-		Snippet: snippet,
+		ID:          a.ID,
+		Type:        a.Type,
+		Feature:     a.Feature,
+		Domain:      a.Domain,
+		Status:      a.Status,
+		Path:        a.Path,
+		Repo:        a.Repo,
+		Branch:      a.Branch,
+		Scope:       a.Scope,
+		Lifecycle:   a.Lifecycle,
+		AccessCount: a.AccessCount,
+		Updated:     a.Updated,
+		Snippet:     snippet,
 	}
 }
 
