@@ -11,7 +11,10 @@ LDFLAGS := -s -w \
   -X github.com/bearded-giant/giant-tooling/giantmem/cmd.Commit=$(COMMIT) \
   -X github.com/bearded-giant/giant-tooling/giantmem/cmd.BuildDate=$(DATE)
 
-.PHONY: all build install uninstall test clean tidy run
+VPS_HOST ?= bryan@5.161.66.2
+VPS_SRC  ?= ~/dev/giant-tooling/giantmem
+
+.PHONY: all build install uninstall test clean tidy run deploy-vps
 
 all: build
 
@@ -37,3 +40,14 @@ clean:
 
 run: build
 	./$(BIN) $(ARGS)
+
+# Rebuild + install on the cloud-claude VPS. Source already mutagen-synced;
+# this ssh's in and runs `make install` remotely. Assumes Go installed at
+# ~/.local/go/bin and ~/.local/bin on PATH.
+#
+# Override host: make deploy-vps VPS_HOST=bryan@1.2.3.4
+deploy-vps:
+	@echo "==> deploying to $(VPS_HOST):$(VPS_SRC)"
+	ssh $(VPS_HOST) 'export PATH=$$HOME/.local/bin:$$HOME/.local/go/bin:$$PATH && cd $(VPS_SRC) && make install'
+	@echo "==> verifying"
+	@ssh $(VPS_HOST) '$$HOME/.local/bin/giantmem version'
