@@ -157,6 +157,36 @@ var liveMigrations = []Migration{
 			return err
 		},
 	},
+	{
+		Version: 3,
+		Name:    "scoped-memory: scopes + artifact_access",
+		Apply: func(tx *sql.Tx) error {
+			stmts := []string{
+				`CREATE TABLE IF NOT EXISTS scopes (
+                    scope_id TEXT PRIMARY KEY,
+                    description TEXT,
+                    tags TEXT,
+                    repos TEXT,
+                    updated_at TEXT
+                )`,
+				`CREATE TABLE IF NOT EXISTS artifact_access (
+                    id INTEGER PRIMARY KEY,
+                    artifact_id TEXT NOT NULL,
+                    query TEXT,
+                    rank INTEGER,
+                    accessed_at TEXT NOT NULL
+                )`,
+				`CREATE INDEX IF NOT EXISTS idx_artifact_access_id ON artifact_access(artifact_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_artifact_access_ts ON artifact_access(accessed_at)`,
+			}
+			for _, s := range stmts {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // MigrateArchive brings archives.db up to the latest version.
