@@ -385,6 +385,54 @@ func getArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args getArtifa
 	})
 }
 
+// ----- find_entity ----------------------------------------------------------
+
+type findEntityArgs struct {
+	Name string `json:"name"`
+	Repo string `json:"repo"`
+}
+
+func findEntityHandler(_ context.Context, _ mcp.CallToolRequest, args findEntityArgs) (*mcp.CallToolResult, error) {
+	if strings.TrimSpace(args.Name) == "" {
+		return mcp.NewToolResultError("name is required"), nil
+	}
+	repo := args.Repo
+	if repo == "" {
+		repo = "all"
+	}
+	var corpus []artifacts.Artifact
+	if repo == "current" {
+		_, idx, err := mcpResolveCurrentWorkspace()
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		corpus = idx.Artifacts
+	} else {
+		all, _, err := artifacts.CrawlAll(0)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		if repo == "all" {
+			corpus = all
+		} else {
+			for _, a := range all {
+				if a.Repo == repo {
+					corpus = append(corpus, a)
+				}
+			}
+		}
+	}
+	entities, err := artifacts.LoadEntities(corpus)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	e, ok := artifacts.FindEntity(entities, args.Name)
+	if !ok {
+		return mcp.NewToolResultError("no entity matching " + args.Name), nil
+	}
+	return jsonResult(e)
+}
+
 // ----- list_features_with_artifacts ------------------------------------------
 
 type listFeaturesWithArtifactsArgs struct {

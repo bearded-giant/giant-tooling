@@ -212,6 +212,21 @@ func registerExtraTools(s *server.MCPServer) {
 		mcp.NewTypedToolHandler(getStatsHandler),
 	)
 
+	// find_entity
+	s.AddTool(
+		mcp.NewTool("find_entity",
+			append([]mcp.ToolOption{
+				mcp.WithDescription("Find a typed file-level entity (derived from .giantmem/domains/*.json) by path or basename. Returns the entity + the IDs of every artifact that mentions its path."),
+				mcp.WithString("name",
+					mcp.Required(),
+					mcp.Description("file path, basename, or substring (case-insensitive)")),
+				mcp.WithString("repo",
+					mcp.Description("'current', 'all' (default), or a repo name")),
+			}, readOnly...)...,
+		),
+		mcp.NewTypedToolHandler(findEntityHandler),
+	)
+
 	// list_features_with_artifacts
 	s.AddTool(
 		mcp.NewTool("list_features_with_artifacts",
