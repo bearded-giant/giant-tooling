@@ -12,6 +12,7 @@ import (
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 	"github.com/spf13/cobra"
 )
 
@@ -71,6 +72,22 @@ var artifactStaleCmd = &cobra.Command{
 	RunE:  runArtifactStale,
 }
 
+var (
+	artifactSearchBackend string
+	artifactSearchLimit   int
+)
+
+var artifactSearchCmd = &cobra.Command{
+	Use:   "search <query>",
+	Short: "Hybrid (FTS + vector + recency + access) search across filtered artifacts",
+	Long: `Run hybrid scoring against the current filter set. Requires embeddings
+written via 'giantmem embed --backfill'. Backend defaults to the configured
+embedder (env: GIANTMEM_EMBED_BACKEND). Score weights are env-tunable
+(GIANTMEM_HYBRID_{FTS,VEC,RECENCY,ACCESS}_WEIGHT, must sum to 1.0).`,
+	Args: cobra.ExactArgs(1),
+	RunE: runArtifactSearch,
+}
+
 func init() {
 	for _, c := range []*cobra.Command{artifactListCmd} {
 		c.Flags().StringSliceVarP(&artifactType, "type", "t", nil, "filter by type (repeat or comma-separate)")
@@ -90,7 +107,17 @@ func init() {
 	artifactStaleCmd.Flags().StringVar(&artifactScope, "scope", "", "filter by scope id")
 	artifactStaleCmd.Flags().StringSliceVar(&artifactLifecycle, "lifecycle", nil, "filter by lifecycle")
 
-	artifactCmd.AddCommand(artifactListCmd, artifactShowCmd, artifactReindexCmd, artifactOrphansCmd, artifactStaleCmd)
+	artifactSearchCmd.Flags().StringVar(&artifactSearchBackend, "backend", "", "embedder backend (stub|python|ollama; default $GIANTMEM_EMBED_BACKEND)")
+	artifactSearchCmd.Flags().IntVar(&artifactSearchLimit, "limit", 10, "max results")
+	artifactSearchCmd.Flags().StringSliceVarP(&artifactType, "type", "t", nil, "filter by type")
+	artifactSearchCmd.Flags().StringSliceVarP(&artifactStatus, "status", "s", nil, "filter by status")
+	artifactSearchCmd.Flags().StringVarP(&artifactFeature, "feature", "f", "", "filter by feature")
+	artifactSearchCmd.Flags().StringVar(&artifactScope, "scope", "", "filter by scope id")
+	artifactSearchCmd.Flags().StringSliceVar(&artifactLifecycle, "lifecycle", nil, "filter by lifecycle")
+	artifactSearchCmd.Flags().StringVar(&artifactRepo, "repo", "current", "current|all|<repo>")
+	artifactSearchCmd.Flags().BoolVar(&artifactJSON, "json", false, "JSON output")
+
+	artifactCmd.AddCommand(artifactListCmd, artifactShowCmd, artifactReindexCmd, artifactOrphansCmd, artifactStaleCmd, artifactSearchCmd)
 	rootCmd.AddCommand(artifactCmd)
 }
 
@@ -501,6 +528,108 @@ func runArtifactStale(cmd *cobra.Command, args []string) error {
 			s.a.Type, s.a.Status, s.note, s.a.Feature+"/"+s.a.Domain+s.a.Name, s.a.Updated, s.a.ID)
 	}
 	return nil
+}
+
+func runArtifactSearch(cmd *cobra.Command, args []string) error {
+	query := args[0]
+
+	weights := search.DefaultHybridWeights()
+	if err := weights.Validate(); err != nil {
+		return err
+	}
+
+	var rows []artifacts.Artifact
+	if artifactRepo == "all" {
+		all, _, err := artifacts.CrawlAll(0)
+		if err != nil {
+			return err
+		}
+		rows = all
+	} else {
+		_, idx, err := resolveWorkspace()
+		if err != nil {
+			return err
+		}
+		rows = idx.Artifacts
+	}
+	rows = filterArtifacts(rows)
+	if len(rows) == 0 {
+		fmt.Fprintln(os.Stderr, "no artifacts match the filters")
+		return nil
+	}
+
+	embedder, err := search.NewEmbedder(artifactSearchBackend)
+	if err != nil {
+		return err
+	}
+	defer embedder.Close()
+
+	queryVec, err := embedder.Embed(query)
+	if err != nil {
+		return fmt.Errorf("embed query: %w", err)
+	}
+
+	live, err := db.Open(liveDBPath())
+	if err != nil {
+		return err
+	}
+	defer live.Close()
+
+	results, err := search.Hybrid(live, query, queryVec, rows, weights, artifactSearchLimit)
+	if err != nil {
+		return err
+	}
+
+	logSearchAccess(results, query)
+
+	if artifactJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string]any{
+			"query":   query,
+			"weights": weights,
+			"results": results,
+		})
+	}
+
+	fmt.Printf("# semantic (backend=%s model=%s, weights fts=%.2f vec=%.2f rec=%.2f acc=%.2f)\n",
+		embedBackendForSearch(), embedder.ModelName(),
+		weights.FTS, weights.Vector, weights.Recency, weights.Access)
+	for i, r := range results {
+		fmt.Printf("%2d  %.3f  %-14s %-22s %s\n",
+			i+1, r.Score, r.Artifact.Type,
+			r.Artifact.Feature+"/"+r.Artifact.Domain+r.Artifact.Name,
+			r.Artifact.ID)
+	}
+	return nil
+}
+
+func embedBackendForSearch() string {
+	if artifactSearchBackend != "" {
+		return artifactSearchBackend
+	}
+	if v := os.Getenv("GIANTMEM_EMBED_BACKEND"); v != "" {
+		return v
+	}
+	return "stub"
+}
+
+func logSearchAccess(results []search.HybridResult, query string) {
+	if len(results) == 0 {
+		return
+	}
+	d := openLiveDBQuiet()
+	if d == nil {
+		return
+	}
+	defer d.Close()
+	ids := make([]string, len(results))
+	ranks := make([]int, len(results))
+	for i, r := range results {
+		ids[i] = r.Artifact.ID
+		ranks[i] = i + 1
+	}
+	_ = artifacts.LogAccesses(d, ids, ranks, "semantic:"+query)
 }
 
 func runArtifactOrphans(cmd *cobra.Command, args []string) error {

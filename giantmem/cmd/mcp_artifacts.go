@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -23,6 +24,7 @@ type findArtifactArgs struct {
 	Lifecycle string  `json:"lifecycle"`
 	Query     string  `json:"query"`
 	Limit     float64 `json:"limit"`
+	Semantic  bool    `json:"semantic"`
 }
 
 type artifactHit struct {
@@ -119,6 +121,11 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 				continue
 			}
 		}
+		if args.Semantic {
+			// Semantic mode collects all matches; ranking runs below.
+			out = append(out, mcpArtifactHit(a, ""))
+			continue
+		}
 		if args.Query != "" {
 			snip, ok := mcpGrepSnippet(a, args.Query)
 			if !ok {
@@ -133,12 +140,73 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 		}
 	}
 
+	if args.Semantic && args.Query != "" {
+		out = mcpHybridRerank(out, rows, args.Query, limit)
+	}
+
 	mcpLogArtifactAccess(out, mcpFindFilterSummary(args))
 
 	return jsonResult(map[string]any{
 		"results": out,
 		"total":   len(out),
 	})
+}
+
+func mcpHybridRerank(hits []artifactHit, candidates []artifacts.Artifact, query string, limit int) []artifactHit {
+	weights := search.DefaultHybridWeights()
+	if err := weights.Validate(); err != nil {
+		// weights misconfigured — fall back to lexical order
+		if limit > 0 && len(hits) > limit {
+			return hits[:limit]
+		}
+		return hits
+	}
+	embedder, err := search.NewEmbedder("")
+	if err != nil {
+		if limit > 0 && len(hits) > limit {
+			return hits[:limit]
+		}
+		return hits
+	}
+	defer embedder.Close()
+	queryVec, err := embedder.Embed(query)
+	if err != nil {
+		if limit > 0 && len(hits) > limit {
+			return hits[:limit]
+		}
+		return hits
+	}
+	live := openLiveDBQuiet()
+	if live == nil {
+		if limit > 0 && len(hits) > limit {
+			return hits[:limit]
+		}
+		return hits
+	}
+	defer live.Close()
+	// Build a quick id->candidate index for re-resolution
+	byID := map[string]artifacts.Artifact{}
+	for _, a := range candidates {
+		byID[a.ID] = a
+	}
+	picks := make([]artifacts.Artifact, 0, len(hits))
+	for _, h := range hits {
+		if a, ok := byID[h.ID]; ok {
+			picks = append(picks, a)
+		}
+	}
+	results, err := search.Hybrid(live, query, queryVec, picks, weights, limit)
+	if err != nil {
+		if limit > 0 && len(hits) > limit {
+			return hits[:limit]
+		}
+		return hits
+	}
+	out := make([]artifactHit, 0, len(results))
+	for _, r := range results {
+		out = append(out, mcpArtifactHit(r.Artifact, ""))
+	}
+	return out
 }
 
 func mcpFindFilterSummary(args findArtifactArgs) string {

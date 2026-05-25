@@ -173,6 +173,8 @@ func registerExtraTools(s *server.MCPServer) {
 					mcp.Description("comma-separated lifecycle filter (candidate, durable, deprecated). Empty matches all.")),
 				mcp.WithString("query",
 					mcp.Description("optional substring (case-insensitive) — return artifacts whose body contains it, with a snippet")),
+				mcp.WithBoolean("semantic",
+					mcp.Description("opt-in hybrid scoring (FTS + vector + recency + access). Requires `giantmem embed --backfill` to have run.")),
 				mcp.WithNumber("limit",
 					mcp.Description("max results (default 20)"),
 					mcp.Min(1), mcp.Max(200)),
