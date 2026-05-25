@@ -149,6 +149,60 @@ func registerExtraTools(s *server.MCPServer) {
 		),
 		mcp.NewTypedToolHandler(workspaceTreeHandler),
 	)
+
+	// find_artifact
+	s.AddTool(
+		mcp.NewTool("find_artifact",
+			append([]mcp.ToolOption{
+				mcp.WithDescription("Find typed artifacts across .giantmem/ workspaces. Filter by type, status, feature, domain, repo, branch, and optional fulltext query. Returns artifact ID, type, status, path, repo+branch, and a snippet when query matches."),
+				mcp.WithString("type",
+					mcp.Description("comma-separated artifact types (source-spec, delta-spec, proposal, design, tasks, plan, research, review, domain, notes, pattern, facts)")),
+				mcp.WithString("domain",
+					mcp.Description("filter by domain name (e.g. auth, payments)")),
+				mcp.WithString("status",
+					mcp.Description("comma-separated statuses (draft, ready, done, blocked, stale)")),
+				mcp.WithString("feature",
+					mcp.Description("filter by feature name")),
+				mcp.WithString("repo",
+					mcp.Description("repo filter: 'current' (cwd), 'all' (every discovered workspace, default), or a specific repo name")),
+				mcp.WithString("branch",
+					mcp.Description("branch filter — useful when same feature spans multiple worktrees")),
+				mcp.WithString("query",
+					mcp.Description("optional substring (case-insensitive) — return artifacts whose body contains it, with a snippet")),
+				mcp.WithNumber("limit",
+					mcp.Description("max results (default 20)"),
+					mcp.Min(1), mcp.Max(200)),
+			}, readOnly...)...,
+		),
+		mcp.NewTypedToolHandler(findArtifactHandler),
+	)
+
+	// get_artifact
+	s.AddTool(
+		mcp.NewTool("get_artifact",
+			append([]mcp.ToolOption{
+				mcp.WithDescription("Return full frontmatter + body of one artifact by stable ID (e.g. 'feat:openspec-compare:proposal' or 'repo:source-spec:auth')."),
+				mcp.WithString("id",
+					mcp.Required(),
+					mcp.Description("stable artifact ID — see find_artifact results")),
+			}, readOnly...)...,
+		),
+		mcp.NewTypedToolHandler(getArtifactHandler),
+	)
+
+	// list_features_with_artifacts
+	s.AddTool(
+		mcp.NewTool("list_features_with_artifacts",
+			append([]mcp.ToolOption{
+				mcp.WithDescription("Group artifacts by feature across one or all repos. Useful for 'show me every feature with open delta-specs' style queries."),
+				mcp.WithString("repo",
+					mcp.Description("'current' (default), 'all', or a repo name")),
+				mcp.WithString("artifact_types",
+					mcp.Description("optional comma-separated type filter (e.g. 'delta-spec,tasks')")),
+			}, readOnly...)...,
+		),
+		mcp.NewTypedToolHandler(listFeaturesWithArtifactsHandler),
+	)
 }
 
 type searchArgs struct {
