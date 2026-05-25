@@ -13,12 +13,15 @@ import (
 )
 
 var (
-	artifactType    []string
-	artifactStatus  []string
-	artifactFeature string
-	artifactDomain  string
-	artifactJSON    bool
-	artifactPaths   bool
+	artifactType        []string
+	artifactStatus      []string
+	artifactFeature     string
+	artifactDomain      string
+	artifactRepo        string
+	artifactBranch      string
+	artifactJSON        bool
+	artifactPaths       bool
+	artifactIncludeArch bool
 )
 
 var artifactCmd = &cobra.Command{
@@ -58,6 +61,9 @@ func init() {
 		c.Flags().StringSliceVarP(&artifactStatus, "status", "s", nil, "filter by status (default: all)")
 		c.Flags().StringVarP(&artifactFeature, "feature", "f", "", "filter by feature name")
 		c.Flags().StringVarP(&artifactDomain, "domain", "d", "", "filter by domain")
+		c.Flags().StringVar(&artifactRepo, "repo", "", "repo filter: current (default), all, or repo name")
+		c.Flags().StringVar(&artifactBranch, "branch", "", "branch filter — useful when same feature spans multiple worktrees")
+		c.Flags().BoolVar(&artifactIncludeArch, "include-archived", false, "with --repo all, also include archived .giantmem/ snapshots")
 		c.Flags().BoolVar(&artifactJSON, "json", false, "JSON output")
 		c.Flags().BoolVar(&artifactPaths, "paths", false, "print absolute paths only")
 	}
@@ -83,12 +89,12 @@ func resolveWorkspace() (string, *artifacts.Index, error) {
 	return ws, idx, nil
 }
 
-func filterIndex(idx *artifacts.Index) []artifacts.Artifact {
+func filterArtifacts(rows []artifacts.Artifact) []artifacts.Artifact {
 	wantType := setFromSlice(artifactType)
 	wantStatus := setFromSlice(artifactStatus)
 
-	out := make([]artifacts.Artifact, 0, len(idx.Artifacts))
-	for _, a := range idx.Artifacts {
+	out := make([]artifacts.Artifact, 0, len(rows))
+	for _, a := range rows {
 		if len(wantType) > 0 && !wantType[a.Type] {
 			continue
 		}
@@ -101,9 +107,20 @@ func filterIndex(idx *artifacts.Index) []artifacts.Artifact {
 		if artifactDomain != "" && a.Domain != artifactDomain {
 			continue
 		}
+		if artifactBranch != "" && a.Branch != artifactBranch {
+			continue
+		}
+		if artifactRepo != "" && artifactRepo != "all" && artifactRepo != "current" {
+			if a.Repo != artifactRepo {
+				continue
+			}
+		}
 		out = append(out, a)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Repo != out[j].Repo {
+			return out[i].Repo < out[j].Repo
+		}
 		if out[i].Type != out[j].Type {
 			return out[i].Type < out[j].Type
 		}
@@ -132,11 +149,15 @@ func setFromSlice(in []string) map[string]bool {
 }
 
 func runArtifactList(cmd *cobra.Command, args []string) error {
+	if artifactRepo == "all" {
+		return runArtifactListAll()
+	}
+
 	ws, idx, err := resolveWorkspace()
 	if err != nil {
 		return err
 	}
-	rows := filterIndex(idx)
+	rows := filterArtifacts(idx.Artifacts)
 
 	if artifactJSON {
 		out := struct {
@@ -162,6 +183,63 @@ func runArtifactList(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%-12s %-8s %-22s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, a.ID)
 	}
 	return nil
+}
+
+func runArtifactListAll() error {
+	var all []artifacts.Artifact
+	var workspaces []string
+	var archives []string
+	var err error
+	if artifactIncludeArch {
+		all, workspaces, archives, err = artifacts.CrawlEverything(0, flagArchiveBase)
+	} else {
+		all, workspaces, err = artifacts.CrawlAll(0)
+	}
+	if err != nil {
+		return err
+	}
+	_ = archives
+	rows := filterArtifacts(all)
+
+	if artifactJSON {
+		out := struct {
+			Workspaces []string             `json:"workspaces"`
+			Artifacts  []artifacts.Artifact `json:"artifacts"`
+		}{workspaces, rows}
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(out)
+	}
+
+	if artifactPaths {
+		for _, a := range rows {
+			fmt.Println(workspaceAbsPath(workspaces, a))
+		}
+		return nil
+	}
+
+	fmt.Printf("# workspaces=%d artifacts=%d (filtered)\n", len(workspaces), len(rows))
+	currentRepo := ""
+	for _, a := range rows {
+		if a.Repo != currentRepo {
+			currentRepo = a.Repo
+			fmt.Printf("\n## %s (%s)\n", a.Repo, a.Branch)
+		}
+		fmt.Printf("%-12s %-8s %-30s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, a.ID)
+	}
+	return nil
+}
+
+// workspaceAbsPath finds the workspace dir whose repo matches the artifact's
+// repo, then joins the relative artifact path. Falls back to the artifact's
+// own .Path when no match is found.
+func workspaceAbsPath(workspaces []string, a artifacts.Artifact) string {
+	for _, ws := range workspaces {
+		if filepath.Base(filepath.Dir(ws)) == a.Repo {
+			return filepath.Join(ws, a.Path)
+		}
+	}
+	return a.Path
 }
 
 func runArtifactShow(cmd *cobra.Command, args []string) error {
