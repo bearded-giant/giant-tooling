@@ -6,7 +6,9 @@ import (
 )
 
 // Artifact is one typed unit of project knowledge inside .giantmem/.
-// Path is relative to the workspace directory (.giantmem root).
+// Path is relative to the workspace directory (.giantmem root). Worktree is
+// the absolute path of the parent worktree (one level up from .giantmem),
+// so consumers can build absolute paths without re-discovering workspaces.
 type Artifact struct {
 	ID       string `json:"id"`
 	Type     string `json:"type"`
@@ -17,6 +19,7 @@ type Artifact struct {
 	Path     string `json:"path"`
 	Repo     string `json:"repo"`
 	Branch   string `json:"branch"`
+	Worktree string `json:"worktree,omitempty"`
 	Size     int64  `json:"size"`
 	Updated  string `json:"updated"`
 	Created  string `json:"created,omitempty"`

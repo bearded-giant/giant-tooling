@@ -107,16 +107,17 @@ func Scan(workspace string) (*Index, error) {
 		mtime := info.ModTime().UTC().Format("2006-01-02")
 
 		a := Artifact{
-			Type:    cls.Type,
-			Feature: cls.Feature,
-			Domain:  cls.Domain,
-			Name:    cls.Name,
-			Status:  "ready",
-			Path:    filepath.ToSlash(rel),
-			Repo:    repo,
-			Branch:  branch,
-			Size:    info.Size(),
-			Updated: mtime,
+			Type:     cls.Type,
+			Feature:  cls.Feature,
+			Domain:   cls.Domain,
+			Name:     cls.Name,
+			Status:   "ready",
+			Path:     filepath.ToSlash(rel),
+			Repo:     repo,
+			Branch:   branch,
+			Worktree: idx.Worktree,
+			Size:     info.Size(),
+			Updated:  mtime,
 		}
 
 		if ext == ".md" {
