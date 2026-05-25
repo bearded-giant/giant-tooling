@@ -132,6 +132,10 @@ func Scan(workspace string) (*Index, error) {
 			}
 		}
 
+		if a.Lifecycle == "" {
+			a.Lifecycle = defaultLifecycle(rel)
+		}
+
 		a.ID = BuildID(a)
 		idx.Artifacts = append(idx.Artifacts, a)
 		return nil
@@ -173,6 +177,12 @@ func applyMarkdownFrontmatter(a *Artifact, path string) {
 	if v, ok := fm["updated"]; ok && v != "" {
 		a.Updated = v
 	}
+	if v, ok := fm["scope"]; ok && v != "" {
+		a.Scope = v
+	}
+	if v, ok := fm["lifecycle"]; ok && validLifecycle(v) {
+		a.Lifecycle = v
+	}
 }
 
 func applyJSONFrontmatter(a *Artifact, path string) {
@@ -196,6 +206,12 @@ func applyJSONFrontmatter(a *Artifact, path string) {
 	}
 	if v, ok := data["status"].(string); ok && v != "" {
 		a.Status = v
+	}
+	if v, ok := data["scope"].(string); ok && v != "" {
+		a.Scope = v
+	}
+	if v, ok := data["lifecycle"].(string); ok && validLifecycle(v) {
+		a.Lifecycle = v
 	}
 }
 

@@ -20,6 +20,8 @@ var (
 	artifactDomain      string
 	artifactRepo        string
 	artifactBranch      string
+	artifactScope       string
+	artifactLifecycle   []string
 	artifactJSON        bool
 	artifactPaths       bool
 	artifactIncludeArch bool
@@ -75,12 +77,16 @@ func init() {
 		c.Flags().StringVarP(&artifactDomain, "domain", "d", "", "filter by domain")
 		c.Flags().StringVar(&artifactRepo, "repo", "", "repo filter: current (default), all, or repo name")
 		c.Flags().StringVar(&artifactBranch, "branch", "", "branch filter — useful when same feature spans multiple worktrees")
+		c.Flags().StringVar(&artifactScope, "scope", "", "filter by scope id (matches explicit frontmatter or repo membership in ~/.giantmem-global/scopes.yaml)")
+		c.Flags().StringSliceVar(&artifactLifecycle, "lifecycle", nil, "filter by lifecycle (candidate, durable, deprecated; repeat or comma-separate)")
 		c.Flags().BoolVar(&artifactIncludeArch, "include-archived", false, "with --repo all, also include archived .giantmem/ snapshots")
 		c.Flags().BoolVar(&artifactJSON, "json", false, "JSON output")
 		c.Flags().BoolVar(&artifactPaths, "paths", false, "print absolute paths only")
 	}
-	artifactStaleCmd.Flags().IntVar(&artifactStaleDays, "days", 30, "stale threshold in days (default 30)")
+	artifactStaleCmd.Flags().IntVar(&artifactStaleDays, "days", 30, "stale threshold in days; 0 = use lifecycle tier policy")
 	artifactStaleCmd.Flags().BoolVar(&artifactStaleAll, "all-repos", false, "scan every discovered workspace, not just current")
+	artifactStaleCmd.Flags().StringVar(&artifactScope, "scope", "", "filter by scope id")
+	artifactStaleCmd.Flags().StringSliceVar(&artifactLifecycle, "lifecycle", nil, "filter by lifecycle")
 
 	artifactCmd.AddCommand(artifactListCmd, artifactShowCmd, artifactReindexCmd, artifactOrphansCmd, artifactStaleCmd)
 	rootCmd.AddCommand(artifactCmd)
@@ -107,6 +113,15 @@ func resolveWorkspace() (string, *artifacts.Index, error) {
 func filterArtifacts(rows []artifacts.Artifact) []artifacts.Artifact {
 	wantType := setFromSlice(artifactType)
 	wantStatus := setFromSlice(artifactStatus)
+	wantLifecycle := setFromSlice(artifactLifecycle)
+
+	var registry *artifacts.ScopeRegistry
+	if artifactScope != "" {
+		reg, err := artifacts.LoadScopeRegistry(artifacts.ScopesYAMLPath())
+		if err == nil {
+			registry = reg
+		}
+	}
 
 	out := make([]artifacts.Artifact, 0, len(rows))
 	for _, a := range rows {
@@ -115,6 +130,15 @@ func filterArtifacts(rows []artifacts.Artifact) []artifacts.Artifact {
 		}
 		if len(wantStatus) > 0 && !wantStatus[a.Status] {
 			continue
+		}
+		if len(wantLifecycle) > 0 {
+			lc := a.Lifecycle
+			if lc == "" {
+				lc = artifacts.LifecycleDurable
+			}
+			if !wantLifecycle[lc] {
+				continue
+			}
 		}
 		if artifactFeature != "" && a.Feature != artifactFeature {
 			continue
@@ -127,6 +151,15 @@ func filterArtifacts(rows []artifacts.Artifact) []artifacts.Artifact {
 		}
 		if artifactRepo != "" && artifactRepo != "all" && artifactRepo != "current" {
 			if a.Repo != artifactRepo {
+				continue
+			}
+		}
+		if artifactScope != "" {
+			if a.Scope != "" {
+				if a.Scope != artifactScope {
+					continue
+				}
+			} else if registry == nil || !registry.MatchScope(a.Repo, a.Scope, artifactScope) {
 				continue
 			}
 		}
@@ -304,8 +337,6 @@ func runArtifactReindex(cmd *cobra.Command, args []string) error {
 }
 
 func runArtifactStale(cmd *cobra.Command, args []string) error {
-	threshold := time.Now().AddDate(0, 0, -artifactStaleDays)
-
 	var rows []artifacts.Artifact
 	if artifactStaleAll {
 		all, _, err := artifacts.CrawlAll(0)
@@ -321,13 +352,33 @@ func runArtifactStale(cmd *cobra.Command, args []string) error {
 		rows = idx.Artifacts
 	}
 
-	stale := make([]artifacts.Artifact, 0)
+	rows = filterArtifacts(rows)
+
+	useTier := artifactStaleDays == 0
+	threshold := time.Now().AddDate(0, 0, -artifactStaleDays)
+	now := time.Now()
+
+	type staleEntry struct {
+		a    artifacts.Artifact
+		note string
+	}
+	stale := make([]staleEntry, 0)
 	for _, a := range rows {
 		if a.Status == "done" {
 			continue
 		}
 		if a.Status == "stale" {
-			stale = append(stale, a)
+			stale = append(stale, staleEntry{a, "explicit"})
+			continue
+		}
+		if useTier {
+			if artifacts.IsStale(a, now) {
+				note := "tier-" + string(artifacts.TierFor(a.Type))
+				if artifacts.IsDurableStale(a, now) {
+					note = "durable-stale"
+				}
+				stale = append(stale, staleEntry{a, note})
+			}
 			continue
 		}
 		if a.Updated == "" {
@@ -338,7 +389,7 @@ func runArtifactStale(cmd *cobra.Command, args []string) error {
 			continue
 		}
 		if t.Before(threshold) {
-			stale = append(stale, a)
+			stale = append(stale, staleEntry{a, "age"})
 		}
 	}
 
@@ -347,10 +398,14 @@ func runArtifactStale(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	fmt.Printf("# stale (threshold=%dd, total=%d)\n", artifactStaleDays, len(stale))
-	for _, a := range stale {
-		fmt.Printf("%-12s %-8s %-22s %-16s %s\n",
-			a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, a.Updated, a.ID)
+	if useTier {
+		fmt.Printf("# stale (tier policy, total=%d)\n", len(stale))
+	} else {
+		fmt.Printf("# stale (threshold=%dd, total=%d)\n", artifactStaleDays, len(stale))
+	}
+	for _, s := range stale {
+		fmt.Printf("%-12s %-8s %-14s %-22s %-16s %s\n",
+			s.a.Type, s.a.Status, s.note, s.a.Feature+"/"+s.a.Domain+s.a.Name, s.a.Updated, s.a.ID)
 	}
 	return nil
 }

@@ -10,20 +10,23 @@ import (
 // the absolute path of the parent worktree (one level up from .giantmem),
 // so consumers can build absolute paths without re-discovering workspaces.
 type Artifact struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Feature  string `json:"feature,omitempty"`
-	Domain   string `json:"domain,omitempty"`
-	Name     string `json:"name,omitempty"`
-	Status   string `json:"status"`
-	Path     string `json:"path"`
-	Repo     string `json:"repo"`
-	Branch   string `json:"branch"`
-	Worktree string `json:"worktree,omitempty"`
-	Size     int64  `json:"size"`
-	Updated  string `json:"updated"`
-	Created  string `json:"created,omitempty"`
-	HasFront bool   `json:"has_frontmatter"`
+	ID          string `json:"id"`
+	Type        string `json:"type"`
+	Feature     string `json:"feature,omitempty"`
+	Domain      string `json:"domain,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Status      string `json:"status"`
+	Path        string `json:"path"`
+	Repo        string `json:"repo"`
+	Branch      string `json:"branch"`
+	Worktree    string `json:"worktree,omitempty"`
+	Size        int64  `json:"size"`
+	Updated     string `json:"updated"`
+	Created     string `json:"created,omitempty"`
+	HasFront    bool   `json:"has_frontmatter"`
+	Scope       string `json:"scope,omitempty"`
+	Lifecycle   string `json:"lifecycle,omitempty"`
+	AccessCount int    `json:"access_count,omitempty"`
 }
 
 // Index is the on-disk live view of one workspace's artifacts.
