@@ -194,6 +194,22 @@ func registerExtraTools(s *server.MCPServer) {
 		mcp.NewTypedToolHandler(getArtifactHandler),
 	)
 
+	// get_stats
+	s.AddTool(
+		mcp.NewTool("get_stats",
+			append([]mcp.ToolOption{
+				mcp.WithDescription("Lightweight counts across artifacts and recent access. Useful for 'how many candidates are pending review' / 'what got touched today' style questions without running a full search. Filters: scope, repo (default all), feature."),
+				mcp.WithString("scope",
+					mcp.Description("scope id filter")),
+				mcp.WithString("repo",
+					mcp.Description("'current' (cwd), 'all' (default), or a repo name")),
+				mcp.WithString("feature",
+					mcp.Description("filter by feature name")),
+			}, readOnly...)...,
+		),
+		mcp.NewTypedToolHandler(getStatsHandler),
+	)
+
 	// list_features_with_artifacts
 	s.AddTool(
 		mcp.NewTool("list_features_with_artifacts",
