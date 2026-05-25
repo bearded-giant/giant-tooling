@@ -65,7 +65,7 @@ workspace_init() {
     workspace_migrate_dir "$target_dir"
 
     # Create workspace structure
-    mkdir -p "$scratch_dir"/{context,plans,history,filebox,prompts,research,reviews,features}
+    mkdir -p "$scratch_dir"/{context,plans,history,filebox,prompts,research,reviews,features,specs}
 
     # Create WORKSPACE.md if it doesn't exist
     if [ ! -f "$scratch_dir/WORKSPACE.md" ]; then
@@ -109,6 +109,29 @@ EOF
 <!-- beta flags, config keys, etc. added as features are created -->
 EOF
         echo "Created .giantmem/features/_index.md"
+    fi
+
+    # Create specs/_index.md (source-of-truth registry) if missing
+    if [ ! -f "$scratch_dir/specs/_index.md" ]; then
+        cat > "$scratch_dir/specs/_index.md" << 'EOF'
+# Source-of-truth Spec Registry
+
+<!-- Each row points to .giantmem/specs/{domain}/spec.md. Populated by /complete-feature -->
+
+| Domain | Last Merged | Requirements |
+|---|---|---|
+EOF
+        echo "Created .giantmem/specs/_index.md"
+    fi
+
+    # Create specs/_history.md (chronological merge log) if missing
+    if [ ! -f "$scratch_dir/specs/_history.md" ]; then
+        cat > "$scratch_dir/specs/_history.md" << 'EOF'
+# Spec Merge History
+
+<!-- Append-only log. Written by /complete-feature when delta-specs merge into source-of-truth. -->
+EOF
+        echo "Created .giantmem/specs/_history.md"
     fi
 
     # Generate initial tree
@@ -210,7 +233,7 @@ workspace_status() {
 
     echo ""
     echo "=== Files ==="
-    for subdir in features context plans history prompts research reviews filebox; do
+    for subdir in features specs context plans history prompts research reviews filebox; do
         if [ -d "$scratch_dir/$subdir" ]; then
             count=$(find "$scratch_dir/$subdir" -type f 2>/dev/null | wc -l | tr -d ' ')
             echo "  $subdir/: $count files"
@@ -273,7 +296,7 @@ workspace_migrate() {
     fi
 
     # Create structure if missing
-    mkdir -p "$scratch_dir"/{context,plans,history,filebox,prompts,research,reviews,features}
+    mkdir -p "$scratch_dir"/{context,plans,history,filebox,prompts,research,reviews,features,specs}
 
     # Process each file in .giantmem root (not in subdirs)
     for file in "$scratch_dir"/*; do
