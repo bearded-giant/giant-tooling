@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
 	"github.com/spf13/cobra"
@@ -55,6 +56,17 @@ var artifactOrphansCmd = &cobra.Command{
 	RunE:  runArtifactOrphans,
 }
 
+var (
+	artifactStaleDays int
+	artifactStaleAll  bool
+)
+
+var artifactStaleCmd = &cobra.Command{
+	Use:   "stale",
+	Short: "List artifacts with status: stale OR updated > N days ago (default 30)",
+	RunE:  runArtifactStale,
+}
+
 func init() {
 	for _, c := range []*cobra.Command{artifactListCmd} {
 		c.Flags().StringSliceVarP(&artifactType, "type", "t", nil, "filter by type (repeat or comma-separate)")
@@ -67,7 +79,10 @@ func init() {
 		c.Flags().BoolVar(&artifactJSON, "json", false, "JSON output")
 		c.Flags().BoolVar(&artifactPaths, "paths", false, "print absolute paths only")
 	}
-	artifactCmd.AddCommand(artifactListCmd, artifactShowCmd, artifactReindexCmd, artifactOrphansCmd)
+	artifactStaleCmd.Flags().IntVar(&artifactStaleDays, "days", 30, "stale threshold in days (default 30)")
+	artifactStaleCmd.Flags().BoolVar(&artifactStaleAll, "all-repos", false, "scan every discovered workspace, not just current")
+
+	artifactCmd.AddCommand(artifactListCmd, artifactShowCmd, artifactReindexCmd, artifactOrphansCmd, artifactStaleCmd)
 	rootCmd.AddCommand(artifactCmd)
 }
 
@@ -285,6 +300,58 @@ func runArtifactReindex(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Printf("wrote %s (%d artifacts)\n", artifacts.IndexPath(ws), len(idx.Artifacts))
+	return nil
+}
+
+func runArtifactStale(cmd *cobra.Command, args []string) error {
+	threshold := time.Now().AddDate(0, 0, -artifactStaleDays)
+
+	var rows []artifacts.Artifact
+	if artifactStaleAll {
+		all, _, err := artifacts.CrawlAll(0)
+		if err != nil {
+			return err
+		}
+		rows = all
+	} else {
+		_, idx, err := resolveWorkspace()
+		if err != nil {
+			return err
+		}
+		rows = idx.Artifacts
+	}
+
+	stale := make([]artifacts.Artifact, 0)
+	for _, a := range rows {
+		if a.Status == "done" {
+			continue
+		}
+		if a.Status == "stale" {
+			stale = append(stale, a)
+			continue
+		}
+		if a.Updated == "" {
+			continue
+		}
+		t, err := time.Parse("2006-01-02", a.Updated)
+		if err != nil {
+			continue
+		}
+		if t.Before(threshold) {
+			stale = append(stale, a)
+		}
+	}
+
+	if len(stale) == 0 {
+		fmt.Fprintln(os.Stderr, "no stale artifacts")
+		return nil
+	}
+
+	fmt.Printf("# stale (threshold=%dd, total=%d)\n", artifactStaleDays, len(stale))
+	for _, a := range stale {
+		fmt.Printf("%-12s %-8s %-22s %-16s %s\n",
+			a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, a.Updated, a.ID)
+	}
 	return nil
 }
 
