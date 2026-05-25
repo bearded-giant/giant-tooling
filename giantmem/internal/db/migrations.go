@@ -187,6 +187,43 @@ var liveMigrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: 4,
+		Name:    "scoped-memory: artifact_embeddings vec0 + meta",
+		Apply: func(tx *sql.Tx) error {
+			dim := embeddingDimFromEnv()
+			stmts := []string{
+				`CREATE VIRTUAL TABLE IF NOT EXISTS artifact_embeddings USING vec0(
+                    embedding FLOAT[` + dim + `]
+                )`,
+				`CREATE TABLE IF NOT EXISTS artifact_embedding_meta (
+                    artifact_id TEXT PRIMARY KEY,
+                    rowid INTEGER NOT NULL,
+                    body_hash TEXT NOT NULL,
+                    dim INTEGER NOT NULL,
+                    model TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )`,
+				`CREATE INDEX IF NOT EXISTS idx_artifact_embedding_meta_rowid ON artifact_embedding_meta(rowid)`,
+			}
+			for _, s := range stmts {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+}
+
+// embeddingDimFromEnv returns the vec0 dimension as a string, honoring
+// GIANTMEM_EMBED_DIM. Default 768 (bge-base-en-v1.5).
+func embeddingDimFromEnv() string {
+	v := os.Getenv("GIANTMEM_EMBED_DIM")
+	if v == "" {
+		return "768"
+	}
+	return v
 }
 
 // MigrateArchive brings archives.db up to the latest version.

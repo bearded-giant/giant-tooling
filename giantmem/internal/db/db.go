@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	_ "modernc.org/sqlite"
+	_ "modernc.org/sqlite/vec"
 )
 
 // Open opens the named SQLite db with WAL + busy timeout, then runs any pending
