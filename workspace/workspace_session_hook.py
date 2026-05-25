@@ -115,7 +115,8 @@ def read_workspace_context(cwd: str) -> dict:
         "tree": None,
         "current_plan": None,
         "recent_sessions": None,
-        "bootstrapped": False
+        "bootstrapped": False,
+        "artifacts": None,
     }
 
     if not workspace_dir.exists():
@@ -164,7 +165,36 @@ def read_workspace_context(cwd: str) -> dict:
     if recent:
         context["recent_sessions"] = recent
 
+    # read artifacts summary from artifacts.json (built by giantmem artifact reindex)
+    artifacts_file = workspace_dir / "artifacts.json"
+    if artifacts_file.exists():
+        try:
+            data = json.loads(artifacts_file.read_text())
+            context["artifacts"] = summarize_artifacts(data)
+        except Exception:
+            pass
+
     return context
+
+
+def summarize_artifacts(data: dict) -> dict:
+    """Build a compact summary for the session-start context block."""
+    rows = data.get("artifacts", [])
+    by_feature = {}
+    by_type = {}
+    for a in rows:
+        f = a.get("feature") or "(repo)"
+        by_feature.setdefault(f, {}).setdefault(a.get("status", "ready"), []).append(a)
+        t = a.get("type", "unknown")
+        by_type[t] = by_type.get(t, 0) + 1
+
+    return {
+        "total": len(rows),
+        "by_type": by_type,
+        "by_feature": by_feature,
+        "repo": data.get("repo", ""),
+        "branch": data.get("branch", ""),
+    }
 
 
 def format_context_output(context: dict, cwd: str, bootstrapped: bool) -> str:
@@ -192,6 +222,30 @@ def format_context_output(context: dict, cwd: str, bootstrapped: bool) -> str:
             date_part = filename[:8] if len(filename) > 8 else filename
             formatted_date = f"{date_part[:4]}-{date_part[4:6]}-{date_part[6:8]}" if len(date_part) == 8 else date_part
             parts.append(f"- {formatted_date} [{topic}]: {brief}")
+        parts.append("")
+
+    if context.get("artifacts"):
+        art = context["artifacts"]
+        parts.append("=== ACTIVE ARTIFACTS ===")
+        parts.append(f"repo={art['repo']} branch={art['branch']} total={art['total']}")
+        type_summary = ", ".join(f"{k}={v}" for k, v in sorted(art["by_type"].items()))
+        parts.append(f"by type: {type_summary}")
+        for feature, by_status in sorted(art["by_feature"].items()):
+            if feature == "(repo)":
+                continue
+            status_line = " ".join(
+                f"{s}:{len(items)}" for s, items in sorted(by_status.items())
+            )
+            ready_items = [a for a in by_status.get("ready", []) if a.get("type") in ("delta-spec", "tasks", "design", "plan")]
+            top = ", ".join(
+                f"{a.get('type')}/{a.get('domain') or a.get('name') or ''}".rstrip("/")
+                for a in ready_items[:3]
+            )
+            line = f"  {feature}: {status_line}"
+            if top:
+                line += f"  ready: {top}"
+            parts.append(line)
+        parts.append("query more: `giantmem artifact list -f <feature>` or MCP `find_artifact`")
         parts.append("")
 
     if context.get("current_plan"):
