@@ -214,6 +214,45 @@ var liveMigrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: 5,
+		Name:    "artifacts projection table",
+		Apply: func(tx *sql.Tx) error {
+			stmts := []string{
+				`CREATE TABLE IF NOT EXISTS artifacts (
+                    id         TEXT PRIMARY KEY,
+                    type       TEXT,
+                    feature    TEXT,
+                    domain     TEXT,
+                    name       TEXT,
+                    status     TEXT,
+                    lifecycle  TEXT,
+                    scope      TEXT,
+                    repo       TEXT,
+                    branch     TEXT,
+                    path       TEXT,
+                    worktree   TEXT,
+                    size       INTEGER,
+                    created    TEXT,
+                    updated    TEXT,
+                    has_front  INTEGER,
+                    indexed_at TEXT
+                )`,
+				`CREATE INDEX IF NOT EXISTS idx_art_type      ON artifacts(type)`,
+				`CREATE INDEX IF NOT EXISTS idx_art_status    ON artifacts(status)`,
+				`CREATE INDEX IF NOT EXISTS idx_art_lifecycle ON artifacts(lifecycle)`,
+				`CREATE INDEX IF NOT EXISTS idx_art_scope     ON artifacts(scope)`,
+				`CREATE INDEX IF NOT EXISTS idx_art_repo      ON artifacts(repo)`,
+				`CREATE INDEX IF NOT EXISTS idx_art_feature   ON artifacts(feature)`,
+			}
+			for _, s := range stmts {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // embeddingDimFromEnv returns the vec0 dimension as a string, honoring

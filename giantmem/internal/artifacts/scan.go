@@ -156,6 +156,13 @@ func applyMarkdownFrontmatter(a *Artifact, path string) {
 		return
 	}
 	a.HasFront = true
+	applyFrontmatterMap(a, fm)
+}
+
+// applyFrontmatterMap overlays parsed YAML frontmatter onto an Artifact.
+// Shared by FS Scan (applyMarkdownFrontmatter) and live-db DeriveFromLiveDoc so
+// the two indexers never disagree on how frontmatter overrides path inference.
+func applyFrontmatterMap(a *Artifact, fm map[string]string) {
 	if v, ok := fm["type"]; ok && ValidType(v) {
 		a.Type = v
 	}
@@ -190,6 +197,10 @@ func applyJSONFrontmatter(a *Artifact, path string) {
 	if err != nil {
 		return
 	}
+	applyJSONFrontmatterBytes(a, raw)
+}
+
+func applyJSONFrontmatterBytes(a *Artifact, raw []byte) {
 	var data map[string]any
 	if err := json.Unmarshal(raw, &data); err != nil {
 		return
@@ -225,14 +236,21 @@ func taskStatusFromFile(path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	matches := checkboxRe.FindAllSubmatch(raw, -1)
+	return taskStatusFromContent(string(raw))
+}
+
+// taskStatusFromContent derives draft/ready/done from checkbox completion in a
+// tasks-file body. Mirrors taskStatusFromFile for the live-db derive path,
+// where the content is already in memory.
+func taskStatusFromContent(content string) (string, bool) {
+	matches := checkboxRe.FindAllStringSubmatch(content, -1)
 	if len(matches) == 0 {
 		return "", false
 	}
 	total := len(matches)
 	done := 0
 	for _, m := range matches {
-		if len(m) > 1 && (m[1][0] == 'x' || m[1][0] == 'X') {
+		if len(m) > 1 && (m[1] == "x" || m[1] == "X") {
 			done++
 		}
 	}

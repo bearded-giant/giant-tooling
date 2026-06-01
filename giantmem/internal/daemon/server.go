@@ -12,11 +12,15 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	gmdb "github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/projection"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
+	"github.com/fsnotify/fsnotify"
 )
 
 // Server is the giantmemd unix-socket JSON-RPC server.
@@ -37,6 +41,8 @@ type Server struct {
 	binaryArchiveSchema int
 	binaryLiveSchema    int
 
+	reconcileMu sync.Mutex
+
 	listener net.Listener
 }
 
@@ -56,6 +62,10 @@ func (s *Server) Start(ctx context.Context) error {
 	if err := s.openDBs(); err != nil {
 		return err
 	}
+	// Set-and-forget projection engine: reconcile once at start, then
+	// continuously as the peer writes live_docs. Non-blocking; the socket comes
+	// up immediately regardless.
+	s.startReconciler(ctx)
 	if err := os.MkdirAll(filepath.Dir(s.socketPath), 0o755); err != nil {
 		return err
 	}
@@ -227,4 +237,90 @@ func (s *Server) handleHealth(req *Request) *Response {
 		Drift:            driftFlag,
 	}
 	return okReply(req.ID, res)
+}
+
+// startReconciler kicks off the artifacts-projection engine: one pass at start
+// plus a debounced fsnotify watch on live.db so the table tracks peer writes
+// without a session restart. No-op when live.db wasn't present at boot.
+func (s *Server) startReconciler(ctx context.Context) {
+	if s.liveDB == nil {
+		return
+	}
+	archiveBase := filepath.Dir(s.livePath)
+	embedder, err := search.NewEmbedder(os.Getenv("GIANTMEM_EMBED_BACKEND"))
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "giantmemd: embeddings disabled: %v\n", err)
+		embedder = nil
+	}
+
+	run := func(reason string) {
+		s.reconcileMu.Lock()
+		defer s.reconcileMu.Unlock()
+		st, err := projection.Reconcile(s.liveDB, archiveBase, embedder)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "giantmemd: reconcile (%s) failed: %v\n", reason, err)
+			return
+		}
+		fmt.Fprintf(os.Stderr,
+			"giantmemd: reconcile (%s) scanned=%d upserted=%d removed=%d canonical=%d embedded=%d\n",
+			reason, st.Scanned, st.Upserted, st.Removed, st.Canonical, st.Embedded)
+	}
+
+	go run("start")
+	go s.watchAndReconcile(ctx, run, embedder)
+}
+
+func (s *Server) watchAndReconcile(ctx context.Context, run func(string), embedder search.Embedder) {
+	defer func() {
+		if embedder != nil {
+			embedder.Close()
+		}
+	}()
+
+	w, err := fsnotify.NewWatcher()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "giantmemd: fsnotify unavailable, continuous reconcile off: %v\n", err)
+		<-ctx.Done()
+		return
+	}
+	defer w.Close()
+	// Watch the archive dir so we catch live.db, live.db-wal, and live.db-shm
+	// regardless of which one a given write touches (WAL mode flips between them).
+	_ = w.Add(filepath.Dir(s.livePath))
+
+	debounce := time.Second
+	var timer *time.Timer
+	trigger := func() {
+		if timer != nil {
+			timer.Stop()
+		}
+		timer = time.AfterFunc(debounce, func() { run("watch") })
+	}
+
+	liveName := filepath.Base(s.livePath)
+	for {
+		select {
+		case <-ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return
+		case ev, ok := <-w.Events:
+			if !ok {
+				return
+			}
+			if ev.Op&(fsnotify.Write|fsnotify.Create) == 0 {
+				continue
+			}
+			if !strings.HasPrefix(filepath.Base(ev.Name), liveName) {
+				continue // ignore archives.db and unrelated churn
+			}
+			trigger()
+		case werr, ok := <-w.Errors:
+			if !ok {
+				return
+			}
+			fmt.Fprintf(os.Stderr, "giantmemd: watch error: %v\n", werr)
+		}
+	}
 }

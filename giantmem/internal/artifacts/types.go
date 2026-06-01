@@ -27,6 +27,7 @@ type Artifact struct {
 	Scope       string `json:"scope,omitempty"`
 	Lifecycle   string `json:"lifecycle,omitempty"`
 	AccessCount int    `json:"access_count,omitempty"`
+	HasVec      bool   `json:"has_vec,omitempty"`
 }
 
 // Index is the on-disk live view of one workspace's artifacts.

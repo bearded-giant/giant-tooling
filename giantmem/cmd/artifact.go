@@ -12,6 +12,7 @@ import (
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/projection"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 	"github.com/spf13/cobra"
 )
@@ -53,6 +54,16 @@ var artifactReindexCmd = &cobra.Command{
 	Use:   "reindex",
 	Short: "Rebuild .giantmem/artifacts.json from disk",
 	RunE:  runArtifactReindex,
+}
+
+var artifactSyncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Project live_docs into the artifacts table (derive + canonical backfill + embed changed)",
+	Long: `Manual escape hatch — normally giantmemd reconciles automatically at start
+and continuously via fsnotify. Use this to force a full pass (first-time
+backfill, or after editing files while the daemon was stopped). Embeds real
+vectors only when GIANTMEM_EMBED_BACKEND is set to a non-stub backend.`,
+	RunE: runArtifactSync,
 }
 
 var artifactOrphansCmd = &cobra.Command{
@@ -117,7 +128,7 @@ func init() {
 	artifactSearchCmd.Flags().StringVar(&artifactRepo, "repo", "current", "current|all|<repo>")
 	artifactSearchCmd.Flags().BoolVar(&artifactJSON, "json", false, "JSON output")
 
-	artifactCmd.AddCommand(artifactListCmd, artifactShowCmd, artifactReindexCmd, artifactOrphansCmd, artifactStaleCmd, artifactSearchCmd)
+	artifactCmd.AddCommand(artifactListCmd, artifactShowCmd, artifactReindexCmd, artifactOrphansCmd, artifactStaleCmd, artifactSearchCmd, artifactSyncCmd)
 	rootCmd.AddCommand(artifactCmd)
 }
 
@@ -226,6 +237,16 @@ func setFromSlice(in []string) map[string]bool {
 }
 
 func runArtifactList(cmd *cobra.Command, args []string) error {
+	// Prefer the SQL projection when populated; fall back to a filesystem scan
+	// on first run (before any reconcile has filled the artifacts table).
+	if live := openLiveDBQuiet(); live != nil {
+		if artifacts.TableHasRows(live) {
+			defer live.Close()
+			return runArtifactListFromTable(live)
+		}
+		live.Close()
+	}
+
 	if artifactRepo == "all" {
 		return runArtifactListAll()
 	}
@@ -308,6 +329,88 @@ func runArtifactListAll() error {
 		}
 		fmt.Printf("%-12s %-8s %-30s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, a.ID)
 	}
+	return nil
+}
+
+// runArtifactListFromTable serves `artifact list` from the SQL projection.
+// Filtering reuses filterArtifacts so scope/lifecycle/repo semantics stay
+// identical to the filesystem path; only the data source changes.
+func runArtifactListFromTable(live *sql.DB) error {
+	all, err := artifacts.ListArtifacts(live, artifacts.ListFilter{}, "", 0)
+	if err != nil {
+		return err
+	}
+
+	// Default (no --repo, or --repo current) scopes to the current repo, matching
+	// the filesystem path that only scanned the current workspace.
+	if artifactRepo == "" || artifactRepo == "current" {
+		currentRepo := ""
+		if cwd, err := os.Getwd(); err == nil {
+			if ws, ok := artifacts.FindWorkspace(cwd); ok {
+				currentRepo, _ = artifacts.DetectRepoBranch(ws)
+			}
+		}
+		saved := artifactRepo
+		artifactRepo = currentRepo
+		defer func() { artifactRepo = saved }()
+	}
+
+	rows := filterArtifacts(all)
+	logListAccess(rows, artifactListFilterSummary())
+
+	if artifactJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string]any{"artifacts": rows})
+	}
+	if artifactPaths {
+		for _, a := range rows {
+			fmt.Println(tableArtifactAbsPath(a))
+		}
+		return nil
+	}
+
+	fmt.Printf("# source=live.db artifacts=%d\n", len(rows))
+	hdr := ""
+	for _, a := range rows {
+		if a.Repo != hdr {
+			hdr = a.Repo
+			fmt.Printf("\n## %s (%s)\n", a.Repo, a.Branch)
+		}
+		fmt.Printf("%-12s %-8s %-30s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, a.ID)
+	}
+	return nil
+}
+
+func tableArtifactAbsPath(a artifacts.Artifact) string {
+	if a.Worktree != "" {
+		return filepath.Join(a.Worktree, ".giantmem", a.Path)
+	}
+	return a.Path
+}
+
+func runArtifactSync(cmd *cobra.Command, args []string) error {
+	live, err := db.Open(liveDBPath())
+	if err != nil {
+		return err
+	}
+	defer live.Close()
+
+	embedder, err := search.NewEmbedder("")
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "embeddings disabled: %v\n", err)
+		embedder = nil
+	}
+	if embedder != nil {
+		defer embedder.Close()
+	}
+
+	st, err := projection.Reconcile(live, flagArchiveBase, embedder)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("synced live.db -> artifacts: scanned=%d upserted=%d removed=%d canonical_backfilled=%d embedded=%d embed_skipped=%d (embeddings=%v)\n",
+		st.Scanned, st.Upserted, st.Removed, st.Canonical, st.Embedded, st.EmbedSkipped, st.Embeddings)
 	return nil
 }
 
@@ -453,6 +556,16 @@ func runArtifactReindex(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Printf("wrote %s (%d artifacts)\n", artifacts.IndexPath(ws), len(idx.Artifacts))
+
+	// Also refresh the live.db projection so the SQL read path stays in sync
+	// with disk. Best-effort: the daemon reconciles continuously anyway.
+	if live := openLiveDBQuiet(); live != nil {
+		defer live.Close()
+		if st, err := projection.Reconcile(live, flagArchiveBase, nil); err == nil {
+			fmt.Printf("reconciled artifacts table: upserted=%d removed=%d canonical_backfilled=%d\n",
+				st.Upserted, st.Removed, st.Canonical)
+		}
+	}
 	return nil
 }
 

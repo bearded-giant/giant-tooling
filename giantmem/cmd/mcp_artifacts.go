@@ -49,32 +49,9 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 		limit = 20
 	}
 
-	var rows []artifacts.Artifact
-	if args.Repo == "all" || args.Repo == "" {
-		// "all" or unspecified => crawl every workspace; better fan-out for MCP
-		// callers asking cross-repo questions
-		all, _, err := artifacts.CrawlAll(0)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		rows = all
-	} else if args.Repo == "current" {
-		ws, idx, err := mcpResolveCurrentWorkspace()
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		rows = idx.Artifacts
-		_ = ws
-	} else {
-		all, _, err := artifacts.CrawlAll(0)
-		if err != nil {
-			return mcp.NewToolResultError(err.Error()), nil
-		}
-		for _, a := range all {
-			if a.Repo == args.Repo {
-				rows = append(rows, a)
-			}
-		}
+	rows, err := mcpSourceArtifacts(args.Repo)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 
 	out := make([]artifactHit, 0, len(rows))
@@ -261,6 +238,74 @@ func mcpArtifactHit(a artifacts.Artifact, snippet string) artifactHit {
 	}
 }
 
+// mcpSourceArtifacts returns the artifact corpus for an MCP query, preferring
+// the SQL projection (cross-repo, no filesystem crawl) when it's populated and
+// falling back to a filesystem crawl/scan on first run. repo: ""/"all" => every
+// repo, "current" => the cwd's repo, otherwise a named repo.
+func mcpSourceArtifacts(repo string) ([]artifacts.Artifact, error) {
+	if live := openLiveDBQuiet(); live != nil {
+		if artifacts.TableHasRows(live) {
+			defer live.Close()
+			all, err := artifacts.ListArtifacts(live, artifacts.ListFilter{}, "", 0)
+			if err != nil {
+				return nil, err
+			}
+			switch repo {
+			case "", "all":
+				return all, nil
+			case "current":
+				return mcpFilterRepo(all, mcpCurrentRepoName()), nil
+			default:
+				return mcpFilterRepo(all, repo), nil
+			}
+		}
+		live.Close()
+	}
+
+	// filesystem fallback (table empty / live.db absent)
+	if repo == "current" {
+		_, idx, err := mcpResolveCurrentWorkspace()
+		if err != nil {
+			return nil, err
+		}
+		return idx.Artifacts, nil
+	}
+	all, _, err := artifacts.CrawlAll(0)
+	if err != nil {
+		return nil, err
+	}
+	if repo == "" || repo == "all" {
+		return all, nil
+	}
+	return mcpFilterRepo(all, repo), nil
+}
+
+func mcpFilterRepo(rows []artifacts.Artifact, repo string) []artifacts.Artifact {
+	if repo == "" {
+		return rows
+	}
+	out := make([]artifacts.Artifact, 0, len(rows))
+	for _, a := range rows {
+		if a.Repo == repo {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func mcpCurrentRepoName() string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	ws, ok := artifacts.FindWorkspace(cwd)
+	if !ok {
+		return ""
+	}
+	repo, _ := artifacts.DetectRepoBranch(ws)
+	return repo
+}
+
 func mcpResolveCurrentWorkspace() (string, *artifacts.Index, error) {
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -354,7 +399,7 @@ func getArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args getArtifa
 	if strings.TrimSpace(args.ID) == "" {
 		return mcp.NewToolResultError("id is required"), nil
 	}
-	all, _, err := artifacts.CrawlAll(0)
+	all, err := mcpSourceArtifacts("all")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
