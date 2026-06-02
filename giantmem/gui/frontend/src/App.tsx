@@ -42,6 +42,10 @@ function App() {
   const [selLifecycle, setSelLifecycle] = useState<Set<string>>(new Set());
   const [selFeature, setSelFeature] = useState<string>("");
   const [selRepo, setSelRepo] = useState<string>("");
+  const [sidebarFilter, setSidebarFilter] = useState("");
+  const [collapsed, setCollapsed] = useState<Set<string>>(
+    new Set(["feature", "repo"]),
+  );
 
   const [facets, setFacets] = useState<main.FacetCountsResult | null>(null);
   const [featuresByRepo, setFeaturesByRepo] = useState<main.FeatureRow[]>([]);
@@ -236,6 +240,15 @@ function App() {
     setSelRepo("");
   };
 
+  const toggleCollapsed = useCallback((title: string) => {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(title)) next.delete(title);
+      else next.add(title);
+      return next;
+    });
+  }, []);
+
   const totalRows =
     tab === "artifacts"
       ? hybridRows.length || artifactRows.length
@@ -360,23 +373,40 @@ function App() {
       <aside className="sidebar">
         {tab === "artifacts" && facets && (
           <>
+            <div className="sidebar-filter">
+              <input
+                type="search"
+                placeholder="filter facets…"
+                value={sidebarFilter}
+                onChange={(e) => setSidebarFilter(e.target.value)}
+              />
+            </div>
             <FacetGroup
               title="type"
               counts={facets.byType || {}}
               selected={selType}
               onToggle={(v) => toggleSet(selType, v, setSelType)}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("type")}
+              onToggleCollapse={() => toggleCollapsed("type")}
             />
             <FacetGroup
               title="status"
               counts={facets.byStatus || {}}
               selected={selStatus}
               onToggle={(v) => toggleSet(selStatus, v, setSelStatus)}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("status")}
+              onToggleCollapse={() => toggleCollapsed("status")}
             />
             <FacetGroup
               title="lifecycle"
               counts={facets.byLifecycle || {}}
               selected={selLifecycle}
               onToggle={(v) => toggleSet(selLifecycle, v, setSelLifecycle)}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("lifecycle")}
+              onToggleCollapse={() => toggleCollapsed("lifecycle")}
             />
             <SingleFacetGroup
               title="repo"
@@ -384,12 +414,19 @@ function App() {
               selected={selRepo}
               onPick={(v) => {
                 setSelRepo(v);
-                if (selFeature && v && !featuresByRepo.some(
-                  (f) => f.repo === v && f.feature === selFeature,
-                )) {
+                if (
+                  selFeature &&
+                  v &&
+                  !featuresByRepo.some(
+                    (f) => f.repo === v && f.feature === selFeature,
+                  )
+                ) {
                   setSelFeature("");
                 }
               }}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("repo")}
+              onToggleCollapse={() => toggleCollapsed("repo")}
             />
             <FeaturesByRepoGroup
               rows={featuresByRepo}
@@ -399,6 +436,9 @@ function App() {
                 setSelRepo(repo);
                 setSelFeature(feature);
               }}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("feature")}
+              onToggleCollapse={() => toggleCollapsed("feature")}
             />
             {(selType.size > 0 ||
               selStatus.size > 0 ||
@@ -551,27 +591,69 @@ function FacetGroup({
   counts,
   selected,
   onToggle,
+  filter = "",
+  isCollapsed = false,
+  onToggleCollapse,
 }: {
   title: string;
   counts: Record<string, number>;
   selected: Set<string>;
   onToggle: (v: string) => void;
+  filter?: string;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
-  const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const q = filter.toLowerCase();
+  const sorted = Object.entries(counts)
+    .filter(([k]) => !q || k.toLowerCase().includes(q))
+    .sort((a, b) => b[1] - a[1]);
   return (
     <div className="facet-group">
-      <h4>{title}</h4>
-      {sorted.map(([v, n]) => (
-        <div
-          key={v}
-          className={`facet-row ${selected.has(v) ? "selected" : ""}`}
-          onClick={() => onToggle(v)}
-        >
-          <span>{v || "(blank)"}</span>
-          <span className="count">{n}</span>
-        </div>
-      ))}
+      <FacetHeader
+        title={title}
+        count={sorted.length}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={onToggleCollapse}
+        activeCount={selected.size}
+      />
+      {!isCollapsed &&
+        sorted.map(([v, n]) => (
+          <div
+            key={v}
+            className={`facet-row ${selected.has(v) ? "selected" : ""}`}
+            onClick={() => onToggle(v)}
+          >
+            <span>{v || "(blank)"}</span>
+            <span className="count">{n}</span>
+          </div>
+        ))}
     </div>
+  );
+}
+
+function FacetHeader({
+  title,
+  count,
+  isCollapsed,
+  onToggleCollapse,
+  activeCount = 0,
+}: {
+  title: string;
+  count: number;
+  isCollapsed: boolean;
+  onToggleCollapse?: () => void;
+  activeCount?: number;
+}) {
+  return (
+    <h4 className="facet-header" onClick={onToggleCollapse}>
+      <span>
+        <span className="facet-arrow">{isCollapsed ? "▸" : "▾"}</span> {title}
+      </span>
+      <span className="facet-header-meta">
+        {activeCount > 0 && <span className="active-dot">{activeCount}</span>}
+        <span className="facet-header-count">{count}</span>
+      </span>
+    </h4>
   );
 }
 
@@ -580,47 +662,66 @@ function FeaturesByRepoGroup({
   filterRepo,
   selected,
   onPick,
+  filter = "",
+  isCollapsed = false,
+  onToggleCollapse,
 }: {
   rows: main.FeatureRow[];
   filterRepo: string;
   selected: string;
   onPick: (repo: string, feature: string) => void;
+  filter?: string;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
-  // group rows by repo
+  const q = filter.toLowerCase();
   const grouped = useMemo(() => {
     const out: Record<string, main.FeatureRow[]> = {};
     for (const r of rows) {
       if (filterRepo && r.repo !== filterRepo) continue;
+      if (q && !r.feature.toLowerCase().includes(q) && !r.repo.toLowerCase().includes(q)) {
+        continue;
+      }
       (out[r.repo] = out[r.repo] || []).push(r);
     }
     return out;
-  }, [rows, filterRepo]);
+  }, [rows, filterRepo, q]);
   const repos = Object.keys(grouped).sort();
-  if (repos.length === 0) return null;
+  const total = repos.reduce((acc, r) => acc + grouped[r].length, 0);
+  if (total === 0 && !selected) return null;
   return (
     <div className="facet-group">
-      <h4>feature</h4>
-      {repos.map((repo) => (
-        <div key={repo} className="repo-block">
-          {!filterRepo && <div className="repo-label">{repo}</div>}
-          {grouped[repo].map((r) => (
-            <div
-              key={`${r.repo}/${r.feature}`}
-              className={`facet-row ${selected === r.feature && (!filterRepo || filterRepo === r.repo) ? "selected" : ""}`}
-              onClick={() =>
-                onPick(
-                  r.repo,
-                  selected === r.feature ? "" : r.feature,
-                )
-              }
-              title={r.worktree || ""}
-            >
-              <span>{r.feature}</span>
-              <span className="count">{r.count}</span>
-            </div>
-          ))}
-        </div>
-      ))}
+      <FacetHeader
+        title="feature"
+        count={total}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={onToggleCollapse}
+        activeCount={selected ? 1 : 0}
+      />
+      {!isCollapsed &&
+        repos.map((repo) => (
+          <div key={repo} className="repo-block">
+            {!filterRepo && <div className="repo-label">{repo}</div>}
+            {grouped[repo].map((r) => (
+              <div
+                key={`${r.repo}/${r.feature}`}
+                className={`facet-row ${
+                  selected === r.feature &&
+                  (!filterRepo || filterRepo === r.repo)
+                    ? "selected"
+                    : ""
+                }`}
+                onClick={() =>
+                  onPick(r.repo, selected === r.feature ? "" : r.feature)
+                }
+                title={r.worktree || ""}
+              >
+                <span>{r.feature}</span>
+                <span className="count">{r.count}</span>
+              </div>
+            ))}
+          </div>
+        ))}
     </div>
   );
 }
@@ -631,30 +732,44 @@ function SingleFacetGroup({
   selected,
   onPick,
   minCount = 0,
+  filter = "",
+  isCollapsed = false,
+  onToggleCollapse,
 }: {
   title: string;
   counts: Record<string, number>;
   selected: string;
   onPick: (v: string) => void;
   minCount?: number;
+  filter?: string;
+  isCollapsed?: boolean;
+  onToggleCollapse?: () => void;
 }) {
+  const q = filter.toLowerCase();
   const sorted = Object.entries(counts)
-    .filter(([k, n]) => k !== "" && n >= minCount)
+    .filter(([k, n]) => k !== "" && n >= minCount && (!q || k.toLowerCase().includes(q)))
     .sort((a, b) => b[1] - a[1]);
-  if (sorted.length === 0) return null;
+  if (sorted.length === 0 && !selected) return null;
   return (
     <div className="facet-group">
-      <h4>{title}</h4>
-      {sorted.map(([v, n]) => (
-        <div
-          key={v}
-          className={`facet-row ${selected === v ? "selected" : ""}`}
-          onClick={() => onPick(selected === v ? "" : v)}
-        >
-          <span>{v}</span>
-          <span className="count">{n}</span>
-        </div>
-      ))}
+      <FacetHeader
+        title={title}
+        count={sorted.length}
+        isCollapsed={isCollapsed}
+        onToggleCollapse={onToggleCollapse}
+        activeCount={selected ? 1 : 0}
+      />
+      {!isCollapsed &&
+        sorted.map(([v, n]) => (
+          <div
+            key={v}
+            className={`facet-row ${selected === v ? "selected" : ""}`}
+            onClick={() => onPick(selected === v ? "" : v)}
+          >
+            <span>{v}</span>
+            <span className="count">{n}</span>
+          </div>
+        ))}
     </div>
   );
 }
