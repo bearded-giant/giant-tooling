@@ -103,6 +103,54 @@ func (a *App) SearchFTS(params search.Params) ([]search.Hit, error) {
 	return search.Run(a.archive, a.live, params)
 }
 
+// ListSessions returns the most recent session rows from archives.db without
+// running an FTS5 MATCH — used when the search input is empty (FTS5 errors on
+// empty queries). Project filter is applied when non-empty.
+func (a *App) ListSessions(project string, limit int) ([]search.Hit, error) {
+	if a.archive == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	q := `SELECT
+            COALESCE(project,''), COALESCE(timestamp,''), COALESCE(source_type,''),
+            COALESCE(dir_type,''), filepath, filename,
+            COALESCE(is_latest,0), COALESCE(session_id,''),
+            COALESCE(cwd,''), COALESCE(topic,'')
+          FROM documents
+          WHERE source_type = 'session'`
+	args := []any{}
+	if project != "" {
+		q += ` AND (project = ? OR canonical_project = ?)`
+		args = append(args, project, project)
+	}
+	q += ` ORDER BY timestamp DESC LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := a.archive.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []search.Hit
+	for rows.Next() {
+		var h search.Hit
+		var isLatest int
+		if err := rows.Scan(
+			&h.Project, &h.Timestamp, &h.SourceType, &h.DirType,
+			&h.Filepath, &h.Filename, &isLatest, &h.SessionID,
+			&h.Cwd, &h.Topic,
+		); err != nil {
+			return nil, err
+		}
+		h.IsLatest = isLatest != 0
+		h.Source = "archive"
+		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
 // GetArtifact returns one artifact row by ID. Errors when nothing matches.
 func (a *App) GetArtifact(id string) (artifacts.Artifact, error) {
 	if a.live == nil {

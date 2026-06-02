@@ -12,6 +12,8 @@ export function GetArtifactBody(arg1:string):Promise<string>;
 
 export function ListArtifacts(arg1:artifacts.ListFilter,arg2:string,arg3:number):Promise<Array<artifacts.Artifact>>;
 
+export function ListSessions(arg1:string,arg2:number):Promise<Array<search.Hit>>;
+
 export function ReadFile(arg1:string):Promise<string>;
 
 export function SearchFTS(arg1:search.Params):Promise<Array<search.Hit>>;

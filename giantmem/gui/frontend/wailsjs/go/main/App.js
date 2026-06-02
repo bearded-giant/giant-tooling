@@ -18,6 +18,10 @@ export function ListArtifacts(arg1, arg2, arg3) {
   return window['go']['main']['App']['ListArtifacts'](arg1, arg2, arg3);
 }
 
+export function ListSessions(arg1, arg2) {
+  return window['go']['main']['App']['ListSessions'](arg1, arg2);
+}
+
 export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
 }

@@ -6,6 +6,7 @@ import {
   FacetCounts,
   GetArtifactBody,
   ListArtifacts,
+  ListSessions,
   ReadFile,
   SearchFTS,
   SearchHybrid,
@@ -92,22 +93,27 @@ function App() {
             setHybridRows([]);
           }
         } else {
-          const params: search.Params = {
-            Query: debouncedQuery,
-            Project: "",
-            DirType: "",
-            SourceType: "session",
-            Feature: "",
-            Latest: false,
-            LiveOnly: false,
-            ArchiveOnly: true,
-            Since: "",
-            Until: "",
-            Limit: 100,
-            IncludeFull: false,
-          };
-          const hits = await SearchFTS(params);
-          setSessionHits(hits || []);
+          let hits: search.Hit[];
+          if (debouncedQuery.trim()) {
+            const params: search.Params = {
+              Query: debouncedQuery,
+              Project: "",
+              DirType: "",
+              SourceType: "session",
+              Feature: "",
+              Latest: false,
+              LiveOnly: false,
+              ArchiveOnly: true,
+              Since: "",
+              Until: "",
+              Limit: 100,
+              IncludeFull: false,
+            };
+            hits = (await SearchFTS(params)) || [];
+          } else {
+            hits = (await ListSessions("", 100)) || [];
+          }
+          setSessionHits(hits);
         }
       } catch (e) {
         setErr(String(e));
@@ -477,6 +483,13 @@ function SessionRow({
           {hit.topic || hit.filename || "(session)"}
         </span>
         {hit.timestamp && <span className="row-meta">{hit.timestamp}</span>}
+      </div>
+      <div className="row-meta">
+        {hit.project && <strong>{hit.project}</strong>}
+        {hit.cwd && <> · {hit.cwd}</>}
+        {hit.session_id && (
+          <> · <span style={{ fontFamily: "ui-monospace" }}>{hit.session_id.slice(0, 8)}</span></>
+        )}
       </div>
       <div className="row-path">{hit.filepath}</div>
       {hit.snippet && (
