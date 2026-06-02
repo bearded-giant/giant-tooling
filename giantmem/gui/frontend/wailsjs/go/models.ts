@@ -115,6 +115,42 @@ export namespace main {
 	        this.worktree = source["worktree"];
 	    }
 	}
+	export class SessionFacetCounts {
+	    byProject: Record<string, number>;
+	    byDirType: Record<string, number>;
+	    byTopic: Record<string, number>;
+	    byDate: Record<string, number>;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionFacetCounts(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.byProject = source["byProject"];
+	        this.byDirType = source["byDirType"];
+	        this.byTopic = source["byTopic"];
+	        this.byDate = source["byDate"];
+	    }
+	}
+	export class SessionFilter {
+	    project?: string;
+	    dirType?: string;
+	    topic?: string;
+	    dateBucket?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionFilter(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.project = source["project"];
+	        this.dirType = source["dirType"];
+	        this.topic = source["topic"];
+	        this.dateBucket = source["dateBucket"];
+	    }
+	}
 
 }
 

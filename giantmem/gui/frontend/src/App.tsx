@@ -13,6 +13,7 @@ import {
   ReadFile,
   SearchFTS,
   SearchHybrid,
+  SessionFacets,
 } from "../wailsjs/go/main/App";
 import { artifacts, main, search } from "../wailsjs/go/models";
 
@@ -44,11 +45,17 @@ function App() {
   const [selRepo, setSelRepo] = useState<string>("");
   const [sidebarFilter, setSidebarFilter] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(
-    new Set(["feature", "repo"]),
+    new Set(["feature", "repo", "topic", "dir_type"]),
   );
 
   const [facets, setFacets] = useState<main.FacetCountsResult | null>(null);
   const [featuresByRepo, setFeaturesByRepo] = useState<main.FeatureRow[]>([]);
+  const [sessionFacets, setSessionFacets] =
+    useState<main.SessionFacetCounts | null>(null);
+  const [selSessionProject, setSelSessionProject] = useState("");
+  const [selSessionDirType, setSelSessionDirType] = useState("");
+  const [selSessionTopic, setSelSessionTopic] = useState("");
+  const [selSessionDate, setSelSessionDate] = useState("");
   const [artifactRows, setArtifactRows] = useState<artifacts.Artifact[]>([]);
   const [hybridRows, setHybridRows] = useState<search.HybridResult[]>([]);
   const [sessionHits, setSessionHits] = useState<search.Hit[]>([]);
@@ -68,6 +75,9 @@ function App() {
       .catch((e) => setErr(String(e)));
     FeaturesByRepo()
       .then((rows) => setFeaturesByRepo(rows || []))
+      .catch((e) => setErr(String(e)));
+    SessionFacets()
+      .then((sf) => setSessionFacets(sf))
       .catch((e) => setErr(String(e)));
   }, []);
 
@@ -162,11 +172,17 @@ function App() {
           }
         } else {
           let hits: search.Hit[];
+          const sessionFilter: main.SessionFilter = {
+            project: selSessionProject,
+            dirType: selSessionDirType,
+            topic: selSessionTopic,
+            dateBucket: selSessionDate,
+          };
           if (debouncedQuery.trim()) {
             const params: search.Params = {
               Query: debouncedQuery,
-              Project: "",
-              DirType: "",
+              Project: selSessionProject,
+              DirType: selSessionDirType,
               SourceType: "session",
               Feature: "",
               Latest: false,
@@ -178,8 +194,16 @@ function App() {
               IncludeFull: false,
             };
             hits = (await SearchFTS(params)) || [];
+            // client-side topic/date filter for FTS path since search.Run
+            // doesn't know our buckets
+            if (selSessionTopic) {
+              hits = hits.filter((h) => h.topic === selSessionTopic);
+            }
+            if (selSessionDate) {
+              hits = filterByDateBucket(hits, selSessionDate);
+            }
           } else {
-            hits = (await ListSessions("", 100)) || [];
+            hits = (await ListSessions(sessionFilter, 100)) || [];
           }
           setSessionHits(hits);
         }
@@ -190,7 +214,16 @@ function App() {
       }
     };
     run();
-  }, [tab, debouncedQuery, sortBy, filter]);
+  }, [
+    tab,
+    debouncedQuery,
+    sortBy,
+    filter,
+    selSessionProject,
+    selSessionDirType,
+    selSessionTopic,
+    selSessionDate,
+  ]);
 
   // load detail when selection changes
   useEffect(() => {
@@ -303,8 +336,56 @@ function App() {
       </div>
 
       <div className="filter-chips">
-        {tab === "artifacts" &&
-        (selType.size + selStatus.size + selLifecycle.size + (selFeature ? 1 : 0) + (selRepo ? 1 : 0)) > 0 ? (
+        {tab === "sessions" &&
+        (!!selSessionDate || !!selSessionProject || !!selSessionDirType || !!selSessionTopic) ? (
+          <>
+            {selSessionDate && (
+              <span
+                className="filter-chip"
+                onClick={() => setSelSessionDate("")}
+              >
+                date: {selSessionDate} <span className="x">×</span>
+              </span>
+            )}
+            {selSessionProject && (
+              <span
+                className="filter-chip"
+                onClick={() => setSelSessionProject("")}
+              >
+                project: {selSessionProject} <span className="x">×</span>
+              </span>
+            )}
+            {selSessionDirType && (
+              <span
+                className="filter-chip"
+                onClick={() => setSelSessionDirType("")}
+              >
+                dir_type: {selSessionDirType} <span className="x">×</span>
+              </span>
+            )}
+            {selSessionTopic && (
+              <span
+                className="filter-chip"
+                onClick={() => setSelSessionTopic("")}
+              >
+                topic: {selSessionTopic} <span className="x">×</span>
+              </span>
+            )}
+            <span
+              className="filter-chip"
+              onClick={() => {
+                setSelSessionDate("");
+                setSelSessionProject("");
+                setSelSessionDirType("");
+                setSelSessionTopic("");
+              }}
+              style={{ color: "var(--fg-muted)" }}
+            >
+              clear all
+            </span>
+          </>
+        ) : tab === "artifacts" &&
+          (selType.size + selStatus.size + selLifecycle.size + (selFeature ? 1 : 0) + (selRepo ? 1 : 0)) > 0 ? (
           <>
             {[...selType].map((v) => (
               <span
@@ -451,10 +532,70 @@ function App() {
             )}
           </>
         )}
-        {tab === "sessions" && (
-          <div style={{ color: "var(--fg-muted)" }}>
-            sessions filters TBD — type to search.
-          </div>
+        {tab === "sessions" && sessionFacets && (
+          <>
+            <div className="sidebar-filter">
+              <input
+                type="search"
+                placeholder="filter facets…"
+                value={sidebarFilter}
+                onChange={(e) => setSidebarFilter(e.target.value)}
+              />
+            </div>
+            <SingleFacetGroup
+              title="date"
+              counts={sessionFacets.byDate || {}}
+              selected={selSessionDate}
+              onPick={setSelSessionDate}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("date")}
+              onToggleCollapse={() => toggleCollapsed("date")}
+            />
+            <SingleFacetGroup
+              title="project"
+              counts={sessionFacets.byProject || {}}
+              selected={selSessionProject}
+              onPick={setSelSessionProject}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("project")}
+              onToggleCollapse={() => toggleCollapsed("project")}
+            />
+            <SingleFacetGroup
+              title="dir_type"
+              counts={sessionFacets.byDirType || {}}
+              selected={selSessionDirType}
+              onPick={setSelSessionDirType}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("dir_type")}
+              onToggleCollapse={() => toggleCollapsed("dir_type")}
+            />
+            <SingleFacetGroup
+              title="topic"
+              counts={sessionFacets.byTopic || {}}
+              selected={selSessionTopic}
+              onPick={setSelSessionTopic}
+              minCount={1}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("topic")}
+              onToggleCollapse={() => toggleCollapsed("topic")}
+            />
+            {(selSessionDate ||
+              selSessionProject ||
+              selSessionDirType ||
+              selSessionTopic) && (
+              <button
+                className="facet-clear"
+                onClick={() => {
+                  setSelSessionDate("");
+                  setSelSessionProject("");
+                  setSelSessionDirType("");
+                  setSelSessionTopic("");
+                }}
+              >
+                clear filters
+              </button>
+            )}
+          </>
         )}
       </aside>
 
@@ -1057,6 +1198,32 @@ function BlockView({ block }: { block: ContentBlock }) {
 // shortPath returns ~/last-2-segments form of an absolute path so the UI can
 // surface worktree context like 'cc-wt/stage' or 'python/recharge-auth'
 // without eating row width.
+// filterByDateBucket trims a hit list to one of the same bucket labels the
+// backend's dateBucketWhere recognises ("today", "yesterday", "7d", "30d",
+// "older"). Used on the FTS path which doesn't see those buckets.
+function filterByDateBucket(hits: search.Hit[], bucket: string): search.Hit[] {
+  if (!bucket) return hits;
+  const now = new Date();
+  const dayMs = 86400_000;
+  return hits.filter((h) => {
+    if (!h.timestamp) return false;
+    const t = new Date(h.timestamp);
+    if (Number.isNaN(t.getTime())) return false;
+    const diff = (now.getTime() - t.getTime()) / dayMs;
+    const sameLocalDay = (a: Date, b: Date) =>
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate();
+    const yest = new Date(now.getTime() - dayMs);
+    if (bucket === "today") return sameLocalDay(t, now);
+    if (bucket === "yesterday") return sameLocalDay(t, yest);
+    if (bucket === "7d") return diff > 1 && diff <= 7;
+    if (bucket === "30d") return diff > 7 && diff <= 30;
+    if (bucket === "older") return diff > 30;
+    return true;
+  });
+}
+
 function shortPath(p?: string): string {
   if (!p) return "";
   const segs = p.split("/").filter(Boolean);

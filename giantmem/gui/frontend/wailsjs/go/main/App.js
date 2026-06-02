@@ -37,3 +37,7 @@ export function SearchFTS(arg1) {
 export function SearchHybrid(arg1, arg2, arg3) {
   return window['go']['main']['App']['SearchHybrid'](arg1, arg2, arg3);
 }
+
+export function SessionFacets() {
+  return window['go']['main']['App']['SessionFacets']();
+}

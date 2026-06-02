@@ -150,10 +150,39 @@ func (a *App) FeaturesByRepo() ([]FeatureRow, error) {
 	return out, rows.Err()
 }
 
+// SessionFilter scopes ListSessions and SessionFacets. Each non-empty field
+// is ANDed into the WHERE clause. DateBucket accepts one of:
+//   "today" / "yesterday" / "7d" / "30d" / "older"
+// matching the same buckets the sidebar renders.
+type SessionFilter struct {
+	Project    string `json:"project,omitempty"`
+	DirType    string `json:"dirType,omitempty"`
+	Topic      string `json:"topic,omitempty"`
+	DateBucket string `json:"dateBucket,omitempty"`
+}
+
+// dateBucketWhere translates a SessionFilter.DateBucket label into a SQL
+// fragment + bound args using SQLite's datetime('now') anchor.
+func dateBucketWhere(bucket string) (string, []any) {
+	switch bucket {
+	case "today":
+		return ` AND date(timestamp) = date('now', 'localtime')`, nil
+	case "yesterday":
+		return ` AND date(timestamp) = date('now', '-1 day', 'localtime')`, nil
+	case "7d":
+		return ` AND timestamp >= datetime('now', '-7 days') AND date(timestamp) < date('now', '-1 day', 'localtime')`, nil
+	case "30d":
+		return ` AND timestamp >= datetime('now', '-30 days') AND timestamp < datetime('now', '-7 days')`, nil
+	case "older":
+		return ` AND timestamp < datetime('now', '-30 days')`, nil
+	}
+	return "", nil
+}
+
 // ListSessions returns the most recent session rows from archives.db without
 // running an FTS5 MATCH — used when the search input is empty (FTS5 errors on
-// empty queries). Project filter is applied when non-empty.
-func (a *App) ListSessions(project string, limit int) ([]search.Hit, error) {
+// empty queries). All filter fields are optional and AND-combined.
+func (a *App) ListSessions(filter SessionFilter, limit int) ([]search.Hit, error) {
 	if a.archive == nil {
 		return nil, nil
 	}
@@ -168,9 +197,20 @@ func (a *App) ListSessions(project string, limit int) ([]search.Hit, error) {
           FROM documents
           WHERE source_type = 'session'`
 	args := []any{}
-	if project != "" {
+	if filter.Project != "" {
 		q += ` AND (project = ? OR canonical_project = ?)`
-		args = append(args, project, project)
+		args = append(args, filter.Project, filter.Project)
+	}
+	if filter.DirType != "" {
+		q += ` AND dir_type = ?`
+		args = append(args, filter.DirType)
+	}
+	if filter.Topic != "" {
+		q += ` AND topic = ?`
+		args = append(args, filter.Topic)
+	}
+	if frag, _ := dateBucketWhere(filter.DateBucket); frag != "" {
+		q += frag
 	}
 	q += ` ORDER BY timestamp DESC LIMIT ?`
 	args = append(args, limit)
@@ -194,6 +234,83 @@ func (a *App) ListSessions(project string, limit int) ([]search.Hit, error) {
 		h.IsLatest = isLatest != 0
 		h.Source = "archive"
 		out = append(out, h)
+	}
+	return out, rows.Err()
+}
+
+// SessionFacetCounts mirrors FacetCountsResult but groups sessions by their
+// archives.db dimensions: project, dir_type, topic, and a coarse date bucket.
+type SessionFacetCounts struct {
+	ByProject map[string]int `json:"byProject"`
+	ByDirType map[string]int `json:"byDirType"`
+	ByTopic   map[string]int `json:"byTopic"`
+	ByDate    map[string]int `json:"byDate"`
+}
+
+// SessionFacets returns counts per project / dir_type / topic / date-bucket
+// for source_type='session' rows. Used to render the sessions-tab sidebar.
+func (a *App) SessionFacets() (SessionFacetCounts, error) {
+	out := SessionFacetCounts{
+		ByProject: map[string]int{},
+		ByDirType: map[string]int{},
+		ByTopic:   map[string]int{},
+		ByDate:    map[string]int{},
+	}
+	if a.archive == nil {
+		return out, nil
+	}
+	groups := []struct {
+		col string
+		dst map[string]int
+	}{
+		{"COALESCE(canonical_project, project, '')", out.ByProject},
+		{"COALESCE(dir_type,'')", out.ByDirType},
+		{"COALESCE(topic,'')", out.ByTopic},
+	}
+	for _, g := range groups {
+		rows, err := a.archive.Query(fmt.Sprintf(
+			`SELECT %s, COUNT(*) FROM documents WHERE source_type='session' GROUP BY %s`,
+			g.col, g.col,
+		))
+		if err != nil {
+			return out, err
+		}
+		for rows.Next() {
+			var k string
+			var n int
+			if err := rows.Scan(&k, &n); err != nil {
+				rows.Close()
+				return out, err
+			}
+			g.dst[k] = n
+		}
+		rows.Close()
+	}
+	// Date buckets in a single pass via CASE WHEN.
+	dateQ := `SELECT
+                  CASE
+                    WHEN date(timestamp) = date('now','localtime') THEN 'today'
+                    WHEN date(timestamp) = date('now','-1 day','localtime') THEN 'yesterday'
+                    WHEN timestamp >= datetime('now','-7 days') THEN '7d'
+                    WHEN timestamp >= datetime('now','-30 days') THEN '30d'
+                    ELSE 'older'
+                  END AS bucket,
+                  COUNT(*)
+              FROM documents
+              WHERE source_type='session'
+              GROUP BY bucket`
+	rows, err := a.archive.Query(dateQ)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var k string
+		var n int
+		if err := rows.Scan(&k, &n); err != nil {
+			return out, err
+		}
+		out.ByDate[k] = n
 	}
 	return out, rows.Err()
 }
