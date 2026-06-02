@@ -6,8 +6,20 @@ export function FacetCounts() {
   return window['go']['main']['App']['FacetCounts']();
 }
 
+export function GetArtifact(arg1) {
+  return window['go']['main']['App']['GetArtifact'](arg1);
+}
+
+export function GetArtifactBody(arg1) {
+  return window['go']['main']['App']['GetArtifactBody'](arg1);
+}
+
 export function ListArtifacts(arg1, arg2, arg3) {
   return window['go']['main']['App']['ListArtifacts'](arg1, arg2, arg3);
+}
+
+export function ReadFile(arg1) {
+  return window['go']['main']['App']['ReadFile'](arg1);
 }
 
 export function SearchFTS(arg1) {

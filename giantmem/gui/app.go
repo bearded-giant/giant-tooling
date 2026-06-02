@@ -103,6 +103,55 @@ func (a *App) SearchFTS(params search.Params) ([]search.Hit, error) {
 	return search.Run(a.archive, a.live, params)
 }
 
+// GetArtifact returns one artifact row by ID. Errors when nothing matches.
+func (a *App) GetArtifact(id string) (artifacts.Artifact, error) {
+	if a.live == nil {
+		return artifacts.Artifact{}, fmt.Errorf("live db not open")
+	}
+	rows, err := artifacts.ListArtifacts(a.live, artifacts.ListFilter{}, "", 0)
+	if err != nil {
+		return artifacts.Artifact{}, err
+	}
+	for _, r := range rows {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return artifacts.Artifact{}, fmt.Errorf("artifact not found: %s", id)
+}
+
+// GetArtifactBody returns the raw markdown of one artifact, resolved via the
+// stored worktree + .giantmem/ + path. Empty string when the file is missing.
+func (a *App) GetArtifactBody(id string) (string, error) {
+	art, err := a.GetArtifact(id)
+	if err != nil {
+		return "", err
+	}
+	if art.Worktree == "" || art.Path == "" {
+		return "", fmt.Errorf("artifact has no path: %s", id)
+	}
+	abs := filepath.Join(art.Worktree, ".giantmem", art.Path)
+	body, err := os.ReadFile(abs)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
+// ReadFile returns the raw bytes of any file as a string. Used by the session
+// viewer to render Claude transcript JSONL given a Hit.Filepath. No path
+// sandboxing yet — GUI is single-user localhost.
+func (a *App) ReadFile(path string) (string, error) {
+	if path == "" {
+		return "", fmt.Errorf("empty path")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(body), nil
+}
+
 // daemonEmbed asks the running giantmemd to embed text with its real backend.
 // Returns (vec, true) on success; (nil, false) when the daemon is down so
 // callers can degrade gracefully. GUI never loads its own embedder.
