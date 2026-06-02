@@ -10,47 +10,47 @@ import (
 )
 
 // daemonQueryEmbedding asks the running daemon to embed text with its real
-// backend. Returns (vec, true) on success; (nil, false) when the daemon is
-// down, disabled, or has only a stub embedder — so callers fall back.
-func daemonQueryEmbedding(text string) ([]float32, bool) {
+// backend. Returns (vec, model, true) on success; (nil, "", false) when the
+// daemon is down, disabled, or has only a stub embedder — so callers fall back.
+func daemonQueryEmbedding(text string) ([]float32, string, bool) {
 	if os.Getenv("GIANTMEM_NO_DAEMON") != "" {
-		return nil, false
+		return nil, "", false
 	}
 	sock := daemon.DefaultSocketPath()
 	if !daemon.SocketAlive(sock, 250*time.Millisecond) {
-		return nil, false
+		return nil, "", false
 	}
 	cli := daemon.NewClient(sock, 5*time.Second)
 	var out daemon.EmbedResult
 	if err := cli.Call("embed", &daemon.EmbedParams{Text: text}, &out); err != nil {
-		return nil, false
+		return nil, "", false
 	}
 	if len(out.Vec) == 0 {
-		return nil, false
+		return nil, "", false
 	}
-	return out.Vec, true
+	return out.Vec, out.Model, true
 }
 
 // resolveQueryVector returns a query embedding for hybrid search, preferring the
 // daemon's real embedder so only the daemon loads the model. Falls back to a
-// local real backend when one is configured; returns nil when only a stub is
-// available, so callers run FTS-only rather than scoring stored real vectors
-// against a non-semantic query vector.
-func resolveQueryVector(query string) []float32 {
-	if vec, ok := daemonQueryEmbedding(query); ok {
-		return vec
+// local real backend when one is configured; returns (nil, "") when only a stub
+// is available, so callers run FTS-only rather than scoring stored real vectors
+// against a non-semantic query vector. The second return is the model label.
+func resolveQueryVector(query string) ([]float32, string) {
+	if vec, model, ok := daemonQueryEmbedding(query); ok {
+		return vec, model
 	}
 	emb, err := search.NewEmbedder("")
 	if err != nil {
-		return nil
+		return nil, ""
 	}
 	defer emb.Close()
 	if strings.HasPrefix(emb.ModelName(), "stub:") {
-		return nil
+		return nil, ""
 	}
 	vec, err := emb.Embed(query)
 	if err != nil {
-		return nil
+		return nil, ""
 	}
-	return vec
+	return vec, emb.ModelName()
 }

@@ -143,7 +143,7 @@ func mcpHybridRerank(hits []artifactHit, candidates []artifacts.Artifact, query 
 	// Prefer the daemon's embedder (sole model owner). nil => no real embedder
 	// anywhere; Hybrid then skips the vector arm and reranks by FTS/recency only
 	// rather than polluting scores with a stub vector.
-	queryVec := resolveQueryVector(query)
+	queryVec, _ := resolveQueryVector(query)
 
 	byID := map[string]artifacts.Artifact{}
 	for _, a := range candidates {

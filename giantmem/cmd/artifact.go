@@ -651,19 +651,11 @@ func runArtifactSearch(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	var rows []artifacts.Artifact
-	if artifactRepo == "all" {
-		all, _, err := artifacts.CrawlAll(0)
-		if err != nil {
-			return err
-		}
-		rows = all
-	} else {
-		_, idx, err := resolveWorkspace()
-		if err != nil {
-			return err
-		}
-		rows = idx.Artifacts
+	// Source the corpus from the projection table (same as MCP) so CLI search
+	// reflects the live memory store, not a one-off filesystem crawl.
+	rows, err := mcpSourceArtifacts(artifactRepo)
+	if err != nil {
+		return err
 	}
 	rows = filterArtifacts(rows)
 	if len(rows) == 0 {
@@ -671,15 +663,27 @@ func runArtifactSearch(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	embedder, err := search.NewEmbedder(artifactSearchBackend)
-	if err != nil {
-		return err
-	}
-	defer embedder.Close()
-
-	queryVec, err := embedder.Embed(query)
-	if err != nil {
-		return fmt.Errorf("embed query: %w", err)
+	// Query vector: an explicit --backend builds a local embedder; otherwise
+	// borrow the daemon's real embedder (sole model owner). nil queryVec =>
+	// Hybrid runs FTS/recency-only instead of scoring against a stub vector.
+	var queryVec []float32
+	var modelLabel string
+	if artifactSearchBackend != "" {
+		embedder, err := search.NewEmbedder(artifactSearchBackend)
+		if err != nil {
+			return err
+		}
+		defer embedder.Close()
+		queryVec, err = embedder.Embed(query)
+		if err != nil {
+			return fmt.Errorf("embed query: %w", err)
+		}
+		modelLabel = embedder.ModelName()
+	} else {
+		queryVec, modelLabel = resolveQueryVector(query)
+		if modelLabel == "" {
+			modelLabel = "none (FTS-only; start daemon for semantic)"
+		}
 	}
 
 	live, err := db.Open(liveDBPath())
@@ -705,8 +709,8 @@ func runArtifactSearch(cmd *cobra.Command, args []string) error {
 		})
 	}
 
-	fmt.Printf("# semantic (backend=%s model=%s, weights fts=%.2f vec=%.2f rec=%.2f acc=%.2f)\n",
-		embedBackendForSearch(), embedder.ModelName(),
+	fmt.Printf("# semantic (model=%s, weights fts=%.2f vec=%.2f rec=%.2f acc=%.2f)\n",
+		modelLabel,
 		weights.FTS, weights.Vector, weights.Recency, weights.Access)
 	for i, r := range results {
 		fmt.Printf("%2d  %.3f  %-14s %-22s %s\n",
