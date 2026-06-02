@@ -1618,34 +1618,57 @@ function shortPath(p?: string): string {
   return segs.slice(-2).join("/");
 }
 
-// parseTimestamp handles ISO 8601 plus the YYYYMMDD_HHMMSS form the documents
-// table writes from file mtime. Returns null when nothing parses.
-function parseTimestamp(s?: string): Date | null {
+type ParsedTs = { date: Date; hasTime: boolean };
+
+// parseTimestamp handles ISO 8601, the YYYYMMDD_HHMMSS form the documents
+// table writes from file mtime, and bare YYYY-MM-DD dates from frontmatter.
+// hasTime tells the renderer whether to show the time portion — without it
+// we'd render date-only frontmatter as 12:00 AM (or local 5 PM, etc, since
+// 'new Date(\"2026-06-02\")' resolves to UTC midnight and shifts in local tz).
+function parseTimestamp(s?: string): ParsedTs | null {
   if (!s) return null;
-  const m = s.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/);
-  if (m) {
-    return new Date(
-      Number(m[1]),
-      Number(m[2]) - 1,
-      Number(m[3]),
-      Number(m[4]),
-      Number(m[5]),
-      Number(m[6]),
-    );
+  const compact = s.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/);
+  if (compact) {
+    return {
+      date: new Date(
+        Number(compact[1]),
+        Number(compact[2]) - 1,
+        Number(compact[3]),
+        Number(compact[4]),
+        Number(compact[5]),
+        Number(compact[6]),
+      ),
+      hasTime: true,
+    };
+  }
+  const dateOnly = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    return {
+      date: new Date(
+        Number(dateOnly[1]),
+        Number(dateOnly[2]) - 1,
+        Number(dateOnly[3]),
+      ),
+      hasTime: false,
+    };
   }
   const t = new Date(s);
-  return Number.isNaN(t.getTime()) ? null : t;
+  if (Number.isNaN(t.getTime())) return null;
+  // anything else is treated as having a real wall-clock time
+  return { date: t, hasTime: true };
 }
 
 // formatTime renders an absolute local datetime — 2026-06-01 12:30 PM —
 // across rows, detail headers, and transcript turns. Use formatRelative
 // when you want '5m ago' as a tooltip instead.
 function formatTime(s?: string): string {
-  const t = parseTimestamp(s);
-  if (!t) return s || "";
+  const p = parseTimestamp(s);
+  if (!p) return s || "";
+  const t = p.date;
   const y = t.getFullYear();
   const mo = String(t.getMonth() + 1).padStart(2, "0");
   const d = String(t.getDate()).padStart(2, "0");
+  if (!p.hasTime) return `${y}-${mo}-${d}`;
   let h = t.getHours();
   const min = String(t.getMinutes()).padStart(2, "0");
   const ap = h >= 12 ? "PM" : "AM";
@@ -1655,9 +1678,9 @@ function formatTime(s?: string): string {
 }
 
 function formatRelative(s?: string): string {
-  const t = parseTimestamp(s);
-  if (!t) return s || "";
-  const diff = (Date.now() - t.getTime()) / 1000;
+  const p = parseTimestamp(s);
+  if (!p) return s || "";
+  const diff = (Date.now() - p.date.getTime()) / 1000;
   if (diff < 60) return `${Math.floor(diff)}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
