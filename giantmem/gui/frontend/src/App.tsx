@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import "./App.css";
@@ -50,12 +50,67 @@ function App() {
 
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const searchRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     FacetCounts()
       .then((f) => setFacets(f))
       .catch((e) => setErr(String(e)));
   }, []);
+
+  // ordered ids list for j/k nav
+  const visibleRowIDs: string[] = useMemo(() => {
+    if (tab === "artifacts") {
+      return hybridRows.length
+        ? hybridRows.map((h) => h.artifact.id)
+        : artifactRows.map((a) => a.id);
+    }
+    return sessionHits.map((h) => h.filepath);
+  }, [tab, hybridRows, artifactRows, sessionHits]);
+
+  // keyboard nav: j/k move row, esc clear, / focus search
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      const inField = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+      if (e.key === "/" && !inField) {
+        e.preventDefault();
+        searchRef.current?.focus();
+        return;
+      }
+      if (e.key === "Escape") {
+        if (inField) {
+          (e.target as HTMLElement).blur();
+          return;
+        }
+        setSelection(null);
+        return;
+      }
+      if (inField) return;
+      if (e.key !== "j" && e.key !== "k") return;
+      if (visibleRowIDs.length === 0) return;
+      const curID =
+        selection?.kind === "artifact"
+          ? selection.id
+          : selection?.kind === "session"
+            ? selection.path
+            : null;
+      const i = curID ? visibleRowIDs.indexOf(curID) : -1;
+      const next =
+        e.key === "j"
+          ? Math.min(visibleRowIDs.length - 1, i + 1)
+          : Math.max(0, i - 1);
+      const id = visibleRowIDs[next];
+      setSelection(
+        tab === "artifacts"
+          ? { kind: "artifact", id }
+          : { kind: "session", path: id },
+      );
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [visibleRowIDs, selection, tab]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 200);
@@ -201,11 +256,12 @@ function App() {
         </div>
         <div className="search-wrap">
           <input
+            ref={searchRef}
             type="search"
             placeholder={
               tab === "artifacts"
-                ? "hybrid search artifacts… (empty = list all)"
-                : "FTS search sessions…"
+                ? "hybrid search artifacts… (/ to focus)"
+                : "FTS search sessions… (/ to focus)"
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -219,6 +275,59 @@ function App() {
               </option>
             ))}
           </select>
+        )}
+      </div>
+
+      <div className="filter-chips">
+        {tab === "artifacts" && (selType.size + selStatus.size + selLifecycle.size) > 0 ? (
+          <>
+            {[...selType].map((v) => (
+              <span
+                key={`t-${v}`}
+                className="filter-chip"
+                onClick={() =>
+                  toggleSet(selType, v, setSelType)
+                }
+              >
+                type: {v} <span className="x">×</span>
+              </span>
+            ))}
+            {[...selStatus].map((v) => (
+              <span
+                key={`s-${v}`}
+                className="filter-chip"
+                onClick={() =>
+                  toggleSet(selStatus, v, setSelStatus)
+                }
+              >
+                status: {v} <span className="x">×</span>
+              </span>
+            ))}
+            {[...selLifecycle].map((v) => (
+              <span
+                key={`l-${v}`}
+                className="filter-chip"
+                onClick={() =>
+                  toggleSet(selLifecycle, v, setSelLifecycle)
+                }
+              >
+                lifecycle: {v} <span className="x">×</span>
+              </span>
+            ))}
+            <span
+              className="filter-chip"
+              onClick={clearFacets}
+              style={{ color: "var(--fg-muted)" }}
+            >
+              clear all
+            </span>
+          </>
+        ) : (
+          <span className="filter-hint">
+            <span className="kbd">/</span> focus search ·{" "}
+            <span className="kbd">j</span>/<span className="kbd">k</span> nav ·{" "}
+            <span className="kbd">esc</span> clear
+          </span>
         )}
       </div>
 
@@ -324,7 +433,9 @@ function App() {
                 )}
                 {detailArt.repo && <span>repo: {detailArt.repo}</span>}
                 {detailArt.branch && <span>branch: {detailArt.branch}</span>}
-                {detailArt.updated && <span>updated: {detailArt.updated}</span>}
+                {detailArt.updated && (
+                  <span>updated: {formatTime(detailArt.updated)}</span>
+                )}
                 <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>
                   {detailArt.path}
                 </span>
@@ -424,7 +535,7 @@ function ArtifactRow({
       </div>
       <div className="row-path">{row.path}</div>
       <div className="row-meta">
-        {row.repo} · {row.updated}
+        {row.repo} · {formatTime(row.updated)}
         {row.access_count ? ` · ${row.access_count} access` : ""}
         {row.has_vec ? " · vec" : ""}
       </div>
@@ -482,7 +593,9 @@ function SessionRow({
         <span className="row-title">
           {hit.topic || hit.filename || "(session)"}
         </span>
-        {hit.timestamp && <span className="row-meta">{hit.timestamp}</span>}
+        {hit.timestamp && (
+          <span className="row-meta">{formatTime(hit.timestamp)}</span>
+        )}
       </div>
       <div className="row-meta">
         {hit.project && <strong>{hit.project}</strong>}
@@ -501,9 +614,17 @@ function SessionRow({
   );
 }
 
+type ContentBlock =
+  | { type: "text"; text: string }
+  | { type: "tool_use"; name: string; input: any; id?: string }
+  | { type: "tool_result"; content: any; tool_use_id?: string; is_error?: boolean }
+  | { type: "thinking"; thinking: string }
+  | { type: "unknown"; raw: any };
+
 type SessionTurn = {
   role: string;
-  text: string;
+  timestamp?: string;
+  blocks: ContentBlock[];
   raw: any;
 };
 
@@ -513,55 +634,162 @@ function parseJSONL(raw: string): SessionTurn[] {
     if (!line.trim()) continue;
     try {
       const obj = JSON.parse(line);
-      const role =
+      const role: string =
         obj.type ||
         obj.role ||
         (obj.message && obj.message.role) ||
         "event";
-      const text = extractText(obj);
-      out.push({ role, text, raw: obj });
+      const blocks = extractBlocks(obj);
+      out.push({
+        role,
+        timestamp: obj.timestamp || obj.ts || undefined,
+        blocks,
+        raw: obj,
+      });
     } catch {
-      out.push({ role: "raw", text: line, raw: null });
+      out.push({
+        role: "raw",
+        blocks: [{ type: "text", text: line }],
+        raw: null,
+      });
     }
   }
   return out;
 }
 
-function extractText(obj: any): string {
-  if (typeof obj === "string") return obj;
-  if (obj?.message?.content) {
-    if (typeof obj.message.content === "string") return obj.message.content;
-    if (Array.isArray(obj.message.content)) {
-      return obj.message.content
-        .map((c: any) =>
-          typeof c === "string" ? c : c.text || JSON.stringify(c, null, 2),
-        )
-        .join("\n");
-    }
+function extractBlocks(obj: any): ContentBlock[] {
+  const content = obj?.message?.content ?? obj?.content;
+  if (content == null) {
+    if (typeof obj?.text === "string") return [{ type: "text", text: obj.text }];
+    return [{ type: "unknown", raw: obj }];
   }
-  if (obj?.content) {
-    if (typeof obj.content === "string") return obj.content;
-    if (Array.isArray(obj.content)) {
-      return obj.content
-        .map((c: any) =>
-          typeof c === "string" ? c : c.text || JSON.stringify(c, null, 2),
-        )
-        .join("\n");
+  if (typeof content === "string") return [{ type: "text", text: content }];
+  if (!Array.isArray(content)) return [{ type: "unknown", raw: content }];
+  return content.map((c: any): ContentBlock => {
+    if (typeof c === "string") return { type: "text", text: c };
+    switch (c.type) {
+      case "text":
+        return { type: "text", text: String(c.text ?? "") };
+      case "tool_use":
+        return {
+          type: "tool_use",
+          name: String(c.name ?? "tool"),
+          input: c.input,
+          id: c.id,
+        };
+      case "tool_result":
+        return {
+          type: "tool_result",
+          content: c.content,
+          tool_use_id: c.tool_use_id,
+          is_error: !!c.is_error,
+        };
+      case "thinking":
+        return { type: "thinking", thinking: String(c.thinking ?? "") };
+      default:
+        return { type: "unknown", raw: c };
     }
-  }
-  if (obj?.text) return String(obj.text);
-  return JSON.stringify(obj, null, 2);
+  });
 }
 
 function SessionTurnView({ turn }: { turn: SessionTurn }) {
   return (
     <div className={`session-turn ${turn.role}`}>
-      <div className="who">{turn.role}</div>
-      <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-        {turn.text}
-      </pre>
+      <div className="who">
+        {turn.role}
+        {turn.timestamp && (
+          <span
+            style={{
+              marginLeft: 8,
+              color: "var(--fg-muted)",
+              fontWeight: 400,
+              fontSize: 11,
+            }}
+          >
+            {formatTime(turn.timestamp)}
+          </span>
+        )}
+      </div>
+      {turn.blocks.map((b, i) => (
+        <BlockView key={i} block={b} />
+      ))}
     </div>
   );
+}
+
+function BlockView({ block }: { block: ContentBlock }) {
+  if (block.type === "text") {
+    return (
+      <div className="turn-text">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.text}</ReactMarkdown>
+      </div>
+    );
+  }
+  if (block.type === "tool_use") {
+    return (
+      <details className="tool-block">
+        <summary>
+          <span className="chip tool">tool_use</span>
+          <strong>{block.name}</strong>
+        </summary>
+        <pre style={{ whiteSpace: "pre-wrap" }}>
+          {JSON.stringify(block.input, null, 2)}
+        </pre>
+      </details>
+    );
+  }
+  if (block.type === "tool_result") {
+    const text =
+      typeof block.content === "string"
+        ? block.content
+        : Array.isArray(block.content)
+          ? block.content
+              .map((c: any) =>
+                typeof c === "string" ? c : c.text || JSON.stringify(c),
+              )
+              .join("\n")
+          : JSON.stringify(block.content, null, 2);
+    return (
+      <details className="tool-block">
+        <summary>
+          <span className={`chip tool ${block.is_error ? "err" : ""}`}>
+            tool_result
+          </span>
+          {block.is_error && <span style={{ color: "var(--danger)" }}> error</span>}
+        </summary>
+        <pre style={{ whiteSpace: "pre-wrap" }}>{text}</pre>
+      </details>
+    );
+  }
+  if (block.type === "thinking") {
+    return (
+      <details className="tool-block">
+        <summary>
+          <span className="chip thinking">thinking</span>
+        </summary>
+        <pre style={{ whiteSpace: "pre-wrap", opacity: 0.8 }}>
+          {block.thinking}
+        </pre>
+      </details>
+    );
+  }
+  return (
+    <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, opacity: 0.7 }}>
+      {JSON.stringify(block, null, 2)}
+    </pre>
+  );
+}
+
+function formatTime(s?: string): string {
+  if (!s) return "";
+  const t = new Date(s);
+  if (Number.isNaN(t.getTime())) return s;
+  const diff = (Date.now() - t.getTime()) / 1000;
+  if (diff < 60) return `${Math.floor(diff)}s ago`;
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+  if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
+  return t.toISOString().slice(0, 10);
 }
 
 export default App;
