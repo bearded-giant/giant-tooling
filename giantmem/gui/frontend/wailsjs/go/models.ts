@@ -81,6 +81,8 @@ export namespace main {
 	    byType: Record<string, number>;
 	    byLifecycle: Record<string, number>;
 	    byStatus: Record<string, number>;
+	    byFeature: Record<string, number>;
+	    byRepo: Record<string, number>;
 	
 	    static createFrom(source: any = {}) {
 	        return new FacetCountsResult(source);
@@ -91,6 +93,8 @@ export namespace main {
 	        this.byType = source["byType"];
 	        this.byLifecycle = source["byLifecycle"];
 	        this.byStatus = source["byStatus"];
+	        this.byFeature = source["byFeature"];
+	        this.byRepo = source["byRepo"];
 	    }
 	}
 

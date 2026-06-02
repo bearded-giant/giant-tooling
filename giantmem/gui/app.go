@@ -60,23 +60,31 @@ func (a *App) ListArtifacts(filter artifacts.ListFilter, sortBy string, limit in
 	return artifacts.ListArtifacts(a.live, filter, sortBy, limit)
 }
 
-// FacetCountsResult bundles the three facet maps returned by
-// artifacts.FacetCounts so Wails can ship them as one JS object.
+// FacetCountsResult bundles the facet maps returned by
+// artifacts.FacetCountsExt so Wails can ship them as one JS object.
 type FacetCountsResult struct {
 	ByType      map[string]int `json:"byType"`
 	ByLifecycle map[string]int `json:"byLifecycle"`
 	ByStatus    map[string]int `json:"byStatus"`
+	ByFeature   map[string]int `json:"byFeature"`
+	ByRepo      map[string]int `json:"byRepo"`
 }
 
 func (a *App) FacetCounts() (FacetCountsResult, error) {
 	if a.live == nil {
 		return FacetCountsResult{}, fmt.Errorf("live db not open")
 	}
-	t, l, s, err := artifacts.FacetCounts(a.live)
+	t, l, s, f, r, err := artifacts.FacetCountsExt(a.live)
 	if err != nil {
 		return FacetCountsResult{}, err
 	}
-	return FacetCountsResult{ByType: t, ByLifecycle: l, ByStatus: s}, nil
+	return FacetCountsResult{
+		ByType:      t,
+		ByLifecycle: l,
+		ByStatus:    s,
+		ByFeature:   f,
+		ByRepo:      r,
+	}, nil
 }
 
 // SearchHybrid runs the blended ranker. Candidates come from the artifacts

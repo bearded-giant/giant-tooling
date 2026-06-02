@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import "highlight.js/styles/github-dark.css";
 import "./App.css";
 import {
   FacetCounts,
@@ -37,6 +39,8 @@ function App() {
   const [selType, setSelType] = useState<Set<string>>(new Set());
   const [selStatus, setSelStatus] = useState<Set<string>>(new Set());
   const [selLifecycle, setSelLifecycle] = useState<Set<string>>(new Set());
+  const [selFeature, setSelFeature] = useState<string>("");
+  const [selRepo, setSelRepo] = useState<string>("");
 
   const [facets, setFacets] = useState<main.FacetCountsResult | null>(null);
   const [artifactRows, setArtifactRows] = useState<artifacts.Artifact[]>([]);
@@ -123,12 +127,12 @@ function App() {
       Status: [...selStatus],
       Lifecycle: [...selLifecycle],
       Scope: "",
-      Repo: "",
+      Repo: selRepo,
       Branch: "",
-      Feature: "",
+      Feature: selFeature,
       Domain: "",
     }),
-    [selType, selStatus, selLifecycle],
+    [selType, selStatus, selLifecycle, selFeature, selRepo],
   );
 
   // refetch results when inputs change
@@ -223,6 +227,8 @@ function App() {
     setSelType(new Set());
     setSelStatus(new Set());
     setSelLifecycle(new Set());
+    setSelFeature("");
+    setSelRepo("");
   };
 
   const totalRows =
@@ -279,7 +285,8 @@ function App() {
       </div>
 
       <div className="filter-chips">
-        {tab === "artifacts" && (selType.size + selStatus.size + selLifecycle.size) > 0 ? (
+        {tab === "artifacts" &&
+        (selType.size + selStatus.size + selLifecycle.size + (selFeature ? 1 : 0) + (selRepo ? 1 : 0)) > 0 ? (
           <>
             {[...selType].map((v) => (
               <span
@@ -314,6 +321,19 @@ function App() {
                 lifecycle: {v} <span className="x">×</span>
               </span>
             ))}
+            {selFeature && (
+              <span
+                className="filter-chip"
+                onClick={() => setSelFeature("")}
+              >
+                feature: {selFeature} <span className="x">×</span>
+              </span>
+            )}
+            {selRepo && (
+              <span className="filter-chip" onClick={() => setSelRepo("")}>
+                repo: {selRepo} <span className="x">×</span>
+              </span>
+            )}
             <span
               className="filter-chip"
               onClick={clearFacets}
@@ -352,7 +372,24 @@ function App() {
               selected={selLifecycle}
               onToggle={(v) => toggleSet(selLifecycle, v, setSelLifecycle)}
             />
-            {(selType.size || selStatus.size || selLifecycle.size) > 0 && (
+            <SingleFacetGroup
+              title="feature"
+              counts={facets.byFeature || {}}
+              selected={selFeature}
+              onPick={setSelFeature}
+              minCount={1}
+            />
+            <SingleFacetGroup
+              title="repo"
+              counts={facets.byRepo || {}}
+              selected={selRepo}
+              onPick={setSelRepo}
+            />
+            {(selType.size > 0 ||
+              selStatus.size > 0 ||
+              selLifecycle.size > 0 ||
+              !!selFeature ||
+              !!selRepo) && (
               <button className="facet-clear" onClick={clearFacets}>
                 clear filters
               </button>
@@ -441,7 +478,10 @@ function App() {
                 </span>
               </div>
             </header>
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight as any]}
+            >
               {detailBody}
             </ReactMarkdown>
           </>
@@ -505,6 +545,40 @@ function FacetGroup({
           onClick={() => onToggle(v)}
         >
           <span>{v || "(blank)"}</span>
+          <span className="count">{n}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function SingleFacetGroup({
+  title,
+  counts,
+  selected,
+  onPick,
+  minCount = 0,
+}: {
+  title: string;
+  counts: Record<string, number>;
+  selected: string;
+  onPick: (v: string) => void;
+  minCount?: number;
+}) {
+  const sorted = Object.entries(counts)
+    .filter(([k, n]) => k !== "" && n >= minCount)
+    .sort((a, b) => b[1] - a[1]);
+  if (sorted.length === 0) return null;
+  return (
+    <div className="facet-group">
+      <h4>{title}</h4>
+      {sorted.map(([v, n]) => (
+        <div
+          key={v}
+          className={`facet-row ${selected === v ? "selected" : ""}`}
+          onClick={() => onPick(selected === v ? "" : v)}
+        >
+          <span>{v}</span>
           <span className="count">{n}</span>
         </div>
       ))}
@@ -721,7 +795,12 @@ function BlockView({ block }: { block: ContentBlock }) {
   if (block.type === "text") {
     return (
       <div className="turn-text">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{block.text}</ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeHighlight as any]}
+        >
+          {block.text}
+        </ReactMarkdown>
       </div>
     );
   }

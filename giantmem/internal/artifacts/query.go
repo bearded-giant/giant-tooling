@@ -118,8 +118,11 @@ func ListArtifacts(live *sql.DB, f ListFilter, sortBy string, limit int) ([]Arti
 	return out, rows.Err()
 }
 
-// FacetCounts returns per-value row counts for the type, lifecycle, and status
-// columns in one pass each — used to render filter sidebars.
+// FacetCounts returns per-value row counts for the type, lifecycle, status,
+// feature, and repo columns in one pass each — used to render filter
+// sidebars. Feature and repo are excluded from the standard 3-facet
+// inputs because their cardinality varies wildly but they make great
+// secondary filters.
 func FacetCounts(live *sql.DB) (byType, byLifecycle, byStatus map[string]int, err error) {
 	if live == nil {
 		return map[string]int{}, map[string]int{}, map[string]int{}, nil
@@ -133,6 +136,33 @@ func FacetCounts(live *sql.DB) (byType, byLifecycle, byStatus map[string]int, er
 		return
 	}
 	byStatus, err = groupCount(live, "status")
+	return
+}
+
+// FacetCountsExt returns the standard three facet maps plus byFeature and
+// byRepo for richer filter sidebars. Empty values map to "" keys.
+func FacetCountsExt(live *sql.DB) (byType, byLifecycle, byStatus, byFeature, byRepo map[string]int, err error) {
+	if live == nil {
+		empty := map[string]int{}
+		return empty, empty, empty, empty, empty, nil
+	}
+	byType, err = groupCount(live, "type")
+	if err != nil {
+		return
+	}
+	byLifecycle, err = groupCount(live, "lifecycle")
+	if err != nil {
+		return
+	}
+	byStatus, err = groupCount(live, "status")
+	if err != nil {
+		return
+	}
+	byFeature, err = groupCount(live, "feature")
+	if err != nil {
+		return
+	}
+	byRepo, err = groupCount(live, "repo")
 	return
 }
 
