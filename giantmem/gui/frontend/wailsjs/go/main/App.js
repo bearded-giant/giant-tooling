@@ -6,6 +6,10 @@ export function FacetCounts() {
   return window['go']['main']['App']['FacetCounts']();
 }
 
+export function FeaturesByRepo() {
+  return window['go']['main']['App']['FeaturesByRepo']();
+}
+
 export function GetArtifact(arg1) {
   return window['go']['main']['App']['GetArtifact'](arg1);
 }

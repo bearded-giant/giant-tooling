@@ -111,6 +111,45 @@ func (a *App) SearchFTS(params search.Params) ([]search.Hit, error) {
 	return search.Run(a.archive, a.live, params)
 }
 
+// FeatureRow describes one (repo, feature) pair with its artifact count and
+// a sample worktree, so the sidebar can group features under their owning
+// repo and still distinguish between worktree branches that share a feature.
+type FeatureRow struct {
+	Repo     string `json:"repo"`
+	Feature  string `json:"feature"`
+	Count    int    `json:"count"`
+	Worktree string `json:"worktree,omitempty"`
+}
+
+// FeaturesByRepo returns every (repo, feature) pair from the artifacts table
+// with its count and one sample worktree. Ordered by repo asc, then count
+// desc. Features with empty name are omitted (those rows are repo-scoped
+// artifacts like plans/current.md that don't belong to a feature folder).
+func (a *App) FeaturesByRepo() ([]FeatureRow, error) {
+	if a.live == nil {
+		return nil, fmt.Errorf("live db not open")
+	}
+	rows, err := a.live.Query(
+		`SELECT repo, feature, COUNT(*) AS n, MAX(worktree) AS wt
+           FROM artifacts
+          WHERE feature <> ''
+          GROUP BY repo, feature
+          ORDER BY repo ASC, n DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FeatureRow
+	for rows.Next() {
+		var r FeatureRow
+		if err := rows.Scan(&r.Repo, &r.Feature, &r.Count, &r.Worktree); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // ListSessions returns the most recent session rows from archives.db without
 // running an FTS5 MATCH — used when the search input is empty (FTS5 errors on
 // empty queries). Project filter is applied when non-empty.

@@ -6,6 +6,8 @@ import {search} from '../models';
 
 export function FacetCounts():Promise<main.FacetCountsResult>;
 
+export function FeaturesByRepo():Promise<Array<main.FeatureRow>>;
+
 export function GetArtifact(arg1:string):Promise<artifacts.Artifact>;
 
 export function GetArtifactBody(arg1:string):Promise<string>;

@@ -97,6 +97,24 @@ export namespace main {
 	        this.byRepo = source["byRepo"];
 	    }
 	}
+	export class FeatureRow {
+	    repo: string;
+	    feature: string;
+	    count: number;
+	    worktree?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new FeatureRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.repo = source["repo"];
+	        this.feature = source["feature"];
+	        this.count = source["count"];
+	        this.worktree = source["worktree"];
+	    }
+	}
 
 }
 

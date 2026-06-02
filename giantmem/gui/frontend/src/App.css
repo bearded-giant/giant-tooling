@@ -74,6 +74,22 @@
   font-size: 11px;
   color: var(--fg-muted);
 }
+.repo-block {
+  margin-bottom: 6px;
+}
+.repo-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  padding: 2px 4px;
+  border-bottom: 1px dashed var(--border);
+  margin-bottom: 2px;
+}
+.row-meta strong {
+  color: var(--fg);
+  font-weight: 600;
+}
 
 .results {
   overflow-y: auto;

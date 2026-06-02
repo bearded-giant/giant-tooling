@@ -6,6 +6,7 @@ import "highlight.js/styles/github-dark.css";
 import "./App.css";
 import {
   FacetCounts,
+  FeaturesByRepo,
   GetArtifactBody,
   ListArtifacts,
   ListSessions,
@@ -43,6 +44,7 @@ function App() {
   const [selRepo, setSelRepo] = useState<string>("");
 
   const [facets, setFacets] = useState<main.FacetCountsResult | null>(null);
+  const [featuresByRepo, setFeaturesByRepo] = useState<main.FeatureRow[]>([]);
   const [artifactRows, setArtifactRows] = useState<artifacts.Artifact[]>([]);
   const [hybridRows, setHybridRows] = useState<search.HybridResult[]>([]);
   const [sessionHits, setSessionHits] = useState<search.Hit[]>([]);
@@ -59,6 +61,9 @@ function App() {
   useEffect(() => {
     FacetCounts()
       .then((f) => setFacets(f))
+      .catch((e) => setErr(String(e)));
+    FeaturesByRepo()
+      .then((rows) => setFeaturesByRepo(rows || []))
       .catch((e) => setErr(String(e)));
   }, []);
 
@@ -326,7 +331,8 @@ function App() {
                 className="filter-chip"
                 onClick={() => setSelFeature("")}
               >
-                feature: {selFeature} <span className="x">×</span>
+                feature: {selRepo ? `${selRepo}/${selFeature}` : selFeature}{" "}
+                <span className="x">×</span>
               </span>
             )}
             {selRepo && (
@@ -373,17 +379,26 @@ function App() {
               onToggle={(v) => toggleSet(selLifecycle, v, setSelLifecycle)}
             />
             <SingleFacetGroup
-              title="feature"
-              counts={facets.byFeature || {}}
-              selected={selFeature}
-              onPick={setSelFeature}
-              minCount={1}
-            />
-            <SingleFacetGroup
               title="repo"
               counts={facets.byRepo || {}}
               selected={selRepo}
-              onPick={setSelRepo}
+              onPick={(v) => {
+                setSelRepo(v);
+                if (selFeature && v && !featuresByRepo.some(
+                  (f) => f.repo === v && f.feature === selFeature,
+                )) {
+                  setSelFeature("");
+                }
+              }}
+            />
+            <FeaturesByRepoGroup
+              rows={featuresByRepo}
+              filterRepo={selRepo}
+              selected={selFeature}
+              onPick={(repo, feature) => {
+                setSelRepo(repo);
+                setSelFeature(feature);
+              }}
             />
             {(selType.size > 0 ||
               selStatus.size > 0 ||
@@ -469,7 +484,15 @@ function App() {
                   <span className="chip">{detailArt.lifecycle}</span>
                 )}
                 {detailArt.repo && <span>repo: {detailArt.repo}</span>}
+                {detailArt.worktree && (
+                  <span title={detailArt.worktree}>
+                    worktree: {shortPath(detailArt.worktree)}
+                  </span>
+                )}
                 {detailArt.branch && <span>branch: {detailArt.branch}</span>}
+                {detailArt.feature && (
+                  <span>feature: {detailArt.feature}</span>
+                )}
                 {detailArt.updated && (
                   <span>updated: {formatTime(detailArt.updated)}</span>
                 )}
@@ -552,6 +575,56 @@ function FacetGroup({
   );
 }
 
+function FeaturesByRepoGroup({
+  rows,
+  filterRepo,
+  selected,
+  onPick,
+}: {
+  rows: main.FeatureRow[];
+  filterRepo: string;
+  selected: string;
+  onPick: (repo: string, feature: string) => void;
+}) {
+  // group rows by repo
+  const grouped = useMemo(() => {
+    const out: Record<string, main.FeatureRow[]> = {};
+    for (const r of rows) {
+      if (filterRepo && r.repo !== filterRepo) continue;
+      (out[r.repo] = out[r.repo] || []).push(r);
+    }
+    return out;
+  }, [rows, filterRepo]);
+  const repos = Object.keys(grouped).sort();
+  if (repos.length === 0) return null;
+  return (
+    <div className="facet-group">
+      <h4>feature</h4>
+      {repos.map((repo) => (
+        <div key={repo} className="repo-block">
+          {!filterRepo && <div className="repo-label">{repo}</div>}
+          {grouped[repo].map((r) => (
+            <div
+              key={`${r.repo}/${r.feature}`}
+              className={`facet-row ${selected === r.feature && (!filterRepo || filterRepo === r.repo) ? "selected" : ""}`}
+              onClick={() =>
+                onPick(
+                  r.repo,
+                  selected === r.feature ? "" : r.feature,
+                )
+              }
+              title={r.worktree || ""}
+            >
+              <span>{r.feature}</span>
+              <span className="count">{r.count}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function SingleFacetGroup({
   title,
   counts,
@@ -609,7 +682,14 @@ function ArtifactRow({
       </div>
       <div className="row-path">{row.path}</div>
       <div className="row-meta">
-        {row.repo} · {formatTime(row.updated)}
+        <strong>{row.repo}</strong>
+        {row.worktree && shortPath(row.worktree) !== row.repo && (
+          <> · <span title={row.worktree}>{shortPath(row.worktree)}</span></>
+        )}
+        {row.feature && <> · <span style={{ color: "var(--accent-2)" }}>{row.feature}</span></>}
+        {row.branch && row.branch !== "main" && <> · {row.branch}</>}
+        {" · "}
+        {formatTime(row.updated)}
         {row.access_count ? ` · ${row.access_count} access` : ""}
         {row.has_vec ? " · vec" : ""}
       </div>
@@ -857,6 +937,16 @@ function BlockView({ block }: { block: ContentBlock }) {
       {JSON.stringify(block, null, 2)}
     </pre>
   );
+}
+
+// shortPath returns ~/last-2-segments form of an absolute path so the UI can
+// surface worktree context like 'cc-wt/stage' or 'python/recharge-auth'
+// without eating row width.
+function shortPath(p?: string): string {
+  if (!p) return "";
+  const segs = p.split("/").filter(Boolean);
+  if (segs.length <= 2) return p;
+  return segs.slice(-2).join("/");
 }
 
 function formatTime(s?: string): string {
