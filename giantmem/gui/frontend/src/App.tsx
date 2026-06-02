@@ -26,18 +26,18 @@ type Selection =
   | null;
 
 const SORT_OPTIONS: { value: string; label: string }[] = [
-  { value: "", label: "relevance" },
-  { value: "updated", label: "updated" },
-  { value: "created", label: "created" },
+  { value: "updated", label: "updated (newest)" },
+  { value: "created", label: "created (newest)" },
   { value: "access", label: "most accessed" },
   { value: "type", label: "type" },
+  { value: "", label: "repo / type (default)" },
 ];
 
 function App() {
   const [tab, setTab] = useState<Tab>("artifacts");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [sortBy, setSortBy] = useState<string>("");
+  const [sortBy, setSortBy] = useState<string>("updated");
 
   const [selType, setSelType] = useState<Set<string>>(new Set());
   const [selStatus, setSelStatus] = useState<Set<string>>(new Set());
