@@ -15,8 +15,9 @@ import (
 )
 
 type App struct {
-	ctx  context.Context
-	live *sql.DB
+	ctx     context.Context
+	live    *sql.DB
+	archive *sql.DB
 }
 
 func NewApp() *App {
@@ -25,18 +26,27 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
-	live, err := db.Open(filepath.Join(archiveBase(), "live.db"))
-	if err != nil {
+	base := archiveBase()
+	if live, err := db.Open(filepath.Join(base, "live.db")); err == nil {
+		a.live = live
+	} else {
 		fmt.Fprintf(os.Stderr, "gui: open live.db: %v\n", err)
-		return
 	}
-	a.live = live
+	if archive, err := db.Open(filepath.Join(base, "archives.db")); err == nil {
+		a.archive = archive
+	} else {
+		fmt.Fprintf(os.Stderr, "gui: open archives.db: %v\n", err)
+	}
 }
 
 func (a *App) shutdown(ctx context.Context) {
 	if a.live != nil {
 		a.live.Close()
 		a.live = nil
+	}
+	if a.archive != nil {
+		a.archive.Close()
+		a.archive = nil
 	}
 }
 
@@ -84,6 +94,13 @@ func (a *App) SearchHybrid(query string, filter artifacts.ListFilter, limit int)
 	}
 	queryVec, _ := daemonEmbed(query)
 	return search.Hybrid(a.live, query, queryVec, candidates, search.DefaultHybridWeights(), limit)
+}
+
+// SearchFTS runs the FTS5 query path across archives.db + live.db (either may
+// be nil — search.Run scopes to whichever is open). Returns ranked hits with
+// snippets, suitable for the session viewer's row list.
+func (a *App) SearchFTS(params search.Params) ([]search.Hit, error) {
+	return search.Run(a.archive, a.live, params)
 }
 
 // daemonEmbed asks the running giantmemd to embed text with its real backend.
