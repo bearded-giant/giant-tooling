@@ -59,15 +59,23 @@ func embeddingsEnabled(e search.Embedder) bool {
 // whose hash differs from the stored embedding meta (or that have none yet).
 func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int, err error) {
 	rows, err := live.Query(
-		`SELECT path, content FROM live_docs WHERE instr(path, ?) > 0`, "/.giantmem/")
+		`SELECT path, content, project, mtime FROM live_docs WHERE instr(path, ?) > 0`, "/.giantmem/")
 	if err != nil {
 		return 0, 0, err
 	}
-	type row struct{ rel, body, id string }
-	var work []row
+	type row struct {
+		abs, body, id string
+		mtime         int64
+	}
+	// Collapse branch/worktree siblings (same projectedID, different body) to one
+	// winner per id — newest mtime, tie-break highest path — matching
+	// ReconcileTable's choice. Without this, siblings fight over the single
+	// embedding slot and re-embed every pass, spinning the daemon loop.
+	winners := map[string]row{}
 	for rows.Next() {
-		var abs, content string
-		if err := rows.Scan(&abs, &content); err != nil {
+		var abs, content, proj string
+		var mtime int64
+		if err := rows.Scan(&abs, &content, &proj, &mtime); err != nil {
 			rows.Close()
 			return embedded, skipped, err
 		}
@@ -75,12 +83,18 @@ func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int
 		if !ok {
 			continue
 		}
-		a, ok := artifacts.DeriveFromLiveDoc(rel, content, "", "", "")
+		// repo must match ReconcileTable's derivation so the embedding id ==
+		// the artifacts-table id (projectedID is repo-qualified). branch/worktree
+		// do not affect the id, so empty is fine here.
+		a, ok := artifacts.DeriveFromLiveDoc(rel, content, proj, "", "")
 		if !ok {
 			continue
 		}
 		_, body, _ := artifacts.ParseFrontmatter(content)
-		work = append(work, row{rel: rel, body: body, id: a.ID})
+		r := row{abs: abs, body: body, id: a.ID, mtime: mtime}
+		if cur, ok := winners[a.ID]; !ok || r.mtime > cur.mtime || (r.mtime == cur.mtime && r.abs > cur.abs) {
+			winners[a.ID] = r
+		}
 	}
 	if cerr := rows.Err(); cerr != nil {
 		rows.Close()
@@ -88,7 +102,7 @@ func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int
 	}
 	rows.Close()
 
-	for _, w := range work {
+	for _, w := range winners {
 		meta, merr := search.LoadEmbeddingMeta(live, w.id)
 		if merr != nil {
 			return embedded, skipped, merr
@@ -101,10 +115,15 @@ func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int
 		if eerr != nil {
 			return embedded, skipped, eerr
 		}
-		if _, eerr := search.WriteEmbedding(live, w.id, w.body, vec, embedder.ModelName()); eerr != nil {
+		changed, eerr := search.WriteEmbedding(live, w.id, w.body, vec, embedder.ModelName())
+		if eerr != nil {
 			return embedded, skipped, eerr
 		}
-		embedded++
+		if changed {
+			embedded++
+		} else {
+			skipped++
+		}
 	}
 	return embedded, skipped, nil
 }

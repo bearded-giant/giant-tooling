@@ -247,27 +247,34 @@ func (s *Server) startReconciler(ctx context.Context) {
 		return
 	}
 	archiveBase := filepath.Dir(s.livePath)
-	embedder, err := search.NewEmbedder(os.Getenv("GIANTMEM_EMBED_BACKEND"))
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "giantmemd: embeddings disabled: %v\n", err)
-		embedder = nil
-	}
 
-	run := func(reason string) {
-		s.reconcileMu.Lock()
-		defer s.reconcileMu.Unlock()
-		st, err := projection.Reconcile(s.liveDB, archiveBase, embedder)
+	// Build the embedder, run the start pass, and watch — all off the caller's
+	// goroutine. The python backend loads a model (seconds), and Start() calls
+	// this before net.Listen; doing it synchronously would delay socket
+	// readiness past `daemon start`'s reachability check.
+	go func() {
+		embedder, err := search.NewEmbedder(os.Getenv("GIANTMEM_EMBED_BACKEND"))
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "giantmemd: reconcile (%s) failed: %v\n", reason, err)
-			return
+			fmt.Fprintf(os.Stderr, "giantmemd: embeddings disabled: %v\n", err)
+			embedder = nil
 		}
-		fmt.Fprintf(os.Stderr,
-			"giantmemd: reconcile (%s) scanned=%d upserted=%d removed=%d canonical=%d embedded=%d\n",
-			reason, st.Scanned, st.Upserted, st.Removed, st.Canonical, st.Embedded)
-	}
 
-	go run("start")
-	go s.watchAndReconcile(ctx, run, embedder)
+		run := func(reason string) {
+			s.reconcileMu.Lock()
+			defer s.reconcileMu.Unlock()
+			st, err := projection.Reconcile(s.liveDB, archiveBase, embedder)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "giantmemd: reconcile (%s) failed: %v\n", reason, err)
+				return
+			}
+			fmt.Fprintf(os.Stderr,
+				"giantmemd: reconcile (%s) scanned=%d upserted=%d removed=%d canonical=%d embedded=%d\n",
+				reason, st.Scanned, st.Upserted, st.Removed, st.Canonical, st.Embedded)
+		}
+
+		run("start")
+		s.watchAndReconcile(ctx, run, embedder)
+	}()
 }
 
 func (s *Server) watchAndReconcile(ctx context.Context, run func(string), embedder search.Embedder) {

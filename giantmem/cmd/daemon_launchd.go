@@ -88,6 +88,8 @@ func buildLaunchdPlist(binary, logPath string) string {
   <dict>
     <key>PATH</key>
     <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin</string>
+    <key>GIANTMEM_EMBED_BACKEND</key>
+    <string>python</string>
   </dict>
 </dict>
 </plist>

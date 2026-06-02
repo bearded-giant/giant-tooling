@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -18,7 +19,26 @@ import (
 var (
 	daemonForeground bool
 	daemonBenchmark  bool
+	daemonBackend    string
 )
+
+// daemonChildEnv returns the parent env with GIANTMEM_EMBED_BACKEND forced to
+// backend (de-duped). The daemon is the SOLE embedder, so the backend is set
+// only on the daemon process — never exported into the user's shell, where it
+// would make every read-only CLI call spawn the embedder model.
+func daemonChildEnv(backend string) []string {
+	env := os.Environ()
+	if backend == "" {
+		return env
+	}
+	out := make([]string, 0, len(env)+1)
+	for _, kv := range env {
+		if !strings.HasPrefix(kv, "GIANTMEM_EMBED_BACKEND=") {
+			out = append(out, kv)
+		}
+	}
+	return append(out, "GIANTMEM_EMBED_BACKEND="+backend)
+}
 
 var daemonCmd = &cobra.Command{
 	Use:   "daemon <command>",
@@ -47,6 +67,9 @@ var daemonStartCmd = &cobra.Command{
 	Short: "Start giantmemd in the background",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if daemonForeground {
+			if daemonBackend != "" {
+				os.Setenv("GIANTMEM_EMBED_BACKEND", daemonBackend)
+			}
 			return daemonServeCmd.RunE(cmd, args)
 		}
 		if daemon.SocketAlive(daemon.DefaultSocketPath(), 250*time.Millisecond) {
@@ -65,6 +88,7 @@ var daemonStartCmd = &cobra.Command{
 			return err
 		}
 		c := exec.Command(self, "daemon", "serve")
+		c.Env = daemonChildEnv(daemonBackend)
 		c.Stdout = f
 		c.Stderr = f
 		c.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -177,6 +201,7 @@ var daemonHealthCmd = &cobra.Command{
 
 func init() {
 	daemonStartCmd.Flags().BoolVar(&daemonForeground, "foreground", false, "stay in foreground (don't detach)")
+	daemonStartCmd.Flags().StringVar(&daemonBackend, "backend", "python", "embedder backend for the daemon (stub|python|ollama); the daemon is the sole embedder, so this is NOT exported to the shell")
 	daemonHealthCmd.Flags().BoolVar(&daemonBenchmark, "benchmark", false, "run a small perf loop and report p50/p99")
 	daemonCmd.AddCommand(daemonServeCmd, daemonStartCmd, daemonStopCmd, daemonRestartCmd, daemonStatusCmd, daemonHealthCmd, daemonInstallCmd, daemonUninstallCmd)
 	rootCmd.AddCommand(daemonCmd)

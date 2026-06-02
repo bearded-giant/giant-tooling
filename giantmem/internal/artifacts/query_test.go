@@ -25,7 +25,7 @@ func TestListArtifacts_FiltersAccessAndVecJoins(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		if _, err := d.Exec(
 			`INSERT INTO artifact_access(artifact_id, accessed_at) VALUES (?, ?)`,
-			"feat:foo:proposal", now); err != nil {
+			"repoA/feat:foo:proposal", now); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -33,7 +33,7 @@ func TestListArtifacts_FiltersAccessAndVecJoins(t *testing.T) {
 	if _, err := d.Exec(
 		`INSERT INTO artifact_embedding_meta(artifact_id, rowid, body_hash, dim, model, updated_at)
          VALUES (?,?,?,?,?,?)`,
-		"feat:foo:proposal", 1, "h", 768, "m", now); err != nil {
+		"repoA/feat:foo:proposal", 1, "h", 768, "m", now); err != nil {
 		t.Fatal(err)
 	}
 

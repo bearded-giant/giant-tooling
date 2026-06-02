@@ -70,8 +70,22 @@ func DeriveFromLiveDoc(relPath, content, repo, branch, worktree string) (Artifac
 	if a.Lifecycle == "" {
 		a.Lifecycle = defaultLifecycle(relPath)
 	}
-	a.ID = BuildID(a)
+	a.ID = projectedID(a)
 	return a, true
+}
+
+// projectedID is the artifacts-table/embedding key. BuildID alone is unique only
+// within one workspace's artifacts.json; the projection is cross-repo, so the
+// same relative path (e.g. plans/current.md -> repo:plan:current) in different
+// repos would collide on an id-only PK. Prefixing the repo keeps them distinct.
+// Branch-worktree siblings share a repo label, so they intentionally collapse
+// newest-wins (per-repo granularity).
+func projectedID(a Artifact) string {
+	base := BuildID(a)
+	if a.Repo == "" {
+		return base
+	}
+	return a.Repo + "/" + base
 }
 
 // TableStats reports what one ReconcileTable pass changed.
@@ -112,6 +126,7 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 		path      string
 		canonical string
 		project   string
+		mtime     int64
 	}
 	var items []pending
 	for rows.Next() {
@@ -133,7 +148,7 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 		if a.Updated == "" && mtime > 0 {
 			a.Updated = time.Unix(mtime, 0).UTC().Format("2006-01-02")
 		}
-		items = append(items, pending{a: a, path: absPath, canonical: canonical, project: proj})
+		items = append(items, pending{a: a, path: absPath, canonical: canonical, project: proj, mtime: mtime})
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
@@ -141,28 +156,52 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 	}
 	rows.Close()
 
-	now := time.Now().UTC().Format(time.RFC3339)
-	derived := make(map[string]struct{}, len(items))
+	// Branch/worktree siblings derive the SAME projectedID but carry different
+	// bodies/worktrees. Upserting every sibling each pass makes them overwrite
+	// one another (last-wins) — a real write that dirties live.db and respins the
+	// daemon's fsnotify reconcile into an infinite loop. Collapse to one winner
+	// per id first. Deterministic: newest mtime, tie-break highest path.
+	winners := make(map[string]pending, len(items))
 	for _, it := range items {
-		if _, err := upsertArtifact(live, it.a, now); err != nil {
+		cur, ok := winners[it.a.ID]
+		if !ok || it.mtime > cur.mtime || (it.mtime == cur.mtime && it.path > cur.path) {
+			winners[it.a.ID] = it
+		}
+	}
+
+	now := time.Now().UTC().Format(time.RFC3339)
+	derived := make(map[string]struct{}, len(winners))
+	for _, it := range winners {
+		res, err := upsertArtifact(live, it.a, now)
+		if err != nil {
 			return st, err
 		}
 		derived[it.a.ID] = struct{}{}
-		st.Upserted++
+		if n, _ := res.RowsAffected(); n > 0 {
+			st.Upserted++
+		}
+	}
 
-		if it.canonical == "" {
-			canon := project.Canonicalize(it.project, archiveBase)
-			if canon != "" {
-				res, err := live.Exec(
-					`UPDATE live_docs SET canonical_project=? WHERE path=? AND COALESCE(canonical_project,'')=''`,
-					canon, it.path)
-				if err != nil {
-					return st, err
-				}
-				if n, _ := res.RowsAffected(); n > 0 {
-					st.Canonical++
-				}
-			}
+	// canonical_project is a per-path live_docs column, independent of the id
+	// collapse — backfill every source row, not just winners. The WHERE guard
+	// skips already-filled rows so this converges after one pass and never feeds
+	// the daemon loop.
+	for _, it := range items {
+		if it.canonical != "" {
+			continue
+		}
+		canon := project.Canonicalize(it.project, archiveBase)
+		if canon == "" {
+			continue
+		}
+		res, err := live.Exec(
+			`UPDATE live_docs SET canonical_project=? WHERE path=? AND COALESCE(canonical_project,'')=''`,
+			canon, it.path)
+		if err != nil {
+			return st, err
+		}
+		if n, _ := res.RowsAffected(); n > 0 {
+			st.Canonical++
 		}
 	}
 
@@ -218,7 +257,15 @@ func upsertArtifact(live *sql.DB, a Artifact, now string) (sql.Result, error) {
             scope=excluded.scope, repo=excluded.repo, branch=excluded.branch,
             path=excluded.path, worktree=excluded.worktree, size=excluded.size,
             created=excluded.created, updated=excluded.updated,
-            has_front=excluded.has_front, indexed_at=excluded.indexed_at`,
+            has_front=excluded.has_front, indexed_at=excluded.indexed_at
+         WHERE type IS NOT excluded.type OR feature IS NOT excluded.feature
+            OR domain IS NOT excluded.domain OR name IS NOT excluded.name
+            OR status IS NOT excluded.status OR lifecycle IS NOT excluded.lifecycle
+            OR scope IS NOT excluded.scope OR repo IS NOT excluded.repo
+            OR branch IS NOT excluded.branch OR path IS NOT excluded.path
+            OR worktree IS NOT excluded.worktree OR size IS NOT excluded.size
+            OR created IS NOT excluded.created OR updated IS NOT excluded.updated
+            OR has_front IS NOT excluded.has_front`,
 		a.ID, a.Type, a.Feature, a.Domain, a.Name, a.Status, a.Lifecycle, a.Scope,
 		a.Repo, a.Branch, a.Path, a.Worktree, a.Size, a.Created, updated, hasFront, now,
 	)

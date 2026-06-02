@@ -65,8 +65,8 @@ func TestDeriveFromLiveDoc_ClassifyAndFrontmatter(t *testing.T) {
 	if !a.HasFront {
 		t.Error("HasFront should be true")
 	}
-	if a.ID != "feat:foo:proposal" {
-		t.Errorf("ID = %q, want feat:foo:proposal", a.ID)
+	if a.ID != "repo/feat:foo:proposal" {
+		t.Errorf("ID = %q, want repo/feat:foo:proposal", a.ID)
 	}
 	if a.Repo != "repo" || a.Branch != "main" || a.Worktree != "/r" {
 		t.Errorf("repo/branch/worktree not set: %q/%q/%q", a.Repo, a.Branch, a.Worktree)
@@ -156,6 +156,11 @@ func TestReconcileTable_UpsertIdempotentDeleteCanonical(t *testing.T) {
 	if st2.Canonical != 0 {
 		t.Errorf("2nd pass canonical = %d, want 0 (already filled)", st2.Canonical)
 	}
+	// unchanged rows must not rewrite: a write would bump indexed_at, dirty
+	// live.db, and retrigger the daemon's fsnotify reconcile -> infinite loop.
+	if st2.Upserted != 0 {
+		t.Errorf("2nd pass upserted = %d, want 0 (idempotent no-write; daemon loop guard)", st2.Upserted)
+	}
 
 	// delete a source row => orphan removed on next pass.
 	if _, err := d.Exec(`DELETE FROM live_docs WHERE path=?`, "/r/.giantmem/features/foo/tasks.md"); err != nil {
@@ -187,11 +192,89 @@ func TestReconcileTable_BranchFromActiveSessions(t *testing.T) {
 		t.Fatalf("reconcile: %v", err)
 	}
 	var branch string
-	if err := d.QueryRow(`SELECT branch FROM artifacts WHERE id=?`, "feat:foo:proposal").Scan(&branch); err != nil {
+	if err := d.QueryRow(`SELECT branch FROM artifacts WHERE id=?`, "myrepo/feat:foo:proposal").Scan(&branch); err != nil {
 		t.Fatal(err)
 	}
 	if branch != "feature-x" {
 		t.Errorf("branch = %q, want feature-x (from active_sessions)", branch)
+	}
+}
+
+func TestReconcileTable_CrossRepoNoCollision(t *testing.T) {
+	d := newLiveDB(t)
+	base := t.TempDir()
+
+	// same relative path in two different repos must NOT collapse (id-only PK bug).
+	insertLiveDoc(t, d, "/a/.giantmem/plans/current.md", "repoA", "/a", "plan A", 1717200000)
+	insertLiveDoc(t, d, "/b/.giantmem/plans/current.md", "repoB", "/b", "plan B", 1717200000)
+	// same repo across two branch-worktrees SHOULD collapse newest-wins (per-repo).
+	insertLiveDoc(t, d, "/a/.giantmem/features/foo/proposal.md", "repoA", "/a", "v1", 1717200000)
+	insertLiveDoc(t, d, "/a2/.giantmem/features/foo/proposal.md", "repoA", "/a2", "v2", 1717200001)
+
+	if _, err := ReconcileTable(d, base); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+
+	// 2 distinct current.md (cross-repo) + 1 collapsed proposal (same repo) = 3.
+	if got := countArtifacts(t, d); got != 3 {
+		t.Fatalf("artifacts rows = %d, want 3 (2 cross-repo plans + 1 collapsed proposal)", got)
+	}
+
+	var idA, idB string
+	d.QueryRow(`SELECT id FROM artifacts WHERE repo='repoA' AND type='plan'`).Scan(&idA)
+	d.QueryRow(`SELECT id FROM artifacts WHERE repo='repoB' AND type='plan'`).Scan(&idB)
+	if idA == idB || idA == "" || idB == "" {
+		t.Errorf("cross-repo plan ids should differ and be non-empty: %q vs %q", idA, idB)
+	}
+
+	var n int
+	if err := d.QueryRow(
+		`SELECT COUNT(*) FROM artifacts WHERE repo='repoA' AND type='proposal'`).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Errorf("same-repo branch-worktree proposals = %d rows, want 1 (newest-wins)", n)
+	}
+}
+
+func TestReconcileTable_MultiWorktreeCollisionConverges(t *testing.T) {
+	d := newLiveDB(t)
+	base := t.TempDir()
+
+	// same repo + same rel path across three worktrees => one projectedID, three
+	// source rows with different bodies. Newest mtime must win, and a second pass
+	// must write NOTHING — siblings flipping is the daemon-loop bug.
+	insertLiveDoc(t, d, "/wt-a/.giantmem/plans/current.md", "myrepo", "/wt-a", "body A", 1717200000)
+	insertLiveDoc(t, d, "/wt-b/.giantmem/plans/current.md", "myrepo", "/wt-b", "body BB newest", 1717200002)
+	insertLiveDoc(t, d, "/wt-c/.giantmem/plans/current.md", "myrepo", "/wt-c", "body CCC", 1717200001)
+
+	st, err := ReconcileTable(d, base)
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if got := countArtifacts(t, d); got != 1 {
+		t.Fatalf("artifacts rows = %d, want 1 (three siblings collapse)", got)
+	}
+	if st.Upserted != 1 {
+		t.Fatalf("1st pass upserted = %d, want 1 (only the winner)", st.Upserted)
+	}
+
+	var size int64
+	var worktree string
+	if err := d.QueryRow(
+		`SELECT size, worktree FROM artifacts WHERE repo='myrepo' AND type='plan'`).Scan(&size, &worktree); err != nil {
+		t.Fatal(err)
+	}
+	if size != int64(len("body BB newest")) || worktree != "/wt-b" {
+		t.Errorf("winner = size %d worktree %q, want %d /wt-b (newest mtime)", size, worktree, len("body BB newest"))
+	}
+
+	st2, err := ReconcileTable(d, base)
+	if err != nil {
+		t.Fatalf("reconcile 2: %v", err)
+	}
+	if st2.Upserted != 0 {
+		t.Errorf("2nd pass upserted = %d, want 0 (collision converged, no daemon loop)", st2.Upserted)
 	}
 }
 

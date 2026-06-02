@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"database/sql"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -45,7 +46,13 @@ func init() {
 }
 
 func runEmbed(cmd *cobra.Command, args []string) error {
-	rows, err := embedCollectArtifacts()
+	live, err := db.Open(liveDBPath())
+	if err != nil {
+		return err
+	}
+	defer live.Close()
+
+	rows, err := embedCollectArtifacts(live)
 	if err != nil {
 		return err
 	}
@@ -53,12 +60,6 @@ func runEmbed(cmd *cobra.Command, args []string) error {
 		fmt.Fprintln(os.Stderr, "no artifacts to embed")
 		return nil
 	}
-
-	live, err := db.Open(liveDBPath())
-	if err != nil {
-		return err
-	}
-	defer live.Close()
 
 	if embedReset {
 		if err := search.ResetEmbeddings(live); err != nil {
@@ -138,9 +139,28 @@ func embedBackendLabel() string {
 	return "stub"
 }
 
-func embedCollectArtifacts() ([]artifacts.Artifact, error) {
+func embedCollectArtifacts(live *sql.DB) ([]artifacts.Artifact, error) {
 	var rows []artifacts.Artifact
-	if embedRepo == "current" {
+	// Prefer the projection table: its ids are repo-qualified, matching the
+	// key WriteEmbedding stores under, so recall's embedding join lines up.
+	// FS Scan/Crawl yields unqualified BuildIDs and is the first-run fallback.
+	if artifacts.TableHasRows(live) {
+		f := artifacts.ListFilter{}
+		switch embedRepo {
+		case "all", "":
+		case "current":
+			if _, idx, err := resolveWorkspace(); err == nil {
+				f.Repo = idx.Repo
+			}
+		default:
+			f.Repo = embedRepo
+		}
+		r, err := artifacts.ListArtifacts(live, f, "", 0)
+		if err != nil {
+			return nil, err
+		}
+		rows = r
+	} else if embedRepo == "current" {
 		_, idx, err := resolveWorkspace()
 		if err != nil {
 			return nil, err

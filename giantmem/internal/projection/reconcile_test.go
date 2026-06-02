@@ -120,3 +120,44 @@ func TestReconcile_NilEmbedderTableOnly(t *testing.T) {
 		t.Errorf("upserted = %d, want 1", st.Upserted)
 	}
 }
+
+func insertDocWT(t *testing.T, d *sql.DB, abs, worktree, content string, mtime int64) {
+	t.Helper()
+	_, err := d.Exec(
+		`INSERT INTO live_docs(path, project, worktree_path, feature, dir_type,
+            session_id, git_sha, mtime, ingested_at, content)
+         VALUES (?,?,?,?,?,?,?,?,?,?)
+         ON CONFLICT(path) DO UPDATE SET content=excluded.content, mtime=excluded.mtime`,
+		abs, "repo", worktree, "", "", "", "", mtime, "2026-06-01T00:00:00Z", content)
+	if err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+}
+
+func TestReconcile_MultiWorktreeCollisionConvergesEmbed(t *testing.T) {
+	d, base := newLive(t)
+
+	// two worktrees, same repo+rel => one projectedID, two different bodies.
+	// They must not fight over the single embedding slot across passes.
+	insertDocWT(t, d, "/wt-a/.giantmem/plans/current.md", "/wt-a", "body A older", 1)
+	insertDocWT(t, d, "/wt-b/.giantmem/plans/current.md", "/wt-b", "body B newest", 2)
+
+	st, err := Reconcile(d, base, fakeEmbedder{768})
+	if err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	if st.Upserted != 1 {
+		t.Fatalf("upserted = %d, want 1 (siblings collapse)", st.Upserted)
+	}
+	if st.Embedded != 1 {
+		t.Fatalf("embedded = %d, want 1 (one winner embedded)", st.Embedded)
+	}
+
+	st2, err := Reconcile(d, base, fakeEmbedder{768})
+	if err != nil {
+		t.Fatalf("reconcile 2: %v", err)
+	}
+	if st2.Embedded != 0 {
+		t.Errorf("2nd pass embedded = %d, want 0 (collision converged, no daemon loop)", st2.Embedded)
+	}
+}
