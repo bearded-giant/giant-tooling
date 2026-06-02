@@ -132,36 +132,19 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 func mcpHybridRerank(hits []artifactHit, candidates []artifacts.Artifact, query string, limit int) []artifactHit {
 	weights := search.DefaultHybridWeights()
 	if err := weights.Validate(); err != nil {
-		// weights misconfigured — fall back to lexical order
-		if limit > 0 && len(hits) > limit {
-			return hits[:limit]
-		}
-		return hits
-	}
-	embedder, err := search.NewEmbedder("")
-	if err != nil {
-		if limit > 0 && len(hits) > limit {
-			return hits[:limit]
-		}
-		return hits
-	}
-	defer embedder.Close()
-	queryVec, err := embedder.Embed(query)
-	if err != nil {
-		if limit > 0 && len(hits) > limit {
-			return hits[:limit]
-		}
-		return hits
+		return capHits(hits, limit)
 	}
 	live := openLiveDBQuiet()
 	if live == nil {
-		if limit > 0 && len(hits) > limit {
-			return hits[:limit]
-		}
-		return hits
+		return capHits(hits, limit)
 	}
 	defer live.Close()
-	// Build a quick id->candidate index for re-resolution
+
+	// Prefer the daemon's embedder (sole model owner). nil => no real embedder
+	// anywhere; Hybrid then skips the vector arm and reranks by FTS/recency only
+	// rather than polluting scores with a stub vector.
+	queryVec := resolveQueryVector(query)
+
 	byID := map[string]artifacts.Artifact{}
 	for _, a := range candidates {
 		byID[a.ID] = a
@@ -174,16 +157,20 @@ func mcpHybridRerank(hits []artifactHit, candidates []artifacts.Artifact, query 
 	}
 	results, err := search.Hybrid(live, query, queryVec, picks, weights, limit)
 	if err != nil {
-		if limit > 0 && len(hits) > limit {
-			return hits[:limit]
-		}
-		return hits
+		return capHits(hits, limit)
 	}
 	out := make([]artifactHit, 0, len(results))
 	for _, r := range results {
 		out = append(out, mcpArtifactHit(r.Artifact, ""))
 	}
 	return out
+}
+
+func capHits(hits []artifactHit, limit int) []artifactHit {
+	if limit > 0 && len(hits) > limit {
+		return hits[:limit]
+	}
+	return hits
 }
 
 func mcpFindFilterSummary(args findArtifactArgs) string {
@@ -218,7 +205,6 @@ func mcpLogArtifactAccess(hits []artifactHit, query string) {
 	}
 	_ = artifacts.LogAccesses(live, ids, ranks, query)
 }
-
 
 func mcpArtifactHit(a artifacts.Artifact, snippet string) artifactHit {
 	return artifactHit{

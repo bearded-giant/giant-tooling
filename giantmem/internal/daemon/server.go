@@ -43,6 +43,11 @@ type Server struct {
 
 	reconcileMu sync.Mutex
 
+	// embedder is the daemon's single embedder (shared by the reconciler and the
+	// "embed" RPC) so the model loads once here and never in read-only callers.
+	embedderMu sync.RWMutex
+	embedder   search.Embedder
+
 	listener net.Listener
 }
 
@@ -188,6 +193,8 @@ func (s *Server) dispatch(req *Request) *Response {
 	switch req.Method {
 	case "find":
 		return s.handleFind(req)
+	case "embed":
+		return s.handleEmbed(req)
 	case "health":
 		return s.handleHealth(req)
 	case "ping":
@@ -258,6 +265,9 @@ func (s *Server) startReconciler(ctx context.Context) {
 			fmt.Fprintf(os.Stderr, "giantmemd: embeddings disabled: %v\n", err)
 			embedder = nil
 		}
+		s.embedderMu.Lock()
+		s.embedder = embedder
+		s.embedderMu.Unlock()
 
 		run := func(reason string) {
 			s.reconcileMu.Lock()

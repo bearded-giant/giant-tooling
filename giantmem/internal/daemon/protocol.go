@@ -36,38 +36,51 @@ type Error struct {
 
 // FindParams is the shape exchanged on the wire for "find".
 type FindParams struct {
-	Query        string `json:"query"`
-	Project      string `json:"project,omitempty"`
-	DirType      string `json:"dir_type,omitempty"`
-	SourceType   string `json:"source_type,omitempty"`
-	Feature      string `json:"feature,omitempty"`
-	Latest       bool   `json:"latest,omitempty"`
-	LiveOnly     bool   `json:"live_only,omitempty"`
-	ArchiveOnly  bool   `json:"archive_only,omitempty"`
-	Since        string `json:"since,omitempty"`
-	Until        string `json:"until,omitempty"`
-	Limit        int    `json:"limit,omitempty"`
-	IncludeFull  bool   `json:"include_full,omitempty"`
+	Query       string `json:"query"`
+	Project     string `json:"project,omitempty"`
+	DirType     string `json:"dir_type,omitempty"`
+	SourceType  string `json:"source_type,omitempty"`
+	Feature     string `json:"feature,omitempty"`
+	Latest      bool   `json:"latest,omitempty"`
+	LiveOnly    bool   `json:"live_only,omitempty"`
+	ArchiveOnly bool   `json:"archive_only,omitempty"`
+	Since       string `json:"since,omitempty"`
+	Until       string `json:"until,omitempty"`
+	Limit       int    `json:"limit,omitempty"`
+	IncludeFull bool   `json:"include_full,omitempty"`
+}
+
+// EmbedParams is the wire shape for "embed": embed one query string with the
+// daemon's (real) embedder so callers don't each load the model.
+type EmbedParams struct {
+	Text string `json:"text"`
+}
+
+// EmbedResult carries the query vector produced by the daemon's embedder.
+type EmbedResult struct {
+	Vec   []float32 `json:"vec"`
+	Model string    `json:"model"`
+	Dim   int       `json:"dim"`
 }
 
 // HealthResult is the daemon health report.
 type HealthResult struct {
-	Uptime          string  `json:"uptime"`
-	RSS             uint64  `json:"rss_bytes"`
-	Requests        int64   `json:"requests"`
-	ArchiveSchema   int     `json:"archive_schema"`
-	LiveSchema      int     `json:"live_schema"`
+	Uptime           string `json:"uptime"`
+	RSS              uint64 `json:"rss_bytes"`
+	Requests         int64  `json:"requests"`
+	ArchiveSchema    int    `json:"archive_schema"`
+	LiveSchema       int    `json:"live_schema"`
 	BinarySchemaArch int    `json:"binary_archive_schema"`
 	BinarySchemaLive int    `json:"binary_live_schema"`
-	Drift           bool    `json:"schema_drift"`
-	Bench           *Bench  `json:"bench,omitempty"`
+	Drift            bool   `json:"schema_drift"`
+	Bench            *Bench `json:"bench,omitempty"`
 }
 
 // Bench is optional benchmark numbers attached to health.
 type Bench struct {
-	FindP50Ms    float64 `json:"find_p50_ms"`
-	FindP99Ms    float64 `json:"find_p99_ms"`
-	StatusP50Ms  float64 `json:"status_p50_ms"`
-	StatusP99Ms  float64 `json:"status_p99_ms"`
-	Iterations   int     `json:"iterations"`
+	FindP50Ms   float64 `json:"find_p50_ms"`
+	FindP99Ms   float64 `json:"find_p99_ms"`
+	StatusP50Ms float64 `json:"status_p50_ms"`
+	StatusP99Ms float64 `json:"status_p99_ms"`
+	Iterations  int     `json:"iterations"`
 }
