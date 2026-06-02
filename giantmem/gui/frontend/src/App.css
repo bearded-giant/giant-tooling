@@ -1,9 +1,46 @@
 .app-grid {
   display: grid;
-  grid-template-columns: 240px 1fr 1fr;
+  grid-template-columns: 260px 1fr 1fr;
   grid-template-rows: auto auto 1fr;
   height: 100vh;
   gap: 0;
+  position: relative;
+}
+
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  margin-left: -3px;
+  cursor: col-resize;
+  z-index: 10;
+  background: transparent;
+}
+.sidebar-resizer:hover,
+.sidebar-resizer:active {
+  background: var(--accent);
+  opacity: 0.5;
+}
+
+.copy-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  padding: 0 5px;
+  margin-left: 4px;
+  border-radius: 3px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.copy-btn:hover {
+  background: var(--bg-3);
+  color: var(--fg);
+  border-color: var(--border);
+}
+.copy-btn.copied {
+  color: var(--success);
 }
 
 .topbar {

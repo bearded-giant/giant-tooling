@@ -3,6 +3,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
+import { ClipboardSetText } from "../wailsjs/runtime/runtime";
 import "./App.css";
 import {
   FacetCounts,
@@ -44,6 +45,13 @@ function App() {
   const [selFeature, setSelFeature] = useState<string>("");
   const [selRepo, setSelRepo] = useState<string>("");
   const [sidebarFilter, setSidebarFilter] = useState("");
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    const n = Number(localStorage.getItem("gm.sidebarWidth"));
+    return Number.isFinite(n) && n >= 180 && n <= 600 ? n : 260;
+  });
+  useEffect(() => {
+    localStorage.setItem("gm.sidebarWidth", String(sidebarWidth));
+  }, [sidebarWidth]);
   const [collapsed, setCollapsed] = useState<Set<string>>(
     new Set(["feature", "repo", "topic", "dir_type"]),
   );
@@ -291,7 +299,13 @@ function App() {
       : sessionHits.length;
 
   return (
-    <div id="App" className="app-grid">
+    <div
+      id="App"
+      className="app-grid"
+      style={{
+        gridTemplateColumns: `${sidebarWidth}px 1fr 1fr`,
+      }}
+    >
       <div className="topbar">
         <div className="brand">giantmem</div>
         <div className="tabs">
@@ -454,6 +468,7 @@ function App() {
         )}
       </div>
 
+      <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
       <aside className="sidebar">
         {tab === "artifacts" && facets && (
           <>
@@ -683,6 +698,14 @@ function App() {
                 <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>
                   {detailArt.path}
                 </span>
+                <CopyButton
+                  text={
+                    detailArt.worktree
+                      ? `${detailArt.worktree}/.giantmem/${detailArt.path}`
+                      : detailArt.path
+                  }
+                  label="copy absolute path"
+                />
               </div>
             </header>
             <ReactMarkdown
@@ -771,6 +794,81 @@ function FacetGroup({
           </div>
         ))}
     </div>
+  );
+}
+
+function SidebarResizer({
+  width,
+  onResize,
+}: {
+  width: number;
+  onResize: (w: number) => void;
+}) {
+  const dragging = useRef(false);
+  const startX = useRef(0);
+  const startW = useRef(0);
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!dragging.current) return;
+      const dx = e.clientX - startX.current;
+      const next = Math.max(180, Math.min(600, startW.current + dx));
+      onResize(next);
+    };
+    const onUp = () => {
+      dragging.current = false;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [onResize]);
+  return (
+    <div
+      className="sidebar-resizer"
+      style={{ left: `${width}px` }}
+      title="drag to resize"
+      onMouseDown={(e) => {
+        dragging.current = true;
+        startX.current = e.clientX;
+        startW.current = width;
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+      }}
+      onDoubleClick={() => onResize(260)}
+    />
+  );
+}
+
+function CopyButton({ text, label }: { text: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!text) return null;
+  const onClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await ClipboardSetText(text);
+    } catch {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        return;
+      }
+    }
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1200);
+  };
+  return (
+    <button
+      className={`copy-btn ${copied ? "copied" : ""}`}
+      onClick={onClick}
+      title={label || `copy: ${text}`}
+      aria-label="copy"
+    >
+      {copied ? "✓" : "⎘"}
+    </button>
   );
 }
 
@@ -1116,7 +1214,24 @@ function parseJSONL(raw: string): SessionTurn[] {
       else if (b.type === "thinking") t.thinkingCount++;
     }
   }
-  return turns;
+  // Drop empty turns. Many user turns hold only system-reminder text or
+  // tool_result blocks that just paired upward — they leave nothing
+  // worth showing. A turn survives if it has any tool call, any
+  // thinking block, or any non-blank text/result content.
+  return turns.filter((t) => {
+    if (t.toolCount > 0 || t.thinkingCount > 0) return true;
+    for (const b of t.blocks) {
+      if (b.type === "text" && b.text.trim() !== "") return true;
+      if (
+        b.type === "tool_result" &&
+        stringifyResult(b.content).trim() !== ""
+      ) {
+        return true;
+      }
+      if (b.type === "unknown") return true;
+    }
+    return false;
+  });
 }
 
 function stringifyResult(content: any): string {
@@ -1245,6 +1360,7 @@ function SessionDetail({
         <h2 style={{ marginTop: 0, marginBottom: 0 }}>{path.split("/").pop()}</h2>
         <div className="meta">
           <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{path}</span>
+          <CopyButton text={path} label="copy file path" />
           {turns && (
             <span>
               {turns.length} turn{turns.length === 1 ? "" : "s"} ·{" "}
@@ -1324,7 +1440,7 @@ function SessionTurnView({
         )}
         <span className="turn-summary-spacer" />
         {turn.timestamp && (
-          <span className="turn-time" title={turn.timestamp}>
+          <span className="turn-time" title={formatRelative(turn.timestamp)}>
             {formatTime(turn.timestamp)}
           </span>
         )}
@@ -1502,16 +1618,51 @@ function shortPath(p?: string): string {
   return segs.slice(-2).join("/");
 }
 
-function formatTime(s?: string): string {
-  if (!s) return "";
+// parseTimestamp handles ISO 8601 plus the YYYYMMDD_HHMMSS form the documents
+// table writes from file mtime. Returns null when nothing parses.
+function parseTimestamp(s?: string): Date | null {
+  if (!s) return null;
+  const m = s.match(/^(\d{4})(\d{2})(\d{2})_(\d{2})(\d{2})(\d{2})$/);
+  if (m) {
+    return new Date(
+      Number(m[1]),
+      Number(m[2]) - 1,
+      Number(m[3]),
+      Number(m[4]),
+      Number(m[5]),
+      Number(m[6]),
+    );
+  }
   const t = new Date(s);
-  if (Number.isNaN(t.getTime())) return s;
+  return Number.isNaN(t.getTime()) ? null : t;
+}
+
+// formatTime renders an absolute local datetime — 2026-06-01 12:30 PM —
+// across rows, detail headers, and transcript turns. Use formatRelative
+// when you want '5m ago' as a tooltip instead.
+function formatTime(s?: string): string {
+  const t = parseTimestamp(s);
+  if (!t) return s || "";
+  const y = t.getFullYear();
+  const mo = String(t.getMonth() + 1).padStart(2, "0");
+  const d = String(t.getDate()).padStart(2, "0");
+  let h = t.getHours();
+  const min = String(t.getMinutes()).padStart(2, "0");
+  const ap = h >= 12 ? "PM" : "AM";
+  h = h % 12;
+  if (h === 0) h = 12;
+  return `${y}-${mo}-${d} ${h}:${min} ${ap}`;
+}
+
+function formatRelative(s?: string): string {
+  const t = parseTimestamp(s);
+  if (!t) return s || "";
   const diff = (Date.now() - t.getTime()) / 1000;
   if (diff < 60) return `${Math.floor(diff)}s ago`;
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
-  return t.toISOString().slice(0, 10);
+  return formatTime(s);
 }
 
 export default App;
