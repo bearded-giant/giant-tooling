@@ -76,6 +76,20 @@ var archiveMigrations = []Migration{
 			return err
 		},
 	},
+	{
+		Version: 4,
+		Name:    "session_topic_overrides",
+		Apply: func(tx *sql.Tx) error {
+			_, err := tx.Exec(`
+                CREATE TABLE IF NOT EXISTS session_topic_overrides (
+                    session_id TEXT PRIMARY KEY,
+                    topic TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+            `)
+			return err
+		},
+	},
 }
 
 // liveMigrations is the canonical list for live.db.

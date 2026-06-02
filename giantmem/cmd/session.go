@@ -164,6 +164,50 @@ var sessShowCmd = &cobra.Command{
 	},
 }
 
+var sessSetTopicCmd = &cobra.Command{
+	Use:   "set-topic <id-prefix> <topic>",
+	Short: "Pin a session's topic (survives re-ingest)",
+	Args:  cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		topic := strings.TrimSpace(args[1])
+		if topic == "" {
+			return fmt.Errorf("topic must be non-empty")
+		}
+		a, err := db.Open(archiveDBPath())
+		if err != nil {
+			return err
+		}
+		defer a.Close()
+		if err := db.EnsureArchive(a); err != nil {
+			return err
+		}
+		r, err := lookupSession(a, args[0])
+		if err != nil {
+			return err
+		}
+		if r.ID == "" {
+			return fmt.Errorf("session id missing on row (filepath=%s)", r.JSONLPath)
+		}
+		now := time.Now().UTC().Format(time.RFC3339)
+		if _, err := a.Exec(
+			`INSERT INTO session_topic_overrides (session_id, topic, updated_at)
+             VALUES (?, ?, ?)
+             ON CONFLICT(session_id) DO UPDATE SET topic = excluded.topic, updated_at = excluded.updated_at`,
+			r.ID, topic, now,
+		); err != nil {
+			return err
+		}
+		if _, err := a.Exec(
+			`UPDATE documents SET topic = ? WHERE session_id = ?`,
+			topic, r.ID,
+		); err != nil {
+			return err
+		}
+		fmt.Printf("pinned %s topic=%s\n", r.ID, topic)
+		return nil
+	},
+}
+
 var sessResumeCmd = &cobra.Command{
 	Use:   "resume <id-prefix>",
 	Short: "Resume a session: cd to its cwd, exec `claude --resume <uuid>`",
@@ -484,6 +528,7 @@ func init() {
 	sessionCmd.AddCommand(sessListCmd)
 	sessionCmd.AddCommand(sessFindCmd)
 	sessionCmd.AddCommand(sessShowCmd)
+	sessionCmd.AddCommand(sessSetTopicCmd)
 	sessionCmd.AddCommand(sessResumeCmd)
 	sessionCmd.AddCommand(sessExportCmd)
 	sessionCmd.AddCommand(sessDiffCmd)

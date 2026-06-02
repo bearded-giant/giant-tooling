@@ -1,9 +1,27 @@
 package ingest
 
 import (
+	"database/sql"
 	"regexp"
 	"strings"
 )
+
+// LookupTopicOverride returns a pinned topic for sessionID, or "" if none.
+// Pinned topics survive re-ingest (DetectTopic skipped when override present).
+func LookupTopicOverride(db *sql.DB, sessionID string) string {
+	if db == nil || sessionID == "" {
+		return ""
+	}
+	var topic string
+	err := db.QueryRow(
+		`SELECT topic FROM session_topic_overrides WHERE session_id = ?`,
+		sessionID,
+	).Scan(&topic)
+	if err != nil {
+		return ""
+	}
+	return topic
+}
 
 var topicKeywords = map[string][]string{
 	"auth":      {"auth", "login", "jwt", "token", "password", "credential", "oauth"},

@@ -372,7 +372,10 @@ func ingestSessions(db *sql.DB, projectsDir, projectFilter string, force bool, n
 		if err != nil || extract == nil {
 			return nil
 		}
-		topic := DetectTopic(extract.Text)
+		topic := LookupTopicOverride(db, extract.SessionID)
+		if topic == "" {
+			topic = DetectTopic(extract.Text)
+		}
 		ts := mtime.Format("20060102_150405")
 		parsed := &ParsedPath{Project: projectName, Timestamp: ts}
 		if ok := ingestFile(db, p, parsed, "session", extract.SessionID, topic, 0, now, extract.Text); ok {

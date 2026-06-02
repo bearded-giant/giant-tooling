@@ -82,7 +82,10 @@ func (s *claudeJSONLSource) Emit(ctx context.Context, opts EmitOptions) (<-chan 
 			if eErr != nil || extract == nil {
 				return nil
 			}
-			topic := ingest.DetectTopic(extract.Text)
+			topic := ingest.LookupTopicOverride(opts.DB, extract.SessionID)
+			if topic == "" {
+				topic = ingest.DetectTopic(extract.Text)
+			}
 			ts := mtime.Format("20060102_150405")
 			doc := Doc{
 				Filepath:   p,
