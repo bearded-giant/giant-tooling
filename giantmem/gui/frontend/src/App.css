@@ -278,27 +278,75 @@
   font-size: 11px;
 }
 
+.transcript-toolbar {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 12px 0;
+  align-items: center;
+}
+.transcript-toolbar input[type="search"] {
+  flex: 1;
+}
+.transcript-toolbar button {
+  white-space: nowrap;
+  font-size: 11px;
+}
+
 .session-turn {
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--bg-2);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.session-turn > .turn-summary {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 12px;
+  list-style: none;
+}
+.session-turn > .turn-summary::-webkit-details-marker {
+  display: none;
+}
+.session-turn[open] > .turn-summary {
+  border-bottom: 1px solid var(--border);
+}
+.session-turn .turn-caret {
+  width: 12px;
+  color: var(--fg-muted);
+  transition: transform 0.12s;
+  display: inline-block;
+}
+.session-turn[open] .turn-caret {
+  transform: rotate(90deg);
 }
 .session-turn .who {
   font-weight: 600;
-  margin-bottom: 4px;
   color: var(--accent-2);
+  text-transform: capitalize;
 }
 .session-turn.assistant .who {
   color: var(--success);
 }
-.session-turn pre {
-  background: var(--bg);
-  padding: 6px 8px;
-  border-radius: 3px;
-  margin: 4px 0;
+.session-turn.user .who {
+  color: var(--accent-2);
+}
+.session-turn .turn-summary-meta {
+  color: var(--fg-muted);
   font-size: 11px;
+}
+.session-turn .turn-summary-spacer {
+  flex: 1;
+}
+.session-turn .turn-time {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.session-turn .turn-body {
+  padding: 8px 12px 10px 12px;
 }
 .session-turn .turn-text {
   font-size: 12px;
@@ -306,21 +354,120 @@
 .session-turn .turn-text p:first-child {
   margin-top: 0;
 }
-.tool-block {
-  margin: 4px 0;
-  border-left: 2px solid var(--border);
-  padding-left: 10px;
+.session-turn .turn-text p:last-child {
+  margin-bottom: 0;
 }
-.tool-block summary {
+
+.tool-call {
+  margin: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.tool-call.is-error {
+  border-color: rgba(248, 81, 73, 0.4);
+}
+.tool-call > summary {
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+}
+.tool-call > summary::-webkit-details-marker {
+  display: none;
+}
+.tool-call[open] > summary {
+  border-bottom: 1px solid var(--border);
+}
+.tool-call .tool-caret {
+  width: 10px;
+  color: var(--fg-muted);
+  transition: transform 0.12s;
+  display: inline-block;
+}
+.tool-call[open] .tool-caret {
+  transform: rotate(90deg);
+}
+.tool-call .tool-icon {
+  font-size: 12px;
+}
+.tool-call .tool-name {
+  color: var(--fg);
+}
+.tool-call .tool-dash {
+  color: var(--fg-muted);
+}
+.tool-call .tool-desc {
+  color: var(--fg-muted);
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-body {
+  padding: 6px 10px 8px 10px;
+  background: var(--bg);
+}
+.tool-section {
+  margin-top: 4px;
+}
+.tool-section:first-child {
+  margin-top: 0;
+}
+.tool-section-head {
   cursor: pointer;
   display: flex;
   gap: 6px;
   align-items: center;
-  padding: 2px 0;
   user-select: none;
+  padding: 2px 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
-.tool-block[open] summary {
-  margin-bottom: 4px;
+.tool-section-head:hover {
+  color: var(--fg);
+}
+.tool-section-caret {
+  width: 10px;
+  display: inline-block;
+}
+.tool-section-title {
+  flex: 1;
+}
+.tool-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+.tool-dot.success {
+  background: var(--success);
+}
+.tool-dot.danger {
+  background: var(--danger);
+}
+.tool-pre {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  margin: 4px 0;
+  padding: 6px 10px;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 480px;
+  overflow: auto;
 }
 .chip.tool {
   background: rgba(88, 166, 255, 0.12);

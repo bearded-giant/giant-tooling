@@ -64,6 +64,9 @@ function App() {
   const [detailArt, setDetailArt] = useState<artifacts.Artifact | null>(null);
   const [detailBody, setDetailBody] = useState<string>("");
   const [sessionLines, setSessionLines] = useState<SessionTurn[] | null>(null);
+  const [turnFilter, setTurnFilter] = useState("");
+  const [expandRev, setExpandRev] = useState(0);
+  const [defaultExpanded, setDefaultExpanded] = useState(true);
 
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -691,23 +694,22 @@ function App() {
           </>
         )}
         {selection?.kind === "session" && (
-          <>
-            <header className="detail-head">
-              <h2 style={{ marginTop: 0, marginBottom: 0 }}>
-                {selection.path.split("/").pop()}
-              </h2>
-              <div className="meta">
-                <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>
-                  {selection.path}
-                </span>
-              </div>
-            </header>
-            {sessionLines === null && <div>loading transcript…</div>}
-            {sessionLines &&
-              sessionLines.map((t, i) => (
-                <SessionTurnView key={i} turn={t} />
-              ))}
-          </>
+          <SessionDetail
+            path={selection.path}
+            turns={sessionLines}
+            filter={turnFilter}
+            onFilterChange={setTurnFilter}
+            defaultExpanded={defaultExpanded}
+            expandRev={expandRev}
+            onExpandAll={() => {
+              setDefaultExpanded(true);
+              setExpandRev((r) => r + 1);
+            }}
+            onCollapseAll={() => {
+              setDefaultExpanded(false);
+              setExpandRev((r) => r + 1);
+            }}
+          />
         )}
       </section>
 
@@ -1026,7 +1028,14 @@ function SessionRow({
 
 type ContentBlock =
   | { type: "text"; text: string }
-  | { type: "tool_use"; name: string; input: any; id?: string }
+  | {
+      type: "tool_call";
+      name: string;
+      input: any;
+      id?: string;
+      result?: string;
+      isError?: boolean;
+    }
   | { type: "tool_result"; content: any; tool_use_id?: string; is_error?: boolean }
   | { type: "thinking"; thinking: string }
   | { type: "unknown"; raw: any };
@@ -1034,12 +1043,15 @@ type ContentBlock =
 type SessionTurn = {
   role: string;
   timestamp?: string;
+  toolCount: number;
+  textCount: number;
+  thinkingCount: number;
   blocks: ContentBlock[];
   raw: any;
 };
 
 function parseJSONL(raw: string): SessionTurn[] {
-  const out: SessionTurn[] = [];
+  const turns: SessionTurn[] = [];
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
     try {
@@ -1050,21 +1062,74 @@ function parseJSONL(raw: string): SessionTurn[] {
         (obj.message && obj.message.role) ||
         "event";
       const blocks = extractBlocks(obj);
-      out.push({
+      turns.push({
         role,
         timestamp: obj.timestamp || obj.ts || undefined,
+        toolCount: 0,
+        textCount: 0,
+        thinkingCount: 0,
         blocks,
         raw: obj,
       });
     } catch {
-      out.push({
+      turns.push({
         role: "raw",
+        toolCount: 0,
+        textCount: 0,
+        thinkingCount: 0,
         blocks: [{ type: "text", text: line }],
         raw: null,
       });
     }
   }
-  return out;
+  // pair tool_use with its tool_result by tool_use_id, then drop the
+  // standalone result blocks. devtools-style nesting.
+  const resultByID = new Map<string, { text: string; isError: boolean }>();
+  for (const t of turns) {
+    for (const b of t.blocks) {
+      if (b.type === "tool_result" && b.tool_use_id) {
+        resultByID.set(b.tool_use_id, {
+          text: stringifyResult(b.content),
+          isError: !!b.is_error,
+        });
+      }
+    }
+  }
+  for (const t of turns) {
+    t.blocks = t.blocks
+      .map((b): ContentBlock => {
+        if (b.type === "tool_call") {
+          const r = b.id ? resultByID.get(b.id) : undefined;
+          return r
+            ? { ...b, result: r.text, isError: r.isError }
+            : b;
+        }
+        return b;
+      })
+      .filter((b) => {
+        if (b.type !== "tool_result") return true;
+        return !(b.tool_use_id && resultByID.has(b.tool_use_id));
+      });
+    for (const b of t.blocks) {
+      if (b.type === "tool_call") t.toolCount++;
+      else if (b.type === "text") t.textCount++;
+      else if (b.type === "thinking") t.thinkingCount++;
+    }
+  }
+  return turns;
+}
+
+function stringifyResult(content: any): string {
+  if (content == null) return "";
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((c: any) =>
+        typeof c === "string" ? c : c?.text || JSON.stringify(c, null, 2),
+      )
+      .join("\n");
+  }
+  return JSON.stringify(content, null, 2);
 }
 
 function extractBlocks(obj: any): ContentBlock[] {
@@ -1082,7 +1147,7 @@ function extractBlocks(obj: any): ContentBlock[] {
         return { type: "text", text: String(c.text ?? "") };
       case "tool_use":
         return {
-          type: "tool_use",
+          type: "tool_call",
           name: String(c.name ?? "tool"),
           input: c.input,
           id: c.id,
@@ -1102,32 +1167,191 @@ function extractBlocks(obj: any): ContentBlock[] {
   });
 }
 
-function SessionTurnView({ turn }: { turn: SessionTurn }) {
+// describeTool produces a one-line caption for a tool call from its input —
+// the bit the devtools header shows next to the tool name.
+function describeTool(name: string, input: any): string {
+  if (!input || typeof input !== "object") return "";
+  switch (name) {
+    case "Bash":
+      return clip(input.description || input.command || "", 80);
+    case "Read":
+      return clip(input.file_path || "", 80);
+    case "Write":
+      return clip(input.file_path || "", 80);
+    case "Edit":
+      return clip(input.file_path || "", 80);
+    case "Glob":
+      return clip(input.pattern || "", 80);
+    case "Grep":
+      return clip(
+        `${input.pattern || ""}${input.path ? ` in ${input.path}` : ""}`,
+        80,
+      );
+    case "TodoWrite":
+      return Array.isArray(input.todos) ? `${input.todos.length} todos` : "";
+    case "WebFetch":
+    case "WebSearch":
+      return clip(input.url || input.query || "", 80);
+    case "Skill":
+      return clip(input.skill || "", 40);
+    case "Agent":
+      return clip(input.description || input.subagent_type || "", 60);
+  }
+  // generic: first string-valued prop
+  for (const [k, v] of Object.entries(input)) {
+    if (typeof v === "string") return clip(`${k}: ${v}`, 80);
+  }
+  return "";
+}
+
+function clip(s: string, n: number): string {
+  if (!s) return "";
+  s = s.replace(/\s+/g, " ").trim();
+  return s.length > n ? s.slice(0, n - 1) + "…" : s;
+}
+
+function SessionDetail({
+  path,
+  turns,
+  filter,
+  onFilterChange,
+  defaultExpanded,
+  expandRev,
+  onExpandAll,
+  onCollapseAll,
+}: {
+  path: string;
+  turns: SessionTurn[] | null;
+  filter: string;
+  onFilterChange: (s: string) => void;
+  defaultExpanded: boolean;
+  expandRev: number;
+  onExpandAll: () => void;
+  onCollapseAll: () => void;
+}) {
+  const filtered = useMemo(() => {
+    if (!turns) return null;
+    const q = filter.trim().toLowerCase();
+    if (!q) return turns;
+    return turns.filter((t) => turnMatches(t, q));
+  }, [turns, filter]);
+  const totalTools = useMemo(
+    () => (turns || []).reduce((acc, t) => acc + t.toolCount, 0),
+    [turns],
+  );
   return (
-    <div className={`session-turn ${turn.role}`}>
-      <div className="who">
-        {turn.role}
-        {turn.timestamp && (
-          <span
-            style={{
-              marginLeft: 8,
-              color: "var(--fg-muted)",
-              fontWeight: 400,
-              fontSize: 11,
-            }}
-          >
-            {formatTime(turn.timestamp)}
-          </span>
-        )}
+    <>
+      <header className="detail-head">
+        <h2 style={{ marginTop: 0, marginBottom: 0 }}>{path.split("/").pop()}</h2>
+        <div className="meta">
+          <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{path}</span>
+          {turns && (
+            <span>
+              {turns.length} turn{turns.length === 1 ? "" : "s"} ·{" "}
+              {totalTools} tool call{totalTools === 1 ? "" : "s"}
+            </span>
+          )}
+        </div>
+      </header>
+      <div className="transcript-toolbar">
+        <input
+          type="search"
+          placeholder="filter turns…"
+          value={filter}
+          onChange={(e) => onFilterChange(e.target.value)}
+        />
+        <button onClick={onExpandAll}>expand all</button>
+        <button onClick={onCollapseAll}>collapse all</button>
       </div>
-      {turn.blocks.map((b, i) => (
-        <BlockView key={i} block={b} />
-      ))}
-    </div>
+      {turns === null && <div>loading transcript…</div>}
+      {filtered &&
+        filtered.map((t, i) => (
+          <SessionTurnView
+            key={`${expandRev}:${i}`}
+            turn={t}
+            defaultOpen={defaultExpanded}
+            filter={filter}
+          />
+        ))}
+      {filtered && filtered.length === 0 && (
+        <div className="detail-empty">no turns match filter</div>
+      )}
+    </>
   );
 }
 
-function BlockView({ block }: { block: ContentBlock }) {
+function turnMatches(t: SessionTurn, q: string): boolean {
+  if (t.role.toLowerCase().includes(q)) return true;
+  for (const b of t.blocks) {
+    if (b.type === "text" && b.text.toLowerCase().includes(q)) return true;
+    if (b.type === "thinking" && b.thinking.toLowerCase().includes(q)) return true;
+    if (b.type === "tool_call") {
+      if (b.name.toLowerCase().includes(q)) return true;
+      const desc = describeTool(b.name, b.input).toLowerCase();
+      if (desc.includes(q)) return true;
+      if (b.result && b.result.toLowerCase().includes(q)) return true;
+      if (
+        b.input &&
+        JSON.stringify(b.input).toLowerCase().includes(q)
+      )
+        return true;
+    }
+  }
+  return false;
+}
+
+function SessionTurnView({
+  turn,
+  defaultOpen,
+  filter,
+}: {
+  turn: SessionTurn;
+  defaultOpen: boolean;
+  filter: string;
+}) {
+  const summary: string[] = [];
+  if (turn.textCount) summary.push(`${turn.textCount} msg`);
+  if (turn.thinkingCount) summary.push(`${turn.thinkingCount} think`);
+  if (turn.toolCount)
+    summary.push(`${turn.toolCount} tool call${turn.toolCount === 1 ? "" : "s"}`);
+  return (
+    <details className={`session-turn ${turn.role}`} open={defaultOpen}>
+      <summary className="turn-summary">
+        <span className="turn-caret">▸</span>
+        <span className="who">{turn.role}</span>
+        {summary.length > 0 && (
+          <span className="turn-summary-meta">{summary.join(" · ")}</span>
+        )}
+        <span className="turn-summary-spacer" />
+        {turn.timestamp && (
+          <span className="turn-time" title={turn.timestamp}>
+            {formatTime(turn.timestamp)}
+          </span>
+        )}
+      </summary>
+      <div className="turn-body">
+        {turn.blocks.map((b, i) => (
+          <BlockView
+            key={i}
+            block={b}
+            defaultOpen={defaultOpen}
+            filter={filter}
+          />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function BlockView({
+  block,
+  defaultOpen,
+  filter,
+}: {
+  block: ContentBlock;
+  defaultOpen: boolean;
+  filter: string;
+}) {
   if (block.type === "text") {
     return (
       <div className="turn-text">
@@ -1140,49 +1364,65 @@ function BlockView({ block }: { block: ContentBlock }) {
       </div>
     );
   }
-  if (block.type === "tool_use") {
+  if (block.type === "tool_call") {
+    const desc = describeTool(block.name, block.input);
+    // auto-open when a filter matches something inside this tool call.
+    const q = filter.trim().toLowerCase();
+    const filterHit =
+      !!q &&
+      ((block.name && block.name.toLowerCase().includes(q)) ||
+        desc.toLowerCase().includes(q) ||
+        (block.result && block.result.toLowerCase().includes(q)) ||
+        JSON.stringify(block.input || {}).toLowerCase().includes(q));
+    const open = defaultOpen || filterHit;
     return (
-      <details className="tool-block">
+      <details className={`tool-call ${block.isError ? "is-error" : ""}`} open={open}>
         <summary>
-          <span className="chip tool">tool_use</span>
-          <strong>{block.name}</strong>
+          <span className="tool-caret">▸</span>
+          <span className="tool-icon">🔧</span>
+          <strong className="tool-name">{block.name}</strong>
+          {desc && (
+            <>
+              <span className="tool-dash">—</span>
+              <span className="tool-desc">{desc}</span>
+            </>
+          )}
+          {block.isError && <span className="chip tool err">error</span>}
         </summary>
-        <pre style={{ whiteSpace: "pre-wrap" }}>
-          {JSON.stringify(block.input, null, 2)}
-        </pre>
+        <div className="tool-body">
+          <ToolSection title="Input" body={JSON.stringify(block.input, null, 2)} mono />
+          {block.result !== undefined && (
+            <ToolSection
+              title="Output"
+              body={block.result}
+              mono
+              statusColor={block.isError ? "danger" : "success"}
+            />
+          )}
+        </div>
       </details>
     );
   }
   if (block.type === "tool_result") {
-    const text =
-      typeof block.content === "string"
-        ? block.content
-        : Array.isArray(block.content)
-          ? block.content
-              .map((c: any) =>
-                typeof c === "string" ? c : c.text || JSON.stringify(c),
-              )
-              .join("\n")
-          : JSON.stringify(block.content, null, 2);
+    // orphan tool_result: render minimally.
     return (
-      <details className="tool-block">
+      <details className="tool-call orphan" open={defaultOpen}>
         <summary>
-          <span className={`chip tool ${block.is_error ? "err" : ""}`}>
-            tool_result
-          </span>
-          {block.is_error && <span style={{ color: "var(--danger)" }}> error</span>}
+          <span className="tool-caret">▸</span>
+          <span className="chip tool">tool_result</span>
         </summary>
-        <pre style={{ whiteSpace: "pre-wrap" }}>{text}</pre>
+        <ToolSection title="Output" body={stringifyResult(block.content)} mono />
       </details>
     );
   }
   if (block.type === "thinking") {
     return (
-      <details className="tool-block">
+      <details className="tool-call thinking-block" open={defaultOpen}>
         <summary>
+          <span className="tool-caret">▸</span>
           <span className="chip thinking">thinking</span>
         </summary>
-        <pre style={{ whiteSpace: "pre-wrap", opacity: 0.8 }}>
+        <pre className="tool-pre" style={{ opacity: 0.85 }}>
           {block.thinking}
         </pre>
       </details>
@@ -1192,6 +1432,37 @@ function BlockView({ block }: { block: ContentBlock }) {
     <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, opacity: 0.7 }}>
       {JSON.stringify(block, null, 2)}
     </pre>
+  );
+}
+
+function ToolSection({
+  title,
+  body,
+  mono = false,
+  statusColor,
+}: {
+  title: string;
+  body: string;
+  mono?: boolean;
+  statusColor?: "success" | "danger";
+}) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div className="tool-section">
+      <div
+        className="tool-section-head"
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span className="tool-section-caret">{open ? "▾" : "▸"}</span>
+        <span className="tool-section-title">{title}</span>
+        {statusColor && (
+          <span className={`tool-dot ${statusColor}`} aria-hidden />
+        )}
+      </div>
+      {open && (
+        <pre className={`tool-pre ${mono ? "" : "wrap"}`}>{body || "(empty)"}</pre>
+      )}
+    </div>
   );
 }
 
