@@ -3,7 +3,13 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
-import { ClipboardSetText } from "../wailsjs/runtime/runtime";
+import {
+  ClipboardSetText,
+  WindowGetPosition,
+  WindowGetSize,
+  WindowSetPosition,
+  WindowSetSize,
+} from "../wailsjs/runtime/runtime";
 import "./App.css";
 import {
   FacetCounts,
@@ -52,6 +58,53 @@ function App() {
   useEffect(() => {
     localStorage.setItem("gm.sidebarWidth", String(sidebarWidth));
   }, [sidebarWidth]);
+
+  const [turnOrder, setTurnOrder] = useState<"asc" | "desc">(() => {
+    const v = localStorage.getItem("gm.turnOrder");
+    return v === "asc" ? "asc" : "desc";
+  });
+  useEffect(() => {
+    localStorage.setItem("gm.turnOrder", turnOrder);
+  }, [turnOrder]);
+
+  // restore window size/position once at mount, then persist on resize.
+  useEffect(() => {
+    (async () => {
+      const saved = localStorage.getItem("gm.win");
+      if (!saved) return;
+      try {
+        const { w, h, x, y } = JSON.parse(saved);
+        if (typeof w === "number" && typeof h === "number" && w > 400 && h > 300) {
+          WindowSetSize(w, h);
+        }
+        if (typeof x === "number" && typeof y === "number") {
+          WindowSetPosition(x, y);
+        }
+      } catch {
+        // ignore corrupt entry
+      }
+    })();
+    const save = debounce(async () => {
+      try {
+        const size = await WindowGetSize();
+        const pos = await WindowGetPosition();
+        localStorage.setItem(
+          "gm.win",
+          JSON.stringify({ w: size.w, h: size.h, x: pos.x, y: pos.y }),
+        );
+      } catch {
+        // ignore: wails not ready or window closed
+      }
+    }, 400);
+    window.addEventListener("resize", save);
+    // catch position changes too — there's no native window-move event in
+    // wails' webview, so we ride on resize plus a slow heartbeat.
+    const tick = window.setInterval(save, 4000);
+    return () => {
+      window.removeEventListener("resize", save);
+      window.clearInterval(tick);
+    };
+  }, []);
   const [collapsed, setCollapsed] = useState<Set<string>>(
     new Set(["feature", "repo", "topic", "dir_type"]),
   );
@@ -724,6 +777,10 @@ function App() {
             onFilterChange={setTurnFilter}
             defaultExpanded={defaultExpanded}
             expandRev={expandRev}
+            order={turnOrder}
+            onToggleOrder={() =>
+              setTurnOrder((o) => (o === "desc" ? "asc" : "desc"))
+            }
             onExpandAll={() => {
               setDefaultExpanded(true);
               setExpandRev((r) => r + 1);
@@ -1332,6 +1389,8 @@ function SessionDetail({
   onFilterChange,
   defaultExpanded,
   expandRev,
+  order,
+  onToggleOrder,
   onExpandAll,
   onCollapseAll,
 }: {
@@ -1341,15 +1400,18 @@ function SessionDetail({
   onFilterChange: (s: string) => void;
   defaultExpanded: boolean;
   expandRev: number;
+  order: "asc" | "desc";
+  onToggleOrder: () => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
 }) {
   const filtered = useMemo(() => {
     if (!turns) return null;
     const q = filter.trim().toLowerCase();
-    if (!q) return turns;
-    return turns.filter((t) => turnMatches(t, q));
-  }, [turns, filter]);
+    const base = q ? turns.filter((t) => turnMatches(t, q)) : turns;
+    // JSONL is appended oldest -> newest; default desc shows newest first.
+    return order === "desc" ? [...base].reverse() : base;
+  }, [turns, filter, order]);
   const totalTools = useMemo(
     () => (turns || []).reduce((acc, t) => acc + t.toolCount, 0),
     [turns],
@@ -1376,6 +1438,16 @@ function SessionDetail({
           value={filter}
           onChange={(e) => onFilterChange(e.target.value)}
         />
+        <button
+          onClick={onToggleOrder}
+          title={
+            order === "desc"
+              ? "newest first — click for oldest first"
+              : "oldest first — click for newest first"
+          }
+        >
+          {order === "desc" ? "↓ newest" : "↑ oldest"}
+        </button>
         <button onClick={onExpandAll}>expand all</button>
         <button onClick={onCollapseAll}>collapse all</button>
       </div>
@@ -1609,6 +1681,14 @@ function filterByDateBucket(hits: search.Hit[], bucket: string): search.Hit[] {
     if (bucket === "older") return diff > 30;
     return true;
   });
+}
+
+function debounce<F extends (...a: any[]) => void>(fn: F, ms: number): F {
+  let t: number | undefined;
+  return ((...args: any[]) => {
+    if (t) window.clearTimeout(t);
+    t = window.setTimeout(() => fn(...args), ms);
+  }) as F;
 }
 
 function shortPath(p?: string): string {
