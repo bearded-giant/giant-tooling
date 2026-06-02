@@ -22,4 +22,6 @@ export function SearchFTS(arg1:search.Params):Promise<Array<search.Hit>>;
 
 export function SearchHybrid(arg1:string,arg2:artifacts.ListFilter,arg3:number):Promise<Array<search.HybridResult>>;
 
+export function SearchToolUses(arg1:main.ToolUseFilter):Promise<Array<main.ToolUseHit>>;
+
 export function SessionFacets():Promise<main.SessionFacetCounts>;

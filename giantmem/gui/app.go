@@ -1,11 +1,16 @@
 package main
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
@@ -236,6 +241,326 @@ func (a *App) ListSessions(filter SessionFilter, limit int) ([]search.Hit, error
 		out = append(out, h)
 	}
 	return out, rows.Err()
+}
+
+// ToolUseHit describes one tool_use occurrence inside a session JSONL: where
+// it lives, which tool ran, a short rendering of the input, and the paired
+// tool_result body when one is present. Used by the GUI's tool-use search.
+type ToolUseHit struct {
+	SessionPath  string `json:"sessionPath"`
+	SessionID    string `json:"sessionId"`
+	Project      string `json:"project,omitempty"`
+	Timestamp    string `json:"timestamp,omitempty"`
+	TurnIndex    int    `json:"turnIndex"`
+	ToolName     string `json:"toolName"`
+	InputSummary string `json:"inputSummary"`
+	InputJSON    string `json:"inputJSON"`
+	Output       string `json:"output,omitempty"`
+	OutputClip   string `json:"outputClip,omitempty"`
+	IsError      bool   `json:"isError,omitempty"`
+}
+
+// ToolUseFilter scopes SearchToolUses. Query is a case-insensitive substring
+// matched against the tool input JSON and the paired tool_result body. Empty
+// fields are ignored. Limit caps the result count (default 200).
+type ToolUseFilter struct {
+	Query     string `json:"query,omitempty"`
+	ToolName  string `json:"toolName,omitempty"`
+	Project   string `json:"project,omitempty"`
+	UseFTSPre bool   `json:"useFTSPre,omitempty"`
+	Limit     int    `json:"limit,omitempty"`
+}
+
+// SearchToolUses scans session JSONL files for tool_use blocks that match the
+// filter. When UseFTSPre is true we narrow the candidate session list via
+// archives.db FTS first; otherwise we scan every session row in documents.
+// This is the heavy path — we open and stream-parse each candidate jsonl —
+// but for typical 'find every kubectl' queries the FTS pre-filter trims the
+// fan-out to dozens of files.
+func (a *App) SearchToolUses(filter ToolUseFilter) ([]ToolUseHit, error) {
+	if a.archive == nil {
+		return nil, nil
+	}
+	if filter.Limit <= 0 {
+		filter.Limit = 200
+	}
+	type row struct {
+		path, sessionID, project, timestamp string
+	}
+	var rows []row
+	q := filter.Query
+	if filter.UseFTSPre && strings.TrimSpace(q) != "" {
+		fts := search.SanitizeFTSQuery(q)
+		stmt := `SELECT d.filepath, COALESCE(d.session_id,''), COALESCE(d.project,''), COALESCE(d.timestamp,'')
+                   FROM documents d
+                   JOIN documents_fts f ON f.rowid = d.id
+                  WHERE d.source_type = 'session'
+                    AND documents_fts MATCH ?`
+		args := []any{fts}
+		if filter.Project != "" {
+			stmt += ` AND (d.project = ? OR d.canonical_project = ?)`
+			args = append(args, filter.Project, filter.Project)
+		}
+		stmt += ` ORDER BY d.timestamp DESC`
+		r, err := a.archive.Query(stmt, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer r.Close()
+		for r.Next() {
+			var rr row
+			if err := r.Scan(&rr.path, &rr.sessionID, &rr.project, &rr.timestamp); err != nil {
+				return nil, err
+			}
+			rows = append(rows, rr)
+		}
+	} else {
+		stmt := `SELECT filepath, COALESCE(session_id,''), COALESCE(project,''), COALESCE(timestamp,'')
+                   FROM documents WHERE source_type = 'session'`
+		args := []any{}
+		if filter.Project != "" {
+			stmt += ` AND (project = ? OR canonical_project = ?)`
+			args = append(args, filter.Project, filter.Project)
+		}
+		stmt += ` ORDER BY timestamp DESC`
+		r, err := a.archive.Query(stmt, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer r.Close()
+		for r.Next() {
+			var rr row
+			if err := r.Scan(&rr.path, &rr.sessionID, &rr.project, &rr.timestamp); err != nil {
+				return nil, err
+			}
+			rows = append(rows, rr)
+		}
+	}
+	needle := strings.ToLower(strings.TrimSpace(filter.Query))
+	wantTool := filter.ToolName
+	var out []ToolUseHit
+	for _, rr := range rows {
+		hits, err := scanToolUses(rr.path, rr.sessionID, rr.project, rr.timestamp, wantTool, needle, filter.Limit-len(out))
+		if err != nil {
+			continue
+		}
+		out = append(out, hits...)
+		if len(out) >= filter.Limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+// scanToolUses walks one jsonl file, pairs tool_use blocks with their later
+// tool_result by id, and emits ToolUseHit rows for blocks matching wantTool
+// (when non-empty) and needle (case-insensitive substring on input json +
+// result body). Stops once remaining hits are exhausted.
+func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, remaining int) ([]ToolUseHit, error) {
+	if remaining <= 0 {
+		return nil, nil
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	type pending struct {
+		hit       ToolUseHit
+		matchesIn bool
+	}
+	byID := map[string]*pending{}
+	var out []ToolUseHit
+
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	turn := 0
+	for sc.Scan() {
+		line := sc.Bytes()
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var obj map[string]any
+		if err := json.Unmarshal(line, &obj); err != nil {
+			continue
+		}
+		turn++
+		msg, _ := obj["message"].(map[string]any)
+		ts, _ := obj["timestamp"].(string)
+		content := msg["content"]
+		blocks, ok := content.([]any)
+		if !ok {
+			continue
+		}
+		for _, b := range blocks {
+			bm, ok := b.(map[string]any)
+			if !ok {
+				continue
+			}
+			switch bm["type"] {
+			case "tool_use":
+				name, _ := bm["name"].(string)
+				if wantTool != "" && wantTool != name {
+					continue
+				}
+				input := bm["input"]
+				inputJSON, _ := json.Marshal(input)
+				summary := summarizeToolInput(name, input)
+				matches := true
+				if needle != "" {
+					hay := strings.ToLower(string(inputJSON) + "\n" + summary)
+					matches = strings.Contains(hay, needle)
+				}
+				id, _ := bm["id"].(string)
+				p := &pending{
+					matchesIn: matches,
+					hit: ToolUseHit{
+						SessionPath:  path,
+						SessionID:    sessionID,
+						Project:      project,
+						Timestamp:    firstNonEmpty(ts, timestamp),
+						TurnIndex:    turn,
+						ToolName:     name,
+						InputSummary: summary,
+						InputJSON:    string(inputJSON),
+					},
+				}
+				if id != "" {
+					byID[id] = p
+				} else if matches {
+					out = append(out, p.hit)
+					if len(out) >= remaining {
+						return out, nil
+					}
+				}
+			case "tool_result":
+				id, _ := bm["tool_use_id"].(string)
+				p, ok := byID[id]
+				if !ok {
+					continue
+				}
+				body := stringifyToolResult(bm["content"])
+				isErr, _ := bm["is_error"].(bool)
+				p.hit.Output = body
+				p.hit.OutputClip = clipText(body, 240)
+				p.hit.IsError = isErr
+				if !p.matchesIn && needle != "" {
+					if strings.Contains(strings.ToLower(body), needle) {
+						p.matchesIn = true
+					}
+				}
+				if p.matchesIn {
+					out = append(out, p.hit)
+					delete(byID, id)
+					if len(out) >= remaining {
+						return out, nil
+					}
+				}
+			}
+		}
+	}
+	if err := sc.Err(); err != nil {
+		return out, err
+	}
+	// flush remaining pending entries that matched on input but never paired
+	// with a result.
+	ordered := make([]*pending, 0, len(byID))
+	for _, p := range byID {
+		if p.matchesIn {
+			ordered = append(ordered, p)
+		}
+	}
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].hit.TurnIndex < ordered[j].hit.TurnIndex })
+	for _, p := range ordered {
+		out = append(out, p.hit)
+		if len(out) >= remaining {
+			break
+		}
+	}
+	return out, nil
+}
+
+func summarizeToolInput(name string, input any) string {
+	im, _ := input.(map[string]any)
+	if im == nil {
+		return ""
+	}
+	get := func(k string) string {
+		s, _ := im[k].(string)
+		return s
+	}
+	switch name {
+	case "Bash":
+		return clipText(firstNonEmpty(get("description"), get("command")), 160)
+	case "Read", "Write", "Edit":
+		return clipText(get("file_path"), 160)
+	case "Glob":
+		return clipText(get("pattern"), 160)
+	case "Grep":
+		return clipText(strings.TrimSpace(get("pattern")+" in "+get("path")), 160)
+	case "WebFetch", "WebSearch":
+		return clipText(firstNonEmpty(get("url"), get("query")), 160)
+	case "Skill":
+		return clipText(get("skill"), 80)
+	case "Agent":
+		return clipText(firstNonEmpty(get("description"), get("subagent_type")), 120)
+	case "TodoWrite":
+		if arr, ok := im["todos"].([]any); ok {
+			return fmt.Sprintf("%d todos", len(arr))
+		}
+	}
+	for k, v := range im {
+		if s, ok := v.(string); ok && s != "" {
+			return clipText(k+": "+s, 160)
+		}
+	}
+	return ""
+}
+
+func stringifyToolResult(c any) string {
+	switch v := c.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case []any:
+		var parts []string
+		for _, x := range v {
+			if s, ok := x.(string); ok {
+				parts = append(parts, s)
+				continue
+			}
+			if m, ok := x.(map[string]any); ok {
+				if t, _ := m["text"].(string); t != "" {
+					parts = append(parts, t)
+					continue
+				}
+			}
+			b, _ := json.Marshal(x)
+			parts = append(parts, string(b))
+		}
+		return strings.Join(parts, "\n")
+	}
+	b, _ := json.Marshal(c)
+	return string(b)
+}
+
+func clipText(s string, n int) string {
+	s = strings.TrimSpace(s)
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
+}
+
+func firstNonEmpty(strs ...string) string {
+	for _, s := range strs {
+		if s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // SessionFacetCounts mirrors FacetCountsResult but groups sessions by their

@@ -151,6 +151,58 @@ export namespace main {
 	        this.dateBucket = source["dateBucket"];
 	    }
 	}
+	export class ToolUseFilter {
+	    query?: string;
+	    toolName?: string;
+	    project?: string;
+	    useFTSPre?: boolean;
+	    limit?: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolUseFilter(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.query = source["query"];
+	        this.toolName = source["toolName"];
+	        this.project = source["project"];
+	        this.useFTSPre = source["useFTSPre"];
+	        this.limit = source["limit"];
+	    }
+	}
+	export class ToolUseHit {
+	    sessionPath: string;
+	    sessionId: string;
+	    project?: string;
+	    timestamp?: string;
+	    turnIndex: number;
+	    toolName: string;
+	    inputSummary: string;
+	    inputJSON: string;
+	    output?: string;
+	    outputClip?: string;
+	    isError?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolUseHit(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sessionPath = source["sessionPath"];
+	        this.sessionId = source["sessionId"];
+	        this.project = source["project"];
+	        this.timestamp = source["timestamp"];
+	        this.turnIndex = source["turnIndex"];
+	        this.toolName = source["toolName"];
+	        this.inputSummary = source["inputSummary"];
+	        this.inputJSON = source["inputJSON"];
+	        this.output = source["output"];
+	        this.outputClip = source["outputClip"];
+	        this.isError = source["isError"];
+	    }
+	}
 
 }
 

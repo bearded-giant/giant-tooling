@@ -38,6 +38,10 @@ export function SearchHybrid(arg1, arg2, arg3) {
   return window['go']['main']['App']['SearchHybrid'](arg1, arg2, arg3);
 }
 
+export function SearchToolUses(arg1) {
+  return window['go']['main']['App']['SearchToolUses'](arg1);
+}
+
 export function SessionFacets() {
   return window['go']['main']['App']['SessionFacets']();
 }

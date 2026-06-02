@@ -20,11 +20,26 @@ import {
   ReadFile,
   SearchFTS,
   SearchHybrid,
+  SearchToolUses,
   SessionFacets,
 } from "../wailsjs/go/main/App";
 import { artifacts, main, search } from "../wailsjs/go/models";
 
-type Tab = "artifacts" | "sessions";
+type Tab = "artifacts" | "sessions" | "tools";
+
+const TOOL_NAMES = [
+  "Bash",
+  "Read",
+  "Write",
+  "Edit",
+  "Glob",
+  "Grep",
+  "WebFetch",
+  "WebSearch",
+  "Skill",
+  "Agent",
+  "TodoWrite",
+];
 
 type Selection =
   | { kind: "artifact"; id: string }
@@ -113,6 +128,10 @@ function App() {
   const [featuresByRepo, setFeaturesByRepo] = useState<main.FeatureRow[]>([]);
   const [sessionFacets, setSessionFacets] =
     useState<main.SessionFacetCounts | null>(null);
+  const [toolHits, setToolHits] = useState<main.ToolUseHit[]>([]);
+  const [toolNameFilter, setToolNameFilter] = useState<string>("Bash");
+  const [toolUseFTSPre, setToolUseFTSPre] = useState(true);
+  const [toolSelected, setToolSelected] = useState<main.ToolUseHit | null>(null);
   const [selSessionProject, setSelSessionProject] = useState("");
   const [selSessionDirType, setSelSessionDirType] = useState("");
   const [selSessionTopic, setSelSessionTopic] = useState("");
@@ -234,6 +253,16 @@ function App() {
             setArtifactRows(r || []);
             setHybridRows([]);
           }
+        } else if (tab === "tools") {
+          const f: main.ToolUseFilter = {
+            query: debouncedQuery,
+            toolName: toolNameFilter === "any" ? "" : toolNameFilter,
+            project: "",
+            useFTSPre: toolUseFTSPre,
+            limit: 200,
+          };
+          const hits = (await SearchToolUses(f)) || [];
+          setToolHits(hits);
         } else {
           let hits: search.Hit[];
           const sessionFilter: main.SessionFilter = {
@@ -287,6 +316,8 @@ function App() {
     selSessionDirType,
     selSessionTopic,
     selSessionDate,
+    toolNameFilter,
+    toolUseFTSPre,
   ]);
 
   // load detail when selection changes
@@ -349,7 +380,9 @@ function App() {
   const totalRows =
     tab === "artifacts"
       ? hybridRows.length || artifactRows.length
-      : sessionHits.length;
+      : tab === "tools"
+        ? toolHits.length
+        : sessionHits.length;
 
   return (
     <div
@@ -380,6 +413,15 @@ function App() {
           >
             sessions
           </button>
+          <button
+            className={tab === "tools" ? "active" : ""}
+            onClick={() => {
+              setTab("tools");
+              setSelection(null);
+            }}
+          >
+            tools
+          </button>
         </div>
         <div className="search-wrap">
           <input
@@ -402,6 +444,39 @@ function App() {
               </option>
             ))}
           </select>
+        )}
+        {tab === "tools" && (
+          <>
+            <select
+              value={toolNameFilter}
+              onChange={(e) => setToolNameFilter(e.target.value)}
+              title="tool name"
+            >
+              <option value="any">any tool</option>
+              {TOOL_NAMES.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+            <label
+              style={{
+                fontSize: 11,
+                color: "var(--fg-muted)",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+              title="when on, narrow candidate sessions via FTS first (fast). when off, scan every session."
+            >
+              <input
+                type="checkbox"
+                checked={toolUseFTSPre}
+                onChange={(e) => setToolUseFTSPre(e.target.checked)}
+              />
+              FTS pre-filter
+            </label>
+          </>
         )}
       </div>
 
@@ -603,6 +678,21 @@ function App() {
             )}
           </>
         )}
+        {tab === "tools" && (
+          <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>
+            <p style={{ marginTop: 0 }}>
+              Searches each session's JSONL for <strong>tool_use</strong> blocks.
+              Matches on input JSON and the paired tool_result body.
+            </p>
+            <p>
+              <strong>Caveat:</strong> the archive FTS body only stores the
+              first 20 Bash commands per session, each clipped at 150 chars,
+              and skips other tool inputs / outputs entirely. Untick{" "}
+              <em>FTS pre-filter</em> to scan every session jsonl (slow but
+              complete).
+            </p>
+          </div>
+        )}
         {tab === "sessions" && sessionFacets && (
           <>
             <div className="sidebar-filter">
@@ -696,6 +786,25 @@ function App() {
               onClick={() => setSelection({ kind: "artifact", id: a.id })}
             />
           ))}
+        {tab === "tools" &&
+          toolHits.map((h, i) => (
+            <ToolUseRow
+              key={`${h.sessionPath}:${h.turnIndex}:${i}`}
+              hit={h}
+              selected={
+                toolSelected !== null &&
+                toolSelected.sessionPath === h.sessionPath &&
+                toolSelected.turnIndex === h.turnIndex
+              }
+              onClick={() => setToolSelected(h)}
+              onOpenSession={() => {
+                setTab("sessions");
+                setSelection({ kind: "session", path: h.sessionPath });
+                setTurnFilter(h.inputSummary.split(" ").slice(0, 3).join(" "));
+                setToolSelected(null);
+              }}
+            />
+          ))}
         {tab === "sessions" &&
           sessionHits.map((h) => (
             <SessionRow
@@ -712,7 +821,29 @@ function App() {
       </section>
 
       <section className="detail">
-        {!selection && (
+        {tab === "tools" && toolSelected && (
+          <ToolUseDetail
+            hit={toolSelected}
+            onOpenSession={() => {
+              setTab("sessions");
+              setSelection({ kind: "session", path: toolSelected.sessionPath });
+              setTurnFilter(
+                toolSelected.inputSummary.split(" ").slice(0, 3).join(" "),
+              );
+              setToolSelected(null);
+            }}
+          />
+        )}
+        {tab === "tools" && !toolSelected && (
+          <div className="detail-empty">
+            {toolHits.length > 0
+              ? "pick a row to see the input + output"
+              : loading
+                ? "loading…"
+                : "no results"}
+          </div>
+        )}
+        {tab !== "tools" && !selection && (
           <div className="detail-empty">
             {totalRows > 0
               ? "pick a row to read the body"
@@ -1138,6 +1269,128 @@ function HybridRow({
         {row.recency_score.toFixed(2)} · acc {row.access_score.toFixed(2)}
       </div>
     </div>
+  );
+}
+
+function ToolUseRow({
+  hit,
+  selected,
+  onClick,
+  onOpenSession,
+}: {
+  hit: main.ToolUseHit;
+  selected: boolean;
+  onClick: () => void;
+  onOpenSession: () => void;
+}) {
+  return (
+    <div
+      className={`result-row ${selected ? "selected" : ""}`}
+      onClick={onClick}
+    >
+      <div className="row-head">
+        <span className={`chip tool ${hit.isError ? "err" : ""}`}>
+          {hit.toolName}
+        </span>
+        <span className="row-title">{hit.inputSummary || "(no summary)"}</span>
+        {hit.timestamp && (
+          <span className="row-meta">{formatTime(hit.timestamp)}</span>
+        )}
+      </div>
+      <div className="row-meta">
+        {hit.project && <strong>{hit.project}</strong>}
+        {hit.sessionId && (
+          <>
+            {" · "}
+            <span style={{ fontFamily: "ui-monospace" }}>
+              {hit.sessionId.slice(0, 8)}
+            </span>
+          </>
+        )}
+        {" · turn "}
+        {hit.turnIndex}
+        {hit.isError && <span style={{ color: "var(--danger)" }}> · error</span>}
+        {" · "}
+        <a
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpenSession();
+          }}
+          style={{ color: "var(--accent)", cursor: "pointer" }}
+        >
+          open session ›
+        </a>
+      </div>
+      {hit.outputClip && (
+        <div className="row-meta" style={{ marginTop: 4, opacity: 0.75 }}>
+          {hit.outputClip}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolUseDetail({
+  hit,
+  onOpenSession,
+}: {
+  hit: main.ToolUseHit;
+  onOpenSession: () => void;
+}) {
+  let inputObj: any = null;
+  try {
+    inputObj = JSON.parse(hit.inputJSON);
+  } catch {
+    inputObj = hit.inputJSON;
+  }
+  const inputText = JSON.stringify(inputObj, null, 2);
+  return (
+    <>
+      <header className="detail-head">
+        <h2 style={{ marginTop: 0, marginBottom: 0 }}>
+          {hit.toolName} <span style={{ color: "var(--fg-muted)" }}>· {hit.inputSummary}</span>
+        </h2>
+        <div className="meta">
+          {hit.project && <span>project: {hit.project}</span>}
+          {hit.sessionId && (
+            <span title={hit.sessionId}>
+              session: {hit.sessionId.slice(0, 12)}
+            </span>
+          )}
+          <span>turn {hit.turnIndex}</span>
+          {hit.timestamp && <span>{formatTime(hit.timestamp)}</span>}
+          <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>
+            {hit.sessionPath}
+          </span>
+          <CopyButton text={hit.sessionPath} label="copy session path" />
+          <button
+            onClick={onOpenSession}
+            style={{
+              padding: "2px 8px",
+              fontSize: 11,
+            }}
+          >
+            open session ›
+          </button>
+        </div>
+      </header>
+      <div className="tool-body" style={{ padding: 10, marginTop: 0 }}>
+        <ToolSection title="Input" body={inputText} mono />
+        {hit.output !== undefined && hit.output !== "" && (
+          <ToolSection
+            title="Output"
+            body={hit.output}
+            mono
+            statusColor={hit.isError ? "danger" : "success"}
+          />
+        )}
+        {(hit.output === undefined || hit.output === "") && !hit.isError && (
+          <p style={{ color: "var(--fg-muted)", marginTop: 8 }}>
+            (no tool_result paired in JSONL)
+          </p>
+        )}
+      </div>
+    </>
   );
 }
 
