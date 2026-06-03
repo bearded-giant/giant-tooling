@@ -8,3 +8,5 @@ __pycache__/
 # for cross-tool support (Cursor, Aider, etc.).
 !CLAUDE.md
 !AGENTS.md
+
+.mdlive/
