@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.bryan.giantmem-session-sweep</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/bryan/.local/bin/giantmem</string>
+        <string>ingest</string>
+        <string>--sessions-only</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>300</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>StandardOutPath</key>
+    <string>/Users/bryan/.cache/giantmem/session-sweep.out</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/bryan/.cache/giantmem/session-sweep.err</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/bryan</string>
+    </dict>
+</dict>
+</plist>
