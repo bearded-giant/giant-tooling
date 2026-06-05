@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/backfill"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 	"github.com/spf13/cobra"
@@ -439,6 +440,35 @@ func dirTypeFromPath(p string) string {
 	return "root"
 }
 
+var indexBackfillCmd = &cobra.Command{
+	Use:   "backfill",
+	Short: "Crawl every .giantmem/ on disk and upsert all non-empty files into live.db",
+	Long: `Walks ` + "`$GIANTMEM_DEV_ROOTS`" + ` (or ~/dev) to discover every .giantmem/ workspace,
+then upserts every non-empty file (any extension, max 5MB) into live_docs.
+
+Differs from ` + "`index live`" + ` (which is .md only). This is the canonical full
+backfill — closes the gap left by the PostToolUse hook for files touched by
+vim, scripts, or out-of-band edits.
+
+Idempotent: a file is re-read only when its mtime is newer than the stored
+row OR its size differs. Runs the same code path the daemon executes at
+startup.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		l, err := db.OpenLiveOrCreate(liveDBPath())
+		if err != nil {
+			return err
+		}
+		defer l.Close()
+		st, err := backfill.Run(l, archiveBasePath(), 0)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("backfill: workspaces=%d scanned=%d upserted=%d skipped=%d empty=%d too_large=%d errors=%d\n",
+			st.Workspaces, st.Scanned, st.Upserted, st.Skipped, st.Empty, st.TooLarge, st.Errors)
+		return nil
+	},
+}
+
 func init() {
 	indexMigrateCmd.Flags().BoolVar(&migrateDryRun, "dry-run", false, "show planned changes only")
 	indexMigrateCmd.Flags().BoolVar(&migrateCanonical, "canonicalize", false, "also backfill canonical_project on existing rows")
@@ -448,5 +478,6 @@ func init() {
 	indexCmd.AddCommand(indexMigrateCmd)
 	indexCmd.AddCommand(indexSessionsCmd)
 	indexCmd.AddCommand(indexLiveCmd)
+	indexCmd.AddCommand(indexBackfillCmd)
 	rootCmd.AddCommand(indexCmd)
 }

@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/backfill"
 	gmdb "github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/projection"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
@@ -283,8 +284,25 @@ func (s *Server) startReconciler(ctx context.Context) {
 		}
 
 		run("start")
+		// One-shot filesystem backfill: catches files touched outside the
+		// PostToolUse hook (vim, git pull, scripts). The reconciler runs again
+		// on its own when backfill upserts trip fsnotify on live.db.
+		go s.runBackfill(archiveBase)
 		s.watchAndReconcile(ctx, run, embedder)
 	}()
+}
+
+func (s *Server) runBackfill(archiveBase string) {
+	s.reconcileMu.Lock()
+	defer s.reconcileMu.Unlock()
+	st, err := backfill.Run(s.liveDB, archiveBase, 0)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "giantmemd: backfill failed: %v\n", err)
+		return
+	}
+	fmt.Fprintf(os.Stderr,
+		"giantmemd: backfill workspaces=%d scanned=%d upserted=%d skipped=%d empty=%d too_large=%d errors=%d\n",
+		st.Workspaces, st.Scanned, st.Upserted, st.Skipped, st.Empty, st.TooLarge, st.Errors)
 }
 
 func (s *Server) watchAndReconcile(ctx context.Context, run func(string), embedder search.Embedder) {
