@@ -45,11 +45,11 @@ Install on macOS: `brew install fzf ripgrep bat jq`.
 
 ## Capabilities
 
-- `giantmem find` — FTS5 across live + archive + sessions, merged + ranked. Auto-routes through `giantmemd` when available; `--no-daemon` bypasses.
+- `giantmem find` — FTS5 across live + sessions, merged + ranked. Auto-routes through `giantmemd` when available; `--no-daemon` bypasses.
 - `giantmem session list|show|find|resume|export|diff` — find, resume, export, and diff Claude sessions; `resume` chdirs to the recorded cwd (falling back to the `cd` matcher) and exec's `claude --resume <uuid>`.
-- `giantmem ingest` — runs all enabled sources from `~/.config/giantmem/sources.toml`; `-s <name>` limits to one source. Builtins: `workspace-md`, `claude-jsonl`, `domain-json`. External plugins are subprocesses that emit JSONL on stdout.
-- `giantmem index init|migrate|sessions|live` — bootstrap, consolidate `-wt` projects, backfill cwd, full live rescan. Schema is versioned via `PRAGMA user_version`; migrations run automatically on `db.Open`.
-- `giantmem archive run|list|open|dedup|stale` — move `.giantmem/` into the archive tree, list, find dormant workspaces. Archive run prunes matching live.db rows.
+- `giantmem ingest` — primarily ingests Claude session JSONLs into `archives.db`. The legacy snapshot-workspace pass (`workspace-md`/`domain-json`) is still registered but no longer fed by `archive run`; live.db is now the authoritative store for `.giantmem/` content.
+- `giantmem index init|migrate|sessions|live|backfill` — bootstrap, consolidate `-wt` projects, backfill cwd, full live rescan. `backfill` walks every `.giantmem/` under `$GIANTMEM_DEV_ROOTS` and upserts every non-empty file (any extension, max 5MB) into `live.db.live_docs`; the daemon also runs this once at startup. Schema is versioned via `PRAGMA user_version`; migrations run automatically on `db.Open`.
+- `giantmem archive run|list|open|dedup|stale` — cold filesystem snapshot of `.giantmem/` into `~/giantmem_archive/{project}/{ts}/`. No longer feeds `archives.db` (live.db owns the searchable content); the move is purely a backup. `archive run` still prunes matching live.db rows since the source dir has moved.
 - `giantmem worktree list|remove|init|adopt|projects|status|branches|prune|repair|shell-init` — setup wizards plus native git ops; `remove` autoarchives the workspace. `shell-init --install` writes the source-line block into `.bashrc`/`.zshrc` with sentinels.
 - `giantmem workspace status|init|migrate|tree|note|discover|complete|sync|features|gitlog|bootstrap` — workspace lifecycle.
 - `giantmem doctor [--fix]` — health audit across worktrees, workspaces, archives, hooks, DBs. `--fix` repairs broken latest symlinks, stale MCP entries, missing hooks, drift, and orphan worktrees. `.giantmem-ignore` (per-workspace) and `~/.config/giantmem/global-ignore` quiet known-stale paths.

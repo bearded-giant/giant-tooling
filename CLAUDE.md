@@ -40,11 +40,21 @@ The hooks read JSON from stdin and write to stdout/stderr. They call `workspace-
 
 Generated configs source `worktree-core.sh` via the relative path `${BASH_SOURCE[0]%/*}/worktree-core.sh`. To keep configs in a separate dir (e.g. private dotfiles), symlink `worktree-core.sh` into that dir; configs sourced through the symlink resolve `${BASH_SOURCE[0]}` to the symlink path, so the wizard writes new configs there rather than in this repo.
 
-### Giantmem Archive
+### Giantmem Data Flow
 
-`giantmem-archive.sh` handles archiving `.giantmem/` directories to `~/giantmem_archive/{project}/{timestamp}/`. It builds `.giantmem-index` files via ripgrep and delegates FTS5 search to `giantmem-search.py`.
+Single source of truth is `~/giantmem_archive/live.db` (SQLite). Two tables matter:
 
-`giantmem-search.py` maintains a SQLite FTS5 database (`~/giantmem_archive/archives.db`). Commands: `ingest` (rebuild DB from file tree), `search` (FTS5 query with fzf picker + bat preview), `stats` (indexed doc counts). Search results show ranked matches with project/timestamp/type metadata and temporal decay (newer results rank higher).
+- `live_docs` — every file under any `.giantmem/`. Written by three paths:
+  1. PostToolUse hook (`~/dev/claude-code-config/hooks/live_index.py`) on Claude Write/Edit/MultiEdit
+  2. Daemon startup backfill via `internal/backfill` (catches out-of-band edits — vim, git, scripts)
+  3. `giantmem index backfill` CLI (manual)
+- `artifacts` — typed projection derived from `live_docs` by the daemon reconciler (fsnotify on `live.db`, debounced 1s).
+
+Claude session JSONLs live in `~/giantmem_archive/archives.db.documents` (source_type='session'), populated by `~/.claude/hooks/session_end_ingest.py` plus a 5-min launchd sweep (`giantmem/launchd/com.bryan.giantmem-session-sweep.plist`).
+
+The legacy snapshot-archive flow — `giantmem archive run` moves `.giantmem/` to `~/giantmem_archive/{project}/{timestamp}/` — is now a **cold filesystem backup only**. It does NOT feed any DB; ingest of those snapshots is deprecated. `archives.db` source_type='workspace' rows are no longer produced.
+
+`giantmem-archive.sh` + `giantmem-search.py` are pre-Go-rewrite scripts and remain only for historical reads against existing snapshot directories.
 
 ## Key Paths and Environment
 
