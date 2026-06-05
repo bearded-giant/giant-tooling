@@ -102,7 +102,9 @@ func Run(src, archiveBase, projectOverride string, dryRun, reinit bool) (string,
 		fmt.Fprintf(os.Stderr, "warn: prune live.db: %v\n", err)
 	}
 
-	IngestProject("", projectName)
+	// archives.db workspace ingest deprecated — live.db is now authoritative
+	// for .giantmem/ content (backfill walker covers every file). Cold archive
+	// dirs at {project}/{ts}/ stay for filesystem-level recovery only.
 
 	if reinit {
 		parent := filepath.Dir(abs)
@@ -260,7 +262,6 @@ func Dedup(archiveBase, projectName string, dryRun bool) error {
 	}
 	fmt.Printf("Moved %d duplicate(s) to %s\n", moved, reviewDir)
 	fmt.Printf("Review and delete when satisfied: rm -rf %s\n", reviewDir)
-	IngestProject("", projectName)
 	return nil
 }
 

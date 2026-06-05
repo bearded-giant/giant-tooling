@@ -375,70 +375,13 @@ func newestMD(root string) time.Time {
 }
 
 // archives.db drift ----------------------------------------------------------
-// Detect: live workspaces with files newer than archives.db's most recent
-// indexed_at for that project. Indicates ingest is overdue.
+// Snapshot-archive workspace ingest is deprecated — live.db is authoritative
+// via the backfill walker. Cold {project}/{ts}/ dirs are filesystem recovery
+// only and no longer feed archives.db. Stub kept so the doctor wiring still
+// compiles; remove once the call site in doctor.go is dropped too.
 
 func checkArchiveDrift(opt Options) []Finding {
-	var out []Finding
-	if _, err := os.Stat(opt.ArchiveDB); err != nil {
-		return out
-	}
-	d, err := db.Open(opt.ArchiveDB)
-	if err != nil {
-		return out
-	}
-	defer d.Close()
-	rows, err := d.Query(`SELECT project, MAX(indexed_at) FROM documents WHERE source_type != 'session' GROUP BY project`)
-	if err != nil {
-		return out
-	}
-	indexed := map[string]time.Time{}
-	for rows.Next() {
-		var proj, ia string
-		if err := rows.Scan(&proj, &ia); err != nil {
-			continue
-		}
-		t, err := time.Parse(time.RFC3339, ia)
-		if err != nil {
-			continue
-		}
-		indexed[proj] = t
-	}
-	rows.Close()
-
-	// for each archived project dir, compare its newest md mtime to indexed time
-	if _, err := os.Stat(opt.ArchiveBase); err != nil {
-		return out
-	}
-	entries, _ := os.ReadDir(opt.ArchiveBase)
-	for _, e := range entries {
-		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") || strings.HasPrefix(e.Name(), "_") {
-			continue
-		}
-		proj := e.Name()
-		t, ok := indexed[proj]
-		if !ok {
-			out = append(out, Finding{
-				Severity: SevWarn,
-				Category: "drift",
-				Message:  fmt.Sprintf("archive project %q has no rows in archives.db", proj),
-				Path:     filepath.Join(opt.ArchiveBase, proj),
-				Hint:     "giantmem ingest --project " + proj,
-			})
-			continue
-		}
-		newest := newestMD(filepath.Join(opt.ArchiveBase, proj))
-		if !newest.IsZero() && newest.After(t.Add(time.Hour)) {
-			out = append(out, Finding{
-				Severity: SevWarn,
-				Category: "drift",
-				Message:  fmt.Sprintf("project %q has files newer than last ingest (%s vs indexed %s)", proj, newest.Format(time.RFC3339), t.Format(time.RFC3339)),
-				Path:     filepath.Join(opt.ArchiveBase, proj),
-				Hint:     "giantmem ingest --project " + proj,
-			})
-		}
-	}
-	return out
+	return nil
 }
 
 // Summary helpers ------------------------------------------------------------
