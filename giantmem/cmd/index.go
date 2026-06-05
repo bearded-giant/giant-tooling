@@ -28,6 +28,7 @@ var (
 	migrateCanonical  bool
 	sessionsForce     bool
 	liveRoots         []string
+	backfillWorkspace string
 )
 
 var indexInitCmd = &cobra.Command{
@@ -442,24 +443,40 @@ func dirTypeFromPath(p string) string {
 
 var indexBackfillCmd = &cobra.Command{
 	Use:   "backfill",
-	Short: "Crawl every .giantmem/ on disk and upsert all non-empty files into live.db",
-	Long: `Walks ` + "`$GIANTMEM_DEV_ROOTS`" + ` (or ~/dev) to discover every .giantmem/ workspace,
-then upserts every non-empty file (any extension, max 5MB) into live_docs.
+	Short: "Crawl .giantmem/ on disk and upsert all non-empty files into live.db",
+	Long: `Default: walks ` + "`$GIANTMEM_DEV_ROOTS`" + ` (or ~/dev) and upserts every
+.giantmem/ workspace's non-empty files (any extension, max 5MB) into live_docs.
 
-Differs from ` + "`index live`" + ` (which is .md only). This is the canonical full
-backfill — closes the gap left by the PostToolUse hook for files touched by
-vim, scripts, or out-of-band edits.
+` + "`--workspace <path>`" + ` scopes the walk to one workspace — the .giantmem/
+directory you pass, or a worktree root whose .giantmem subdir we'll find.
+Used by the worktree-remove flow to flush a workspace into live.db just
+before the .giantmem/ directory gets deleted.
 
 Idempotent: a file is re-read only when its mtime is newer than the stored
-row OR its size differs. Runs the same code path the daemon executes at
-startup.`,
+row OR its size differs. Same code path the daemon runs at startup.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		l, err := db.OpenLiveOrCreate(liveDBPath())
 		if err != nil {
 			return err
 		}
 		defer l.Close()
-		st, err := backfill.Run(l, archiveBasePath(), 0)
+		var st backfill.Stats
+		if backfillWorkspace != "" {
+			ws := backfillWorkspace
+			// caller may pass either the workspace root (.../.giantmem) or the
+			// worktree root that contains it; normalize.
+			if fi, ferr := os.Stat(ws); ferr == nil && fi.IsDir() {
+				if filepath.Base(ws) != ".giantmem" {
+					candidate := filepath.Join(ws, ".giantmem")
+					if cfi, cerr := os.Stat(candidate); cerr == nil && cfi.IsDir() {
+						ws = candidate
+					}
+				}
+			}
+			st, err = backfill.RunOnWorkspace(l, archiveBasePath(), ws)
+		} else {
+			st, err = backfill.Run(l, archiveBasePath(), 0)
+		}
 		if err != nil {
 			return err
 		}
@@ -473,6 +490,7 @@ func init() {
 	indexMigrateCmd.Flags().BoolVar(&migrateDryRun, "dry-run", false, "show planned changes only")
 	indexMigrateCmd.Flags().BoolVar(&migrateCanonical, "canonicalize", false, "also backfill canonical_project on existing rows")
 	indexSessionsCmd.Flags().BoolVar(&sessionsForce, "force", false, "re-extract cwd even if set")
+	indexBackfillCmd.Flags().StringVar(&backfillWorkspace, "workspace", "", "scope to a single .giantmem (or its parent worktree); default = all roots")
 
 	indexCmd.AddCommand(indexInitCmd)
 	indexCmd.AddCommand(indexMigrateCmd)

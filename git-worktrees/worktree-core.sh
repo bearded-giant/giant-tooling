@@ -711,14 +711,13 @@ __wt_add() {
 }
 
 # ---------------------------------------------------------------------------
-# remove worktree (with workspace backup)
+# remove worktree (sweeps .giantmem into live.db before delete)
 # ---------------------------------------------------------------------------
 
 __wt_remove() {
     local prefix="$1"; shift
     local base=$(__wt_config "$prefix" BASE)
     local last_file=$(__wt_config "$prefix" LAST_FILE)
-    local archive_name=$(__wt_config "$prefix" ARCHIVE_NAME "$(basename "$base")")
 
     if [ -z "$1" ]; then
         echo "Usage: ${prefix}r <branch-name> [-f|--force]"
@@ -729,7 +728,6 @@ __wt_remove() {
     local worktree_dir="$base/$branch_name"
     local workspace_source="$worktree_dir/.giantmem"
     [ ! -d "$workspace_source" ] && workspace_source="$worktree_dir/scratch"
-    local workspace_backup_base="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}/$archive_name"
 
     if [ "$2" != "-f" ] && [ "$2" != "--force" ]; then
         echo "Are you sure you want to delete worktree '$branch_name'? (y/N)"
@@ -740,26 +738,20 @@ __wt_remove() {
         fi
     fi
 
-    # backup workspace before removal
+    # sweep workspace into live.db before removal — content survives in
+    # live_docs even after the worktree dir is gone.
     if [ -d "$workspace_source" ]; then
-        mkdir -p "$workspace_backup_base"
-
-        local timestamp
-        timestamp=$(date '+%Y%m%d_%H%M%S')
-        local backup_dir="$workspace_backup_base/$timestamp"
-
-        echo "Backing up workspace directory to: $backup_dir"
-        if mv "$workspace_source" "$backup_dir"; then
-            echo "Workspace directory backed up successfully"
-            local latest_link="$workspace_backup_base/latest"
-            [ -L "$latest_link" ] && rm "$latest_link"
-            ln -s "$timestamp" "$latest_link"
-            echo "Created symlink: $latest_link -> $timestamp"
+        if command -v giantmem >/dev/null 2>&1; then
+            echo "Sweeping workspace into live.db..."
+            if ! giantmem index backfill --workspace "$workspace_source"; then
+                echo "ERROR: Sweep failed. Worktree removal cancelled to preserve your work."
+                echo "Hint: fix the sweep error, then re-run, or pass --force to skip the sweep."
+                return 1
+            fi
         else
-            echo "ERROR: Failed to backup workspace directory"
-            echo "Worktree removal cancelled to preserve your work"
-            return 1
+            echo "WARN: giantmem not on PATH — skipping sweep. Workspace will be deleted unindexed."
         fi
+        rm -rf "$workspace_source"
     fi
 
     cd "$base/.bare" || {
@@ -888,13 +880,11 @@ __wt_status() {
 }
 
 # ---------------------------------------------------------------------------
-# backup workspace from current worktree
+# sweep current worktree's workspace into live.db (no archive move)
 # ---------------------------------------------------------------------------
 
 __wt_backup_workspace_current() {
     local prefix="$1"
-    local base=$(__wt_config "$prefix" BASE)
-    local archive_name=$(__wt_config "$prefix" ARCHIVE_NAME "$(basename "$base")")
 
     if ! __wt_in_worktree "$prefix"; then
         echo "Not in a git worktree"
@@ -903,43 +893,18 @@ __wt_backup_workspace_current() {
 
     local worktree_dir
     worktree_dir=$(git rev-parse --show-toplevel)
-    local worktree_name
-    worktree_name=$(basename "$worktree_dir")
     local workspace_source="$worktree_dir/.giantmem"
     [ ! -d "$workspace_source" ] && workspace_source="$worktree_dir/scratch"
-    local workspace_backup_base="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}/$archive_name"
 
-    if [ -d "$workspace_source" ]; then
-        mkdir -p "$workspace_backup_base"
-
-        local timestamp
-        timestamp=$(date '+%Y%m%d_%H%M%S')
-        local backup_dir="$workspace_backup_base/$timestamp"
-
-        echo "Backing up workspace directory to: $backup_dir"
-        if mv "$workspace_source" "$backup_dir"; then
-            echo "Workspace directory backed up successfully"
-            local latest_link="$workspace_backup_base/latest"
-            [ -L "$latest_link" ] && rm "$latest_link"
-            ln -s "$timestamp" "$latest_link"
-            echo "Created symlink: $latest_link -> $timestamp"
-            local size
-            size=$(du -sh "$backup_dir" 2>/dev/null | cut -f1)
-            echo "Backup size: $size"
-
-            # re-init workspace so .giantmem/ isn't left empty
-            local ws_lib="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/workspace-lib.sh"
-            if [ -f "$ws_lib" ]; then
-                source "$ws_lib"
-                workspace_init "$worktree_dir" "$worktree_name"
-            fi
-        else
-            echo "Error: Failed to backup workspace directory"
-            return 1
-        fi
-    else
-        echo "No workspace directory found to backup"
+    if [ ! -d "$workspace_source" ]; then
+        echo "No workspace directory found"
+        return 1
     fi
+    if ! command -v giantmem >/dev/null 2>&1; then
+        echo "Error: giantmem not on PATH"
+        return 1
+    fi
+    giantmem index backfill --workspace "$workspace_source"
 }
 
 # ---------------------------------------------------------------------------
@@ -1202,56 +1167,26 @@ __wt_repair() {
 }
 
 # ---------------------------------------------------------------------------
-# workspace archive: list, backup, open
+# workspace sweep — flush .giantmem into live.db (snapshot dirs are dead)
 # ---------------------------------------------------------------------------
 
 __wt_workspace_list() {
     local prefix="$1"
     local base=$(__wt_config "$prefix" BASE)
     local archive_name=$(__wt_config "$prefix" ARCHIVE_NAME "$(basename "$base")")
-    local workspace_archive_dir="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}/$archive_name"
 
-    if [ ! -d "$workspace_archive_dir" ]; then
-        echo "No workspace backups found"
-        return 0
+    if ! command -v giantmem >/dev/null 2>&1; then
+        echo "Error: giantmem not on PATH"
+        return 1
     fi
-
-    echo "Workspace backups in $workspace_archive_dir:"
-    echo "------------------------------------"
-
-    for backup in "$workspace_archive_dir"/*; do
-        if [ -d "$backup" ] && [[ "$(basename "$backup")" =~ ^[0-9]{8}_[0-9]{6}$ ]]; then
-            local timestamp size
-            timestamp=$(basename "$backup")
-            size=$(du -sh "$backup" 2>/dev/null | cut -f1)
-
-            local date_part=${timestamp%_*}
-            local time_part=${timestamp#*_}
-            local formatted_date="${date_part:0:4}-${date_part:4:2}-${date_part:6:2}"
-            local formatted_time="${time_part:0:2}:${time_part:2:2}:${time_part:4:2}"
-
-            echo "  - $formatted_date $formatted_time ($size)"
-
-            if [ -L "$workspace_archive_dir/latest" ]; then
-                local link_target
-                link_target=$(readlink "$workspace_archive_dir/latest")
-                if [ "$link_target" = "$timestamp" ]; then
-                    echo "    (latest)"
-                fi
-            fi
-        fi
-    done
-
-    local total_backups
-    total_backups=$(find "$workspace_archive_dir" -mindepth 1 -maxdepth 1 -type d -name "[0-9]*_[0-9]*" 2>/dev/null | wc -l | tr -d ' ')
-    echo ""
-    echo "Total backups: $total_backups"
+    echo "live_docs rows for project '$archive_name':"
+    giantmem artifact list --repo "$archive_name" 2>/dev/null || \
+        echo "(no rows; run ${prefix}sb from inside a worktree to sweep)"
 }
 
 __wt_workspace_backup() {
     local prefix="$1"; shift
     local base=$(__wt_config "$prefix" BASE)
-    local archive_name=$(__wt_config "$prefix" ARCHIVE_NAME "$(basename "$base")")
     local branch_name=""
 
     if [ -z "$1" ]; then
@@ -1259,7 +1194,7 @@ __wt_workspace_backup() {
             branch_name=$(basename "$PWD")
         else
             echo "Usage: ${prefix}sb [branch-name]"
-            echo "  Backs up the workspace directory for a worktree"
+            echo "  Sweep the workspace into live.db"
             echo "  If no branch specified and in a worktree, uses current branch"
             return 1
         fi
@@ -1270,77 +1205,29 @@ __wt_workspace_backup() {
     local worktree_dir="$base/$branch_name"
     local workspace_source="$worktree_dir/.giantmem"
     [ ! -d "$workspace_source" ] && workspace_source="$worktree_dir/scratch"
-    local workspace_backup_base="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}/$archive_name"
 
     if [ ! -d "$worktree_dir" ]; then
         echo "Error: Worktree '$branch_name' not found"
         return 1
     fi
-
     if [ ! -d "$workspace_source" ]; then
         echo "No workspace directory found in '$branch_name'"
         return 1
     fi
-
-    mkdir -p "$workspace_backup_base"
-
-    local timestamp
-    timestamp=$(date '+%Y%m%d_%H%M%S')
-    local backup_dir="$workspace_backup_base/$timestamp"
-
-    echo "Backing up workspace directory to: $backup_dir"
-    if cp -r "$workspace_source" "$backup_dir"; then
-        echo "Workspace directory backed up successfully"
-        local latest_link="$workspace_backup_base/latest"
-        [ -L "$latest_link" ] && rm "$latest_link"
-        ln -s "$timestamp" "$latest_link"
-        echo "Created symlink: $latest_link -> $timestamp"
-        local size
-        size=$(du -sh "$backup_dir" 2>/dev/null | cut -f1)
-        echo "Backup size: $size"
-    else
-        echo "ERROR: Failed to backup workspace directory"
+    if ! command -v giantmem >/dev/null 2>&1; then
+        echo "Error: giantmem not on PATH"
         return 1
     fi
+    giantmem index backfill --workspace "$workspace_source"
 }
 
+# Open is a no-op: snapshot dirs are deprecated. The GUI + `giantmem artifact
+# list` are the read surfaces now. Kept as a stub so existing muscle-memory
+# doesn't error out silently.
 __wt_workspace_open() {
-    local prefix="$1"; shift
-    local base=$(__wt_config "$prefix" BASE)
-    local archive_name=$(__wt_config "$prefix" ARCHIVE_NAME "$(basename "$base")")
-    local workspace_archive_dir="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}/$archive_name"
-
-    if [ -z "$1" ]; then
-        # no arg - open latest
-        local target_dir="$workspace_archive_dir/latest"
-        if [ ! -L "$target_dir" ]; then
-            local latest_backup
-            latest_backup=$(ls -1d "$workspace_archive_dir"/[0-9]*_[0-9]* 2>/dev/null | sort -r | head -n1)
-            if [ -n "$latest_backup" ]; then
-                target_dir="$latest_backup"
-            else
-                echo "Usage: ${prefix}so [timestamp]"
-                echo "  Opens a workspace backup directory"
-                echo "  If no timestamp specified, opens the latest"
-                return 1
-            fi
-        fi
-        cd "$target_dir"
-        echo "-> $(pwd)"
-        return 0
-    fi
-
-    # arg provided - treat as timestamp
-    local target_dir="$workspace_archive_dir/$1"
-
-    if [ -d "$target_dir" ] || [ -L "$target_dir" ]; then
-        cd "$target_dir"
-        echo "-> $(pwd)"
-    else
-        echo "Error: No workspace backup found for timestamp '$1'"
-        echo "Hint: Use '${prefix}sl' to see available backups"
-        return 1
-    fi
+    local prefix="$1"
+    echo "${prefix}so: snapshot directories are deprecated."
+    echo "Use the Giantmem GUI or 'giantmem artifact list' to browse workspace content."
 }
 
 # ---------------------------------------------------------------------------

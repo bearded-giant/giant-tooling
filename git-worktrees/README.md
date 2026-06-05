@@ -18,7 +18,7 @@ wt_adopt /path/to/existing/repo      # convert an existing clone in place
 # 4. Use the prefix functions the wizard binds
 {prefix} <branch>                    # switch to or create a worktree
 {prefix}l                            # list worktrees
-{prefix}r <branch>                   # remove (with .giantmem backup)
+{prefix}r <branch>                   # remove (sweeps .giantmem into live.db first)
 ```
 
 After step 2, `wt_init`, `wt_adopt`, and `wt_projects` exist in every shell. Run `wt_init` once per project. The wizard writes a `wt-{name}.sh` config file beside `worktree-core.sh`. To keep configs in a separate (e.g. private) dir, see [Install](#install) below.
@@ -31,7 +31,7 @@ The bare repo lives at `{base}/.bare` and worktrees are siblings, not children. 
 
 Per-project prefix functions (`cwt`, `awt`, etc.) are how you actually use this. `wt_register` binds twenty-odd functions per prefix using `eval`, then your muscle memory does the rest. Two-key moves replace ten-key git invocations. The wizard exists because writing a config by hand is friction nobody needs.
 
-Worktrees are throwaway. Spin one up for a feature, do the work, kill the worktree when done, never touch git directly. Removal backs `.giantmem/` up to `~/giantmem_archive/` first, so context isn't lost. Stack-aware setup (python/node/lua/bash) runs on create so you don't re-pin versions per worktree.
+Worktrees are throwaway. Spin one up for a feature, do the work, kill the worktree when done, never touch git directly. Before removal, `.giantmem/` is swept into the giantmem `live.db` (via `giantmem index backfill --workspace`), so context survives in the searchable DB even after the worktree dir is gone. Stack-aware setup (python/node/lua/bash) runs on create so you don't re-pin versions per worktree.
 
 `wt_init` is for greenfield (clone fresh). `wt_adopt` is for "I already have a working clone with WIP I don't want to lose" -- it converts the existing repo in place, preserving uncommitted/untracked files. The two flows exist because the cost of getting either one wrong is real lost work, and most "convert to worktree" advice on the internet drops your WIP on the floor.
 
@@ -104,14 +104,14 @@ After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions ex
 | `{prefix}b` | list branches |
 | `{prefix}s` | status across worktrees |
 | `{prefix}a <branch>` | add worktree explicitly |
-| `{prefix}r <branch>` | remove worktree (backs up `.giantmem/` to `~/giantmem_archive/`) |
+| `{prefix}r <branch>` | remove worktree (sweeps `.giantmem/` into `live.db` first) |
 | `{prefix}rn <old> <new>` | rename worktree |
 | `{prefix}p` / `{prefix}pr` | pull / pull --rebase |
 | `{prefix}f` | fetch |
 | `{prefix}c <src> <dst>` | copy bootstrap files between worktrees |
 | `{prefix}prune` | git worktree prune |
 | `{prefix}repair` | git worktree repair |
-| `{prefix}sl` / `{prefix}sb` / `{prefix}so` | workspace archive list / backup / open |
+| `{prefix}sl` / `{prefix}sb` / `{prefix}so` | list live_docs rows for this project / sweep workspace into live.db / no-op (snapshot dirs deprecated) |
 | `{prefix}_init <src>` | bare clone init (no-op if `.bare` exists) |
 
 Workspace aliases (when `WS_BASE` set in config): `{ws}`, `{ws}tree`, `{ws}sync`, `{ws}discover`, `{ws}complete`.
