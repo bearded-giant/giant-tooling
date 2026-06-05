@@ -8,7 +8,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	archive "github.com/bearded-giant/giant-tooling/giantmem/internal/archiver"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/backfill"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/spf13/cobra"
 )
 
@@ -60,11 +61,11 @@ Lists worktrees plus whether each has a live .giantmem/ directory.`,
 
 var worktreeRemoveCmd = &cobra.Command{
 	Use:   "remove <worktree-path>",
-	Short: "Archive .giantmem then `git worktree remove`",
-	Long: `Auto-archives the worktree's .giantmem (if any) before deleting the worktree.
-Order: gm archive run --no-reinit -> git worktree remove [--force].
+	Short: "Sweep .giantmem into live.db then `git worktree remove`",
+	Long: `Sweeps the worktree's .giantmem (if any) into live.db before deleting the worktree.
+Order: giantmem index backfill --workspace <wt>/.giantmem -> git worktree remove [--force].
 
-Use --keep to skip archive (just removes worktree).`,
+Use --keep to skip the sweep (just removes worktree).`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		wt, err := filepath.Abs(args[0])
@@ -77,12 +78,29 @@ Use --keep to skip archive (just removes worktree).`,
 		gm := filepath.Join(wt, ".giantmem")
 
 		if !worktreeRemoveKeep && dirExists(gm) {
-			fmt.Println("== auto-archiving .giantmem ==")
-			if _, err := archive.Run(gm, archiveBasePath(), "", worktreeRemoveDryRun, false); err != nil {
-				if !worktreeRemoveForce {
-					return fmt.Errorf("archive failed; use --force to remove anyway: %w", err)
+			fmt.Println("== sweeping .giantmem into live.db ==")
+			if worktreeRemoveDryRun {
+				fmt.Printf("(dry run) giantmem index backfill --workspace %s\n", gm)
+			} else {
+				live, lerr := db.OpenLiveOrCreate(liveDBPath())
+				if lerr != nil {
+					if !worktreeRemoveForce {
+						return fmt.Errorf("open live.db failed; use --force to remove anyway: %w", lerr)
+					}
+					fmt.Fprintf(os.Stderr, "warn: open live.db failed (--force given): %v\n", lerr)
+				} else {
+					st, berr := backfill.RunOnWorkspace(live, archiveBasePath(), gm)
+					live.Close()
+					if berr != nil {
+						if !worktreeRemoveForce {
+							return fmt.Errorf("sweep failed; use --force to remove anyway: %w", berr)
+						}
+						fmt.Fprintf(os.Stderr, "warn: sweep failed (--force given): %v\n", berr)
+					} else {
+						fmt.Printf("swept: scanned=%d upserted=%d skipped=%d empty=%d\n",
+							st.Scanned, st.Upserted, st.Skipped, st.Empty)
+					}
 				}
-				fmt.Fprintf(os.Stderr, "warn: archive failed (--force given): %v\n", err)
 			}
 		}
 
@@ -354,8 +372,8 @@ func installSnippet(target, snippet string, dryRun bool) error {
 
 func init() {
 	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveDryRun, "dry-run", false, "show planned actions")
-	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveForce, "force", false, "force git worktree remove and continue on archive failure")
-	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveKeep, "keep", false, "skip archive, just remove worktree")
+	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveForce, "force", false, "force git worktree remove and continue on sweep failure")
+	worktreeRemoveCmd.Flags().BoolVar(&worktreeRemoveKeep, "keep", false, "skip sweep, just remove worktree")
 
 	worktreeShellInitCmd.Flags().BoolVar(&shellInitInstall, "install", false, "append/update sentinel block in target rc file")
 	worktreeShellInitCmd.Flags().StringVar(&shellInitTarget, "target", "", "rc file to install into (default: $SHELL-aware ~/.bashrc or ~/.zshrc)")

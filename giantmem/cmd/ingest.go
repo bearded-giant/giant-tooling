@@ -23,15 +23,20 @@ var (
 
 var ingestCmd = &cobra.Command{
 	Use:   "ingest",
-	Short: "Re-index workspace archives and Claude session JSONLs into archives.db",
-	Long: `Walks each registered ingest source and rebuilds documents + documents_fts.
+	Short: "Re-index Claude session JSONLs into archives.db (workspace pass is legacy)",
+	Long: `Primarily ingests Claude session JSONLs from ~/.claude/projects/ into
+archives.db. A launchd agent (giantmem/launchd/...session-sweep.plist) runs
+this every 5 min by default.
 
-Sources are configured at ~/.config/giantmem/sources.toml. Without a config the
-default builtins (workspace-md, claude-jsonl, domain-json) are used.
+Sources are configured at ~/.config/giantmem/sources.toml. The default
+builtins are still 'workspace-md', 'claude-jsonl', and 'domain-json' but
+workspace-md/domain-json are LEGACY — live.db is now the authoritative
+store for .giantmem/ content (see 'giantmem index backfill'). Run them only
+to populate archives.db.documents source_type='workspace' for back-compat
+search; the daemon does not depend on them.
 
---source can be repeated to limit the run to specific sources. If --source is
-omitted, all enabled sources run. --sessions-only / --workspaces-only are kept
-as conveniences and translate to source filters.`,
+--source can be repeated to limit the run to specific sources.
+--sessions-only / --workspaces-only translate to source filters.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		home, _ := os.UserHomeDir()
 		d, err := db.Open(archiveDBPath())

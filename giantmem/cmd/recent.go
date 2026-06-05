@@ -26,6 +26,7 @@ var (
 	recentPaths          bool
 	recentInteractive    bool
 	recentNoCopy         bool
+	recentProject        string
 )
 
 var recentCmd = &cobra.Command{
@@ -78,6 +79,7 @@ func init() {
 	recentDocsCmd.Flags().BoolVar(&recentPaths, "paths", false, "absolute paths only (one per line)")
 	recentDocsCmd.Flags().BoolVarP(&recentInteractive, "interactive", "i", false, "open results in fzf with preview; selected path is copied to clipboard and printed")
 	recentDocsCmd.Flags().BoolVar(&recentNoCopy, "no-copy", false, "with --interactive, skip pbcopy (just print selected path)")
+	recentDocsCmd.Flags().StringVarP(&recentProject, "project", "p", "", "filter to a single project name (exact match)")
 
 	recentCmd.AddCommand(recentDocsCmd)
 	recentCmd.AddCommand(recentReposCmd)
@@ -139,6 +141,11 @@ func runRecentDocs(cmd *cobra.Command, args []string) error {
 			conds = append(conds, "worktree_path != ?")
 			params = append(params, curRoot)
 		}
+	}
+
+	if p := strings.TrimSpace(recentProject); p != "" {
+		conds = append(conds, "project = ?")
+		params = append(params, p)
 	}
 
 	where := ""
