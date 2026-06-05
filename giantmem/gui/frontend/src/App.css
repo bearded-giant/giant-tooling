@@ -69,6 +69,39 @@
   width: auto;
 }
 
+.refresh-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  font-size: 20px;
+  line-height: 1;
+  padding: 6px 12px;
+  min-width: 36px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.refresh-btn:hover {
+  color: var(--fg);
+  border-color: var(--accent);
+  background: var(--bg-3);
+}
+.refresh-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+.refresh-btn.spinning {
+  animation: refresh-spin 0.8s linear infinite;
+}
+.refresh-btn.flash {
+  color: var(--success, #6ad36a);
+  border-color: var(--success, #6ad36a);
+}
+@keyframes refresh-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .sidebar {
   border-right: 1px solid var(--border);
   background: var(--bg-2);

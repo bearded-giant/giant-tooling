@@ -26,6 +26,10 @@ export function ListSessions(arg1, arg2) {
   return window['go']['main']['App']['ListSessions'](arg1, arg2);
 }
 
+export function LiveMtime() {
+  return window['go']['main']['App']['LiveMtime']();
+}
+
 export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
 }

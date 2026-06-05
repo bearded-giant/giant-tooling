@@ -17,6 +17,7 @@ import {
   GetArtifactBody,
   ListArtifacts,
   ListSessions,
+  LiveMtime,
   ReadFile,
   SearchFTS,
   SearchHybrid,
@@ -150,7 +151,37 @@ function App() {
 
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [justRefreshed, setJustRefreshed] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  const refreshAll = useCallback(() => {
+    setReloadKey((k) => k + 1);
+    setJustRefreshed(true);
+    window.setTimeout(() => setJustRefreshed(false), 600);
+  }, []);
+
+  // poll live.db mtime every 5s. when daemon reconciler or peer PostToolUse
+  // hook writes, mtime changes → bump reloadKey so all queries re-run.
+  // visual flash via justRefreshed reuses the manual-refresh treatment.
+  useEffect(() => {
+    let lastMtime = 0;
+    const tick = async () => {
+      try {
+        const m = await LiveMtime();
+        if (lastMtime === 0) {
+          lastMtime = m;
+          return;
+        }
+        if (m > lastMtime) {
+          lastMtime = m;
+          refreshAll();
+        }
+      } catch {}
+    };
+    const id = window.setInterval(tick, 5000);
+    return () => window.clearInterval(id);
+  }, [refreshAll]);
 
   useEffect(() => {
     FacetCounts()
@@ -162,7 +193,7 @@ function App() {
     SessionFacets()
       .then((sf) => setSessionFacets(sf))
       .catch((e) => setErr(String(e)));
-  }, []);
+  }, [reloadKey]);
 
   // ordered ids list for j/k nav
   const visibleRowIDs: string[] = useMemo(() => {
@@ -193,6 +224,11 @@ function App() {
         return;
       }
       if (inField) return;
+      if (e.key === "r" && !e.metaKey && !e.ctrlKey) {
+        e.preventDefault();
+        refreshAll();
+        return;
+      }
       if (e.key !== "j" && e.key !== "k") return;
       if (visibleRowIDs.length === 0) return;
       const curID =
@@ -216,7 +252,7 @@ function App() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visibleRowIDs, selection, tab]);
+  }, [visibleRowIDs, selection, tab, refreshAll]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 200);
@@ -318,6 +354,7 @@ function App() {
     selSessionDate,
     toolNameFilter,
     toolUseFTSPre,
+    reloadKey,
   ]);
 
   // load detail when selection changes
@@ -348,7 +385,7 @@ function App() {
           setErr(String(e));
         });
     }
-  }, [selection, artifactRows, hybridRows]);
+  }, [selection, artifactRows, hybridRows, reloadKey]);
 
   const toggleSet = useCallback(
     (s: Set<string>, v: string, setter: (n: Set<string>) => void) => {
@@ -436,6 +473,15 @@ function App() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        <button
+          className={`refresh-btn ${loading ? "spinning" : ""} ${justRefreshed ? "flash" : ""}`}
+          onClick={refreshAll}
+          disabled={loading}
+          title="refresh results (r)"
+          aria-label="refresh"
+        >
+          ⟳
+        </button>
         {tab === "artifacts" && (
           <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
             {SORT_OPTIONS.map((o) => (
@@ -591,6 +637,7 @@ function App() {
           <span className="filter-hint">
             <span className="kbd">/</span> focus search ·{" "}
             <span className="kbd">j</span>/<span className="kbd">k</span> nav ·{" "}
+            <span className="kbd">r</span> refresh ·{" "}
             <span className="kbd">esc</span> clear
           </span>
         )}

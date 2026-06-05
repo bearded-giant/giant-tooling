@@ -689,6 +689,22 @@ func (a *App) ReadFile(path string) (string, error) {
 	return string(body), nil
 }
 
+// LiveMtime returns the live.db file mtime as unix seconds. Frontend polls
+// this on a 5s interval; when it changes, the GUI bumps reloadKey and re-runs
+// all queries — that's how the GUI tracks daemon-side reconciles and peer
+// PostToolUse writes without an explicit subscribe RPC.
+//
+// Returns 0 on stat error (file missing, etc.) so a polling caller can no-op
+// rather than thrash on transient failures.
+func (a *App) LiveMtime() int64 {
+	base := archiveBase()
+	st, err := os.Stat(filepath.Join(base, "live.db"))
+	if err != nil {
+		return 0
+	}
+	return st.ModTime().Unix()
+}
+
 // daemonEmbed asks the running giantmemd to embed text with its real backend.
 // Returns (vec, true) on success; (nil, false) when the daemon is down so
 // callers can degrade gracefully. GUI never loads its own embedder.
