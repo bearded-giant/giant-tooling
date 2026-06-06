@@ -30,20 +30,21 @@ If the daemon's down hybrid will silently fall back to FTS + recency + access (v
 
 ## Running
 
+`make` is the short path. Manual `wails` calls still work.
+
 ```bash
 cd giantmem/gui
-wails dev            # live reload, opens a window
+make dev             # wails dev — live reload, opens a window
+make build           # wails build — writes build/bin/Giantmem.app
+make install         # build + rsync into /Applications/Giantmem.app
+make reinstall       # install + kill running app + relaunch
 ```
+
+Override install location: `make install INSTALL_TO=$HOME/Applications/Giantmem.app`.
+
+For a fresh-machine setup, the repo-root `make bootstrap` runs the GUI install plus the CLI, daemon, and session-sweep agent — see [../../INSTALL.md](../../INSTALL.md).
 
 If you'd rather poke at the bindings from a browser, `wails dev` also exposes the Go methods at `http://localhost:34115` — open it and use the devtools console.
-
-## Building a `.app`
-
-```bash
-cd giantmem/gui
-wails build          # writes build/bin/Giantmem.app
-open build/bin/Giantmem.app
-```
 
 `wails build -skipbindings` is useful when you want to skip the parser pass (it's a sanity check more than a real shortcut — bindings regenerate quickly).
 

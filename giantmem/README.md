@@ -24,6 +24,14 @@ For a five-minute onboarding read, see [INTRO.md](INTRO.md). For the full comman
 
 ## Install
 
+For a full stack install (CLI + GUI + daemon LaunchAgent + 5-min session-sweep LaunchAgent + first-run backfill) use the repo-root bootstrap — see [../INSTALL.md](../INSTALL.md):
+
+```
+cd ~/dev/giant-tooling && make bootstrap
+```
+
+CLI only:
+
 ```
 make install                  # builds and copies to ~/.local/bin/giantmem
 ```

@@ -10,9 +10,9 @@ This repo is opinionated and bespoke -- it codifies a specific way of working wi
 
 Each project gets its own `.giantmem/` workspace dir. Plans, research, feature specs, session history, and discoveries live there alongside the code. Claude Code reads it on session start and writes back on session end via hooks. Nothing about your work lives in the chat transcript -- it lives in files you can grep, diff, and version. When a session ends or context compacts, the next session picks up exactly where the last one left off.
 
-Worktrees are throwaway. Spin one up per feature, branch, or experiment. Kill it when done. `.giantmem/` archives to `~/giantmem_archive/` on removal so context is never lost. A bare repo with sibling worktrees keeps git data in one fixed spot, and per-project prefix functions (`{prefix}`, `{prefix}l`, etc.) replace muscle-heavy git invocations with two-key moves.
+Worktrees are throwaway. Spin one up per feature, branch, or experiment. Kill it when done. Before the dir is deleted, `.giantmem/` is swept into `live.db` (via `giantmem index backfill --workspace <path>`) so the content survives in the searchable DB even after the worktree disappears. A bare repo with sibling worktrees keeps git data in one fixed spot, and per-project prefix functions (`{prefix}`, `{prefix}l`, etc.) replace muscle-heavy git invocations with two-key moves.
 
-The archive is searchable. Every removed worktree's `.giantmem/` lands in `~/giantmem_archive/` and gets indexed into a SQLite FTS5 database. Past plans, research, and discoveries stay queryable across all projects forever, with temporal decay so newer hits rank higher.
+Everything is searchable from one SQLite file. `live.db.live_docs` holds every file under every `.giantmem/`, written by three paths: the Claude PostToolUse hook on edit, a daemon-startup filesystem backfill, and `giantmem index backfill` on demand. The daemon projects those rows into a typed `artifacts` table and keeps embeddings fresh (for hybrid search). Claude session JSONLs are sweep-ingested into `archives.db` every 5 min via a launchd agent. Past plans, research, discoveries, and chat history stay queryable across all projects forever.
 
 Stdlib-only where it makes sense. `workspace/` and `git-worktrees/` are Bash + Python (stdlib, no pip deps). `giantmem/` is Go — single static binary, modernc.org/sqlite for FTS5, BurntSushi/toml for source plugin config. All hooks are Python stdlib and wrap their main in try/except so a broken hook never breaks a session; failures land in `~/.cache/giantmem/hook.log`. Shell scripts use `set -euo pipefail`. Comments are lowercase. The `giantmemd` daemon is opt-in (auto-routed when its socket is alive, easy to bypass with `--no-daemon` or `GIANTMEM_NO_DAEMON=1`); it caches DB handles to cut ~700ms of cold start per CLI invocation. If something breaks, the call graph is small and the fix is usually obvious.
 
@@ -34,15 +34,15 @@ See [workspace/README.md](workspace/README.md) for shell and Claude commands, di
 
 Shared library (`worktree-core.sh`) plus per-project config files (`wt-{name}.sh`) for managing git worktrees. You source `worktree-core.sh` once, then run `wt_init` to scaffold a new project config or `wt_adopt` to convert an existing repo into the bare-plus-worktree layout in place. Each project gets prefix-style shell functions: `{prefix}` (switch/create worktree), `{prefix}l` (list), `{prefix}r` (remove with `.giantmem/` backup), and a dozen more.
 
-The bare repo lives at `{base}/.bare` with worktrees as siblings. New worktrees auto-bootstrap `.giantmem/`, removed ones back up `.giantmem/` to `~/giantmem_archive/`. Stack-specific setup for python/node/lua/bash.
+The bare repo lives at `{base}/.bare` with worktrees as siblings. New worktrees auto-bootstrap `.giantmem/`, removed ones sweep `.giantmem/` into `live.db` before deletion (no on-disk archive snapshot). Stack-specific setup for python/node/lua/bash.
 
 See [git-worktrees/README.md](git-worktrees/README.md) for the full command reference, the `wt_init` and `wt_adopt` flows, and directory layout.
 
 ### giantmem/
 
-Go CLI that unifies search, archive, sessions, worktree, workspace, and ingest under one binary (`giantmem`). Replaced the prior bash + python `giantmem-archive/` scripts. Key surfaces: `giantmem find` (FTS5 across live + archive + Claude session transcripts, ranked and merged); `giantmem session list|find|resume|export|diff`; `giantmem archive run|list|stale`; `giantmem worktree`, `giantmem workspace`, and `giantmem doctor [--fix]`; plus `giantmem mcp serve` exposing six tools so Claude can self-discover state.
+Go CLI that unifies search, sessions, worktree, workspace, and ingest under one binary (`giantmem`). Replaced the prior bash + python `giantmem-archive/` scripts. Key surfaces: `giantmem find` (FTS5 across live + Claude session transcripts, ranked and merged); `giantmem index backfill` (filesystem walker that fills live.db from every `.giantmem/`); `giantmem session list|find|resume|export|diff`; `giantmem worktree`, `giantmem workspace`, and `giantmem doctor [--fix]`; plus `giantmem mcp serve` exposing read-only tools so Claude can self-discover state. `giantmem archive run` still exists as a cold filesystem backup; it no longer feeds any DB.
 
-Storage is two SQLite FTS5 databases (`archives.db` for archived workspaces + Claude sessions + flattened domain JSONs, `live.db` for in-flight `.giantmem/` files). Schema is versioned via `PRAGMA user_version` and migrated on open. Ingest is plugin-driven via `~/.config/giantmem/sources.toml` — the three builtins (`workspace-md`, `claude-jsonl`, `domain-json`) ship enabled by default; external sources are arbitrary subprocesses that emit JSONL on stdout with a small field-mapping table.
+Storage is two SQLite FTS5 databases. `live.db` is authoritative for `.giantmem/` content: `live_docs` (every file, populated by PostToolUse hook + daemon backfill + CLI backfill), `artifacts` (typed projection), `live_docs_fts` (FTS5). `archives.db` holds Claude session JSONL transcripts (`documents` where `source_type='session'`), written by the SessionEnd hook and a 5-min launchd sweep. The legacy workspace-md/domain-json ingest pass into archives.db is deprecated. Schema is versioned via `PRAGMA user_version` and migrated on open.
 
 Optional companion daemon `giantmemd` (started via `giantmem daemon start`, installable as a launchd LaunchAgent on macOS) serves a JSON-RPC 2.0 unix socket at `~/.cache/giantmem/giantmemd.sock`. The CLI auto-routes through it when alive and falls back to direct DB open otherwise. Schema-drift after a migration returns a "restart pending" error so the daemon never serves stale views.
 
@@ -58,6 +58,22 @@ See [domain-search/usage.md](domain-search/usage.md) for the full command refere
 
 ## Setup
 
+One command from repo root — see [INSTALL.md](INSTALL.md) for the full breakdown:
+
+```bash
+make bootstrap   # cli + gui + daemon + session-sweep + first-run backfill
+```
+
+Piecemeal targets (`make help` lists them) are there if you want to skip parts:
+
+```bash
+make cli              # just ~/.local/bin/giantmem
+make gui              # just /Applications/Giantmem.app
+make daemon-install   # giantmemd LaunchAgent
+make session-sweep    # 5-min sessions ingest LaunchAgent
+make first-run        # populate live.db + archives.db
+```
+
 Set the env var (optional, defaults to `$HOME/dev/giant-tooling`):
 
 ```bash
@@ -70,18 +86,7 @@ Source the workspace library in your shell config:
 source ~/dev/giant-tooling/workspace/workspace-lib.sh
 ```
 
-Build and install the `giantmem` CLI (`~/.local/bin` must be on `$PATH`):
-
-```bash
-cd ~/dev/giant-tooling/giantmem && make install
-```
-
-Optional: start the long-running daemon for warm DB handles. Auto-routed when alive; opt-out with `--no-daemon` or `GIANTMEM_NO_DAEMON=1`.
-
-```bash
-giantmem daemon start                         # detached, pidfile + log under ~/.cache/giantmem/
-giantmem daemon install                       # macOS: launchd LaunchAgent that survives logout
-```
+Writer hooks (PostToolUse → live.db, SessionEnd → archives.db) live in the separate [claude-code-config](https://github.com/bearded-giant/claude-code-config) repo and install via stow to `~/.claude`. Without them `live_docs` only captures out-of-band edits caught by the daemon's startup backfill; the high-signal stream is the PostToolUse hook.
 
 Optional: register external ingest sources by dropping a `[[source]]` block into `~/.config/giantmem/sources.toml` (see [giantmem/PLAN-2.md](giantmem/PLAN-2.md) §12 for the schema).
 
