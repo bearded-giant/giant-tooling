@@ -58,7 +58,7 @@ const SORT_OPTIONS: { value: string; label: string }[] = [
 ];
 
 function App() {
-  const [tab, setTab] = useState<Tab>("artifacts");
+  const [tab, setTab] = useState<Tab>("activity");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [sortBy, setSortBy] = useState<string>("updated");
@@ -474,13 +474,13 @@ function App() {
         <div className="brand">giantmem</div>
         <div className="tabs">
           <button
-            className={tab === "artifacts" ? "active" : ""}
+            className={tab === "activity" ? "active" : ""}
             onClick={() => {
-              setTab("artifacts");
+              setTab("activity");
               setSelection(null);
             }}
           >
-            artifacts
+            activity
           </button>
           <button
             className={tab === "sessions" ? "active" : ""}
@@ -492,6 +492,15 @@ function App() {
             sessions
           </button>
           <button
+            className={tab === "artifacts" ? "active" : ""}
+            onClick={() => {
+              setTab("artifacts");
+              setSelection(null);
+            }}
+          >
+            artifacts
+          </button>
+          <button
             className={tab === "tools" ? "active" : ""}
             onClick={() => {
               setTab("tools");
@@ -499,15 +508,6 @@ function App() {
             }}
           >
             tools
-          </button>
-          <button
-            className={tab === "activity" ? "active" : ""}
-            onClick={() => {
-              setTab("activity");
-              setSelection(null);
-            }}
-          >
-            activity
           </button>
         </div>
         <div className="search-wrap">
