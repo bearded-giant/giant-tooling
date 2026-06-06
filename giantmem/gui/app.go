@@ -791,8 +791,12 @@ func (a *App) ActivityCounts() (ActivityCounts, error) {
 	if a.live != nil {
 		_ = a.live.QueryRow("SELECT COUNT(*) FROM live_docs").Scan(&c.LiveDocs)
 		// writes today: ingested_at is RFC3339 in UTC; compare via date()
+		// "today" = local-time day. ingested_at is stored as RFC3339 UTC; cast
+		// to localtime before comparing dates so the tile doesn't roll over
+		// at 17:00 PDT (00:00 UTC).
 		_ = a.live.QueryRow(
-			`SELECT COUNT(*) FROM live_docs WHERE date(ingested_at) = date('now','utc')`,
+			`SELECT COUNT(*) FROM live_docs
+              WHERE date(ingested_at, 'localtime') = date('now', 'localtime')`,
 		).Scan(&c.WritesToday)
 		// active features: distinct (project, feature) where any artifact has status=in_progress.
 		// artifacts table mirrors live_docs frontmatter status.
@@ -962,6 +966,71 @@ func (a *App) ProjectHeatmap(days, topN int) ([]HeatmapCell, error) {
 		}
 	}
 	return out, nil
+}
+
+// GetPref / SetPref give the frontend a Go-backed key/value store so UI
+// preferences (sidebar width, last tab, etc.) survive across launches even
+// when WKWebView's localStorage is non-persistent. File-backed at
+// ~/.config/giantmem/gui-prefs.json. Atomic write via temp+rename.
+func (a *App) GetPref(key string) (string, error) {
+	m, err := readPrefs()
+	if err != nil {
+		return "", err
+	}
+	return m[key], nil
+}
+
+func (a *App) SetPref(key, value string) error {
+	m, err := readPrefs()
+	if err != nil {
+		return err
+	}
+	if value == "" {
+		delete(m, key)
+	} else {
+		m[key] = value
+	}
+	return writePrefs(m)
+}
+
+func prefsPath() string {
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "giantmem", "gui-prefs.json")
+}
+
+func readPrefs() (map[string]string, error) {
+	p := prefsPath()
+	body, err := os.ReadFile(p)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]string{}, nil
+		}
+		return nil, err
+	}
+	m := map[string]string{}
+	if len(body) == 0 {
+		return m, nil
+	}
+	if err := json.Unmarshal(body, &m); err != nil {
+		return map[string]string{}, nil
+	}
+	return m, nil
+}
+
+func writePrefs(m map[string]string) error {
+	p := prefsPath()
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		return err
+	}
+	b, err := json.MarshalIndent(m, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := p + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, p)
 }
 
 // LiveMtime returns the live.db file mtime as unix seconds. Frontend polls

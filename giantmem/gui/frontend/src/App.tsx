@@ -16,6 +16,7 @@ import {
   FacetCounts,
   FeaturesByRepo,
   GetArtifactBody,
+  GetPref,
   ListArtifacts,
   ListSessions,
   LiveMtime,
@@ -28,6 +29,7 @@ import {
   SearchHybrid,
   SearchToolUses,
   SessionFacets,
+  SetPref,
 } from "../wailsjs/go/main/App";
 import { artifacts, main, search } from "../wailsjs/go/models";
 
@@ -72,12 +74,24 @@ function App() {
   const [selFeature, setSelFeature] = useState<string>("");
   const [selRepo, setSelRepo] = useState<string>("");
   const [sidebarFilter, setSidebarFilter] = useState("");
+  // sidebarWidth: localStorage seeds first paint (avoids flash) and the
+  // Go-backed prefs file is the source of truth across restarts. Read both
+  // — file wins, then writes go to both.
   const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
     const n = Number(localStorage.getItem("gm.sidebarWidth"));
     return Number.isFinite(n) && n >= 180 && n <= 600 ? n : 260;
   });
   useEffect(() => {
+    GetPref("sidebarWidth")
+      .then((v) => {
+        const n = Number(v);
+        if (Number.isFinite(n) && n >= 180 && n <= 600) setSidebarWidth(n);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
     localStorage.setItem("gm.sidebarWidth", String(sidebarWidth));
+    SetPref("sidebarWidth", String(sidebarWidth)).catch(() => {});
   }, [sidebarWidth]);
 
   const [turnOrder, setTurnOrder] = useState<"asc" | "desc">(() => {
@@ -166,6 +180,7 @@ function App() {
   const [sparklines, setSparklines] = useState<Record<string, main.SparklinePoint[]>>({});
   const [heatmap, setHeatmap] = useState<main.HeatmapCell[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
+  const activityFilterRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const topbarRef = useRef<HTMLDivElement>(null);
   const chipsRef = useRef<HTMLDivElement>(null);
@@ -277,7 +292,13 @@ function App() {
       const inField = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
       if (e.key === "/" && !inField) {
         e.preventDefault();
-        searchRef.current?.focus();
+        // on activity tab the topbar FTS search doesn't apply — the
+        // activity-sidebar project filter is what the user actually wants.
+        const target =
+          tab === "activity"
+            ? activityFilterRef.current || searchRef.current
+            : searchRef.current;
+        target?.focus();
         return;
       }
       if (e.key === "Escape") {
@@ -823,6 +844,7 @@ function App() {
             filter={activityFilter}
             onFilter={setActivityFilter}
             heatmap={heatmap}
+            filterRef={activityFilterRef}
           />
         )}
         {tab === "tools" && (
@@ -1699,11 +1721,13 @@ function ActivitySidebar({
   filter,
   onFilter,
   heatmap,
+  filterRef,
 }: {
   counts: main.ActivityCounts | null;
   filter: string;
   onFilter: (v: string) => void;
   heatmap: main.HeatmapCell[];
+  filterRef?: React.RefObject<HTMLInputElement>;
 }) {
   return (
     <>
@@ -1724,8 +1748,9 @@ function ActivitySidebar({
       )}
       <div className="sidebar-filter">
         <input
+          ref={filterRef}
           type="search"
-          placeholder="filter projects…"
+          placeholder="filter projects… (/)"
           value={filter}
           onChange={(e) => onFilter(e.target.value)}
         />

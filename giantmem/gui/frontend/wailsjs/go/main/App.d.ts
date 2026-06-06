@@ -14,6 +14,8 @@ export function GetArtifact(arg1:string):Promise<artifacts.Artifact>;
 
 export function GetArtifactBody(arg1:string):Promise<string>;
 
+export function GetPref(arg1:string):Promise<string>;
+
 export function ListArtifacts(arg1:artifacts.ListFilter,arg2:string,arg3:number):Promise<Array<artifacts.Artifact>>;
 
 export function ListSessions(arg1:main.SessionFilter,arg2:number):Promise<Array<search.Hit>>;
@@ -37,3 +39,5 @@ export function SearchHybrid(arg1:string,arg2:artifacts.ListFilter,arg3:number):
 export function SearchToolUses(arg1:main.ToolUseFilter):Promise<Array<main.ToolUseHit>>;
 
 export function SessionFacets():Promise<main.SessionFacetCounts>;
+
+export function SetPref(arg1:string,arg2:string):Promise<void>;

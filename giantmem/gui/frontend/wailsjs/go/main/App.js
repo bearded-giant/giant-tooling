@@ -22,6 +22,10 @@ export function GetArtifactBody(arg1) {
   return window['go']['main']['App']['GetArtifactBody'](arg1);
 }
 
+export function GetPref(arg1) {
+  return window['go']['main']['App']['GetPref'](arg1);
+}
+
 export function ListArtifacts(arg1, arg2, arg3) {
   return window['go']['main']['App']['ListArtifacts'](arg1, arg2, arg3);
 }
@@ -68,4 +72,8 @@ export function SearchToolUses(arg1) {
 
 export function SessionFacets() {
   return window['go']['main']['App']['SessionFacets']();
+}
+
+export function SetPref(arg1, arg2) {
+  return window['go']['main']['App']['SetPref'](arg1, arg2);
 }
