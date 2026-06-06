@@ -775,6 +775,195 @@ func (a *App) RecentFiles(worktreePath string, limit int) ([]FileActivity, error
 	return out, rows.Err()
 }
 
+// ActivityCounts is the small headline-tile bundle: total live_docs across
+// all repos, total session JSONLs in archives.db, live_docs written today
+// (local), and count of active (status=in_progress) features. Used by the
+// activity tab sidebar — one round-trip, four numbers.
+type ActivityCounts struct {
+	LiveDocs      int `json:"liveDocs"`
+	Sessions      int `json:"sessions"`
+	WritesToday   int `json:"writesToday"`
+	ActiveFeatures int `json:"activeFeatures"`
+}
+
+func (a *App) ActivityCounts() (ActivityCounts, error) {
+	var c ActivityCounts
+	if a.live != nil {
+		_ = a.live.QueryRow("SELECT COUNT(*) FROM live_docs").Scan(&c.LiveDocs)
+		// writes today: ingested_at is RFC3339 in UTC; compare via date()
+		_ = a.live.QueryRow(
+			`SELECT COUNT(*) FROM live_docs WHERE date(ingested_at) = date('now','utc')`,
+		).Scan(&c.WritesToday)
+		// active features: distinct (project, feature) where any artifact has status=in_progress.
+		// artifacts table mirrors live_docs frontmatter status.
+		_ = a.live.QueryRow(
+			`SELECT COUNT(DISTINCT repo || '/' || feature)
+               FROM artifacts
+              WHERE status = 'in_progress' AND feature <> ''`,
+		).Scan(&c.ActiveFeatures)
+	}
+	if a.archive != nil {
+		_ = a.archive.QueryRow(
+			"SELECT COUNT(*) FROM documents WHERE source_type = 'session'",
+		).Scan(&c.Sessions)
+	}
+	return c, nil
+}
+
+// SparklinePoint is one (date, count) tuple for a per-project mini bar chart.
+// Dates are YYYY-MM-DD in local time, ascending. Missing days are filled
+// with count=0 server-side so the frontend can render a fixed-width bar
+// without gap-filling.
+type SparklinePoint struct {
+	Day   string `json:"day"`
+	Count int    `json:"count"`
+}
+
+// ProjectSparkline returns last `days` days of doc-write counts for one
+// worktree. Days <=0 → 7. Caller passes the worktree_path so split repo/wt
+// rows stay distinct (matches RecentRepos grouping).
+func (a *App) ProjectSparkline(worktreePath string, days int) ([]SparklinePoint, error) {
+	if a.live == nil {
+		return nil, fmt.Errorf("live db not open")
+	}
+	if worktreePath == "" {
+		return nil, fmt.Errorf("worktreePath required")
+	}
+	if days <= 0 {
+		days = 7
+	}
+	rows, err := a.live.Query(`
+        SELECT date(mtime, 'unixepoch', 'localtime') AS d, COUNT(*)
+          FROM live_docs
+         WHERE worktree_path = ?
+           AND mtime >= strftime('%s', 'now', ?, 'start of day')
+         GROUP BY d
+         ORDER BY d ASC`, worktreePath, fmt.Sprintf("-%d days", days-1))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	found := map[string]int{}
+	for rows.Next() {
+		var d string
+		var n int
+		if err := rows.Scan(&d, &n); err != nil {
+			return nil, err
+		}
+		found[d] = n
+	}
+	// Fill missing days. Compute date strings client-side; sqlite date math
+	// already aligned to 'start of day' so simple Time math works.
+	out := make([]SparklinePoint, 0, days)
+	now := time.Now()
+	for i := days - 1; i >= 0; i-- {
+		day := now.AddDate(0, 0, -i).Format("2006-01-02")
+		out = append(out, SparklinePoint{Day: day, Count: found[day]})
+	}
+	return out, nil
+}
+
+// HeatmapCell is one (worktree, day, count) tuple. The frontend pivots into
+// a grid: rows = worktrees, cols = days (ascending).
+type HeatmapCell struct {
+	WorktreePath string `json:"worktreePath"`
+	Project      string `json:"project"`
+	Day          string `json:"day"`
+	Count        int    `json:"count"`
+}
+
+// ProjectHeatmap returns cells for the top-N worktrees (by total writes in
+// the window) across the last `days` days. days<=0 → 14, topN<=0 → 10.
+// Server-side fills zero-count cells so the frontend just renders a grid.
+func (a *App) ProjectHeatmap(days, topN int) ([]HeatmapCell, error) {
+	if a.live == nil {
+		return nil, fmt.Errorf("live db not open")
+	}
+	if days <= 0 {
+		days = 14
+	}
+	if topN <= 0 {
+		topN = 10
+	}
+	since := fmt.Sprintf("-%d days", days-1)
+
+	// pick top-N worktrees by total writes in window
+	topRows, err := a.live.Query(`
+        SELECT worktree_path, MAX(project), COUNT(*) AS n
+          FROM live_docs
+         WHERE worktree_path IS NOT NULL AND worktree_path <> ''
+           AND mtime >= strftime('%s', 'now', ?, 'start of day')
+         GROUP BY worktree_path
+         ORDER BY n DESC
+         LIMIT ?`, since, topN)
+	if err != nil {
+		return nil, err
+	}
+	type wtInfo struct{ project string }
+	wts := map[string]wtInfo{}
+	var wtOrder []string
+	for topRows.Next() {
+		var wt, proj string
+		var n int
+		if err := topRows.Scan(&wt, &proj, &n); err != nil {
+			topRows.Close()
+			return nil, err
+		}
+		wts[wt] = wtInfo{project: proj}
+		wtOrder = append(wtOrder, wt)
+	}
+	topRows.Close()
+	if len(wtOrder) == 0 {
+		return nil, nil
+	}
+
+	// counts per (wt, day) for those worktrees
+	placeholders := make([]string, len(wtOrder))
+	args := []any{since}
+	for i, wt := range wtOrder {
+		placeholders[i] = "?"
+		args = append(args, wt)
+	}
+	q := fmt.Sprintf(`
+        SELECT worktree_path, date(mtime,'unixepoch','localtime') AS d, COUNT(*)
+          FROM live_docs
+         WHERE mtime >= strftime('%%s','now',?,'start of day')
+           AND worktree_path IN (%s)
+         GROUP BY worktree_path, d`, strings.Join(placeholders, ","))
+	rows, err := a.live.Query(q, args...)
+	if err != nil {
+		return nil, err
+	}
+	type key struct{ wt, day string }
+	found := map[key]int{}
+	for rows.Next() {
+		var wt, d string
+		var n int
+		if err := rows.Scan(&wt, &d, &n); err != nil {
+			rows.Close()
+			return nil, err
+		}
+		found[key{wt, d}] = n
+	}
+	rows.Close()
+
+	// fill grid
+	out := make([]HeatmapCell, 0, len(wtOrder)*days)
+	now := time.Now()
+	for _, wt := range wtOrder {
+		for i := days - 1; i >= 0; i-- {
+			day := now.AddDate(0, 0, -i).Format("2006-01-02")
+			out = append(out, HeatmapCell{
+				WorktreePath: wt,
+				Project:      wts[wt].project,
+				Day:          day,
+				Count:        found[key{wt, day}],
+			})
+		}
+	}
+	return out, nil
+}
+
 // LiveMtime returns the live.db file mtime as unix seconds. Frontend polls
 // this on a 5s interval; when it changes, the GUI bumps reloadKey and re-runs
 // all queries — that's how the GUI tracks daemon-side reconciles and peer

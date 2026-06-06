@@ -4,6 +4,8 @@ import {main} from '../models';
 import {artifacts} from '../models';
 import {search} from '../models';
 
+export function ActivityCounts():Promise<main.ActivityCounts>;
+
 export function FacetCounts():Promise<main.FacetCountsResult>;
 
 export function FeaturesByRepo():Promise<Array<main.FeatureRow>>;
@@ -17,6 +19,10 @@ export function ListArtifacts(arg1:artifacts.ListFilter,arg2:string,arg3:number)
 export function ListSessions(arg1:main.SessionFilter,arg2:number):Promise<Array<search.Hit>>;
 
 export function LiveMtime():Promise<number>;
+
+export function ProjectHeatmap(arg1:number,arg2:number):Promise<Array<main.HeatmapCell>>;
+
+export function ProjectSparkline(arg1:string,arg2:number):Promise<Array<main.SparklinePoint>>;
 
 export function ReadFile(arg1:string):Promise<string>;
 

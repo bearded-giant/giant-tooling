@@ -12,12 +12,15 @@ import {
 } from "../wailsjs/runtime/runtime";
 import "./App.css";
 import {
+  ActivityCounts,
   FacetCounts,
   FeaturesByRepo,
   GetArtifactBody,
   ListArtifacts,
   ListSessions,
   LiveMtime,
+  ProjectHeatmap,
+  ProjectSparkline,
   ReadFile,
   RecentFiles,
   RecentRepos,
@@ -158,6 +161,10 @@ function App() {
   const [repoActivity, setRepoActivity] = useState<main.RepoActivity[]>([]);
   const [expandedWorktree, setExpandedWorktree] = useState<string | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<main.FileActivity[]>([]);
+  const [activityCounts, setActivityCounts] = useState<main.ActivityCounts | null>(null);
+  const [activityFilter, setActivityFilter] = useState("");
+  const [sparklines, setSparklines] = useState<Record<string, main.SparklinePoint[]>>({});
+  const [heatmap, setHeatmap] = useState<main.HeatmapCell[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
   const topbarRef = useRef<HTMLDivElement>(null);
@@ -204,6 +211,41 @@ function App() {
     RecentRepos(50)
       .then((rows) => setRepoActivity(rows || []))
       .catch((e) => setErr(String(e)));
+    ActivityCounts()
+      .then((c) => setActivityCounts(c))
+      .catch((e) => setErr(String(e)));
+    ProjectHeatmap(14, 10)
+      .then((cells) => setHeatmap(cells || []))
+      .catch((e) => setErr(String(e)));
+  }, [reloadKey]);
+
+  // sparklines: fan out per visible repo after RecentRepos lands. Cached in
+  // a map keyed by worktreePath so re-renders don't refetch. Cleared on
+  // reloadKey so daemon backfill picks up fresh numbers.
+  useEffect(() => {
+    if (tab !== "activity") return;
+    if (!repoActivity.length) return;
+    const wanted = repoActivity.slice(0, 30).map((r) => r.worktreePath);
+    const missing = wanted.filter((wt) => !(wt in sparklines));
+    if (!missing.length) return;
+    Promise.all(
+      missing.map((wt) =>
+        ProjectSparkline(wt, 7)
+          .then((pts) => [wt, pts] as [string, main.SparklinePoint[]])
+          .catch(() => [wt, [] as main.SparklinePoint[]] as [string, main.SparklinePoint[]]),
+      ),
+    ).then((pairs) => {
+      setSparklines((prev) => {
+        const next = { ...prev };
+        for (const [wt, pts] of pairs) next[wt] = pts;
+        return next;
+      });
+    });
+  }, [tab, repoActivity, sparklines]);
+
+  // reset sparkline cache when live.db ticks so a fresh poll picks up new bars
+  useEffect(() => {
+    setSparklines({});
   }, [reloadKey]);
 
   // load files for the currently-expanded worktree; reset when collapsed or
@@ -775,6 +817,14 @@ function App() {
             )}
           </>
         )}
+        {tab === "activity" && (
+          <ActivitySidebar
+            counts={activityCounts}
+            filter={activityFilter}
+            onFilter={setActivityFilter}
+            heatmap={heatmap}
+          />
+        )}
         {tab === "tools" && (
           <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>
             <p style={{ marginTop: 0 }}>
@@ -917,9 +967,15 @@ function App() {
           ))}
         {tab === "activity" && (
           <ActivityList
-            repos={repoActivity}
+            repos={repoActivity.filter((r) =>
+              activityFilter
+                ? r.project.toLowerCase().includes(activityFilter.toLowerCase()) ||
+                  r.worktreePath.toLowerCase().includes(activityFilter.toLowerCase())
+                : true,
+            )}
             expandedWorktree={expandedWorktree}
             expandedFiles={expandedFiles}
+            sparklines={sparklines}
             onToggle={(wt) =>
               setExpandedWorktree((cur) => (cur === wt ? null : wt))
             }
@@ -1505,17 +1561,19 @@ function ActivityList({
   repos,
   expandedWorktree,
   expandedFiles,
+  sparklines,
   onToggle,
 }: {
   repos: main.RepoActivity[];
   expandedWorktree: string | null;
   expandedFiles: main.FileActivity[];
+  sparklines: Record<string, main.SparklinePoint[]>;
   onToggle: (worktree: string) => void;
 }) {
   if (!repos.length) {
     return (
       <div className="row-meta" style={{ padding: 12 }}>
-        no activity (live.db empty?)
+        no activity (live.db empty? or filter excludes everything)
       </div>
     );
   }
@@ -1523,20 +1581,24 @@ function ActivityList({
     <>
       {repos.map((r) => {
         const isOpen = expandedWorktree === r.worktreePath;
+        const spark = sparklines[r.worktreePath] || [];
         return (
           <div key={r.worktreePath} className="result-row">
             <div
               onClick={() => onToggle(r.worktreePath)}
-              style={{ cursor: "pointer" }}
+              style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
             >
-              <div className="row-head">
-                <span className="chip">{isOpen ? "▾" : "▸"}</span>
-                <span className="row-title">{r.project}</span>
-                <span className="row-meta">{ago(r.mtime)}</span>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="row-head">
+                  <span className="chip">{isOpen ? "▾" : "▸"}</span>
+                  <span className="row-title">{r.project}</span>
+                  <span className="row-meta">{ago(r.mtime)}</span>
+                </div>
+                <div className="row-meta">
+                  {r.docCount} doc{r.docCount === 1 ? "" : "s"} · {r.worktreePath}
+                </div>
               </div>
-              <div className="row-meta">
-                {r.docCount} doc{r.docCount === 1 ? "" : "s"} · {r.worktreePath}
-              </div>
+              {spark.length > 0 && <Sparkline points={spark} />}
             </div>
             {isOpen && (
               <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: "2px solid var(--border)" }}>
@@ -1589,6 +1651,186 @@ function ago(mtime: number): string {
 function trimWorktree(path: string, wt: string): string {
   if (wt && path.startsWith(wt + "/")) return path.slice(wt.length + 1);
   return path;
+}
+
+// Sparkline renders a fixed-width inline SVG bar chart of doc-write counts
+// per day. Empty days render as a flat baseline so all rows visually align.
+function Sparkline({ points }: { points: main.SparklinePoint[] }) {
+  const w = 84;
+  const h = 22;
+  const max = Math.max(1, ...points.map((p) => p.count));
+  const bw = w / points.length;
+  return (
+    <svg
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      style={{ flexShrink: 0, opacity: 0.85 }}
+      aria-label="7-day activity"
+    >
+      {points.map((p, i) => {
+        const bh = (p.count / max) * (h - 2);
+        return (
+          <rect
+            key={p.day}
+            x={i * bw + 0.5}
+            y={h - bh}
+            width={Math.max(1, bw - 1)}
+            height={Math.max(1, bh)}
+            fill={p.count === 0 ? "var(--border)" : "var(--accent)"}
+          />
+        );
+      })}
+    </svg>
+  );
+}
+
+function ActivitySidebar({
+  counts,
+  filter,
+  onFilter,
+  heatmap,
+}: {
+  counts: main.ActivityCounts | null;
+  filter: string;
+  onFilter: (v: string) => void;
+  heatmap: main.HeatmapCell[];
+}) {
+  return (
+    <>
+      {counts && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 6,
+            padding: "8px 4px",
+          }}
+        >
+          <Tile label="live docs" value={counts.liveDocs} />
+          <Tile label="sessions" value={counts.sessions} />
+          <Tile label="writes today" value={counts.writesToday} accent />
+          <Tile label="active features" value={counts.activeFeatures} />
+        </div>
+      )}
+      <div className="sidebar-filter">
+        <input
+          type="search"
+          placeholder="filter projects…"
+          value={filter}
+          onChange={(e) => onFilter(e.target.value)}
+        />
+      </div>
+      {heatmap.length > 0 && <HeatmapPanel cells={heatmap} />}
+    </>
+  );
+}
+
+function Tile({
+  label,
+  value,
+  accent,
+}: {
+  label: string;
+  value: number;
+  accent?: boolean;
+}) {
+  return (
+    <div
+      style={{
+        background: "var(--bg-2)",
+        border: "1px solid var(--border)",
+        borderRadius: 4,
+        padding: "6px 8px",
+      }}
+    >
+      <div
+        style={{
+          fontSize: 16,
+          fontWeight: 700,
+          color: accent ? "var(--accent)" : "var(--fg)",
+        }}
+      >
+        {value.toLocaleString()}
+      </div>
+      <div style={{ fontSize: 10, color: "var(--fg-muted)" }}>{label}</div>
+    </div>
+  );
+}
+
+// HeatmapPanel pivots flat HeatmapCell[] into a project × day grid.
+// Cell color saturates with count relative to the panel's max so a sleepy
+// repo still shows shape, not just one bright row.
+function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
+  if (!cells.length) return null;
+  const byWt = new Map<string, { project: string; days: main.HeatmapCell[] }>();
+  for (const c of cells) {
+    if (!byWt.has(c.worktreePath)) {
+      byWt.set(c.worktreePath, { project: c.project, days: [] });
+    }
+    byWt.get(c.worktreePath)!.days.push(c);
+  }
+  const max = Math.max(1, ...cells.map((c) => c.count));
+  const rows = Array.from(byWt.entries());
+  return (
+    <div style={{ padding: "8px 4px" }}>
+      <div
+        style={{
+          fontSize: 11,
+          color: "var(--fg-muted)",
+          marginBottom: 6,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+      >
+        last 14 days · top {rows.length}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {rows.map(([wt, info]) => (
+          <div
+            key={wt}
+            style={{ display: "flex", alignItems: "center", gap: 6 }}
+          >
+            <div
+              style={{
+                flex: 1,
+                fontSize: 11,
+                color: "var(--fg-muted)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+              title={wt}
+            >
+              {info.project}
+            </div>
+            <div style={{ display: "flex", gap: 1 }}>
+              {info.days.map((c) => {
+                const intensity = c.count === 0 ? 0 : 0.15 + (c.count / max) * 0.85;
+                return (
+                  <div
+                    key={c.day}
+                    title={`${c.day}: ${c.count}`}
+                    style={{
+                      width: 9,
+                      height: 9,
+                      background:
+                        c.count === 0
+                          ? "var(--bg-3)"
+                          : `color-mix(in srgb, var(--accent) ${Math.round(
+                              intensity * 100,
+                            )}%, transparent)`,
+                      border: "1px solid var(--border)",
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function SessionRow({

@@ -77,6 +77,24 @@ export namespace artifacts {
 
 export namespace main {
 	
+	export class ActivityCounts {
+	    liveDocs: number;
+	    sessions: number;
+	    writesToday: number;
+	    activeFeatures: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ActivityCounts(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.liveDocs = source["liveDocs"];
+	        this.sessions = source["sessions"];
+	        this.writesToday = source["writesToday"];
+	        this.activeFeatures = source["activeFeatures"];
+	    }
+	}
 	export class FacetCountsResult {
 	    byType: Record<string, number>;
 	    byLifecycle: Record<string, number>;
@@ -135,6 +153,24 @@ export namespace main {
 	        this.mtime = source["mtime"];
 	    }
 	}
+	export class HeatmapCell {
+	    worktreePath: string;
+	    project: string;
+	    day: string;
+	    count: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new HeatmapCell(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.worktreePath = source["worktreePath"];
+	        this.project = source["project"];
+	        this.day = source["day"];
+	        this.count = source["count"];
+	    }
+	}
 	export class RepoActivity {
 	    project: string;
 	    worktreePath: string;
@@ -187,6 +223,20 @@ export namespace main {
 	        this.dirType = source["dirType"];
 	        this.topic = source["topic"];
 	        this.dateBucket = source["dateBucket"];
+	    }
+	}
+	export class SparklinePoint {
+	    day: string;
+	    count: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SparklinePoint(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.day = source["day"];
+	        this.count = source["count"];
 	    }
 	}
 	export class ToolUseFilter {
