@@ -219,34 +219,34 @@ function App() {
       .catch((e) => setErr(String(e)));
   }, [reloadKey]);
 
-  // sparklines: fan out per visible repo after RecentRepos lands. Cached in
-  // a map keyed by worktreePath so re-renders don't refetch. Cleared on
-  // reloadKey so daemon backfill picks up fresh numbers.
+  // sparklines: fan out per visible repo after RecentRepos lands. Cached by
+  // worktreePath so re-renders don't refetch. On reloadKey bump we refetch
+  // in place (NOT wipe-then-fetch) — wiping caused a frame where rows had
+  // no sparkline + a race when the daemon backfill bumped reloadKey faster
+  // than the fetch could land.
   useEffect(() => {
     if (tab !== "activity") return;
     if (!repoActivity.length) return;
     const wanted = repoActivity.slice(0, 30).map((r) => r.worktreePath);
-    const missing = wanted.filter((wt) => !(wt in sparklines));
-    if (!missing.length) return;
+    let cancelled = false;
     Promise.all(
-      missing.map((wt) =>
+      wanted.map((wt) =>
         ProjectSparkline(wt, 7)
           .then((pts) => [wt, pts] as [string, main.SparklinePoint[]])
           .catch(() => [wt, [] as main.SparklinePoint[]] as [string, main.SparklinePoint[]]),
       ),
     ).then((pairs) => {
+      if (cancelled) return;
       setSparklines((prev) => {
         const next = { ...prev };
         for (const [wt, pts] of pairs) next[wt] = pts;
         return next;
       });
     });
-  }, [tab, repoActivity, sparklines]);
-
-  // reset sparkline cache when live.db ticks so a fresh poll picks up new bars
-  useEffect(() => {
-    setSparklines({});
-  }, [reloadKey]);
+    return () => {
+      cancelled = true;
+    };
+  }, [tab, repoActivity, reloadKey]);
 
   // load files for the currently-expanded worktree; reset when collapsed or
   // when reloadKey bumps (auto-refresh from LiveMtime poll).
@@ -1592,13 +1592,22 @@ function ActivityList({
                 <div className="row-head">
                   <span className="chip">{isOpen ? "▾" : "▸"}</span>
                   <span className="row-title">{r.project}</span>
-                  <span className="row-meta">{ago(r.mtime)}</span>
                 </div>
                 <div className="row-meta">
                   {r.docCount} doc{r.docCount === 1 ? "" : "s"} · {r.worktreePath}
                 </div>
               </div>
-              {spark.length > 0 && <Sparkline points={spark} />}
+              {/* fixed-width sparkline slot so age stays aligned even when
+                  data hasn't loaded yet for a worktree */}
+              <div style={{ width: 84, flexShrink: 0 }}>
+                {spark.length > 0 && <Sparkline points={spark} />}
+              </div>
+              <div
+                className="row-meta"
+                style={{ width: 36, textAlign: "right", flexShrink: 0 }}
+              >
+                {ago(r.mtime)}
+              </div>
             </div>
             {isOpen && (
               <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: "2px solid var(--border)" }}>
@@ -1805,32 +1814,73 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
               {info.project}
             </div>
             <div style={{ display: "flex", gap: 1 }}>
-              {info.days.map((c) => {
-                const intensity = c.count === 0 ? 0 : 0.15 + (c.count / max) * 0.85;
-                return (
-                  <div
-                    key={c.day}
-                    title={`${c.day}: ${c.count}`}
-                    style={{
-                      width: 9,
-                      height: 9,
-                      background:
-                        c.count === 0
-                          ? "var(--bg-3)"
-                          : `color-mix(in srgb, var(--accent) ${Math.round(
-                              intensity * 100,
-                            )}%, transparent)`,
-                      border: "1px solid var(--border)",
-                    }}
-                  />
-                );
-              })}
+              {info.days.map((c) => (
+                <div
+                  key={c.day}
+                  title={`${c.day}: ${c.count}`}
+                  style={{
+                    width: 9,
+                    height: 9,
+                    background: heatColor(c.count, max),
+                    border: "1px solid var(--border)",
+                  }}
+                />
+              ))}
             </div>
           </div>
         ))}
       </div>
+      {/* gradient legend — 5 swatches from empty to max so users can map
+          color back to count. tooltip on each shows the bucket. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+          marginTop: 8,
+          fontSize: 10,
+          color: "var(--fg-muted)",
+        }}
+      >
+        <span>0</span>
+        <div style={{ display: "flex", gap: 1 }}>
+          {[0, 0.25, 0.5, 0.75, 1].map((f) => {
+            const n = Math.round(f * max);
+            return (
+              <div
+                key={f}
+                title={`${n}`}
+                style={{
+                  width: 12,
+                  height: 9,
+                  background: heatColor(n, max),
+                  border: "1px solid var(--border)",
+                }}
+              />
+            );
+          })}
+        </div>
+        <span>{max}+</span>
+      </div>
     </div>
   );
+}
+
+// heatColor returns the cell background for a (count, panel-max) pair.
+// 0 = subtle bg-3, anything else fades from low-intensity accent up to
+// solid white at the panel max. Single helper so the row cells + legend
+// stay perfectly in sync.
+function heatColor(count: number, max: number): string {
+  if (count <= 0) return "var(--bg-3)";
+  const f = Math.min(1, count / max);
+  if (f >= 1) return "white";
+  // ramp: dark bg-3 → accent → white. Two color-mix legs.
+  if (f < 0.5) {
+    const pct = Math.round((f / 0.5) * 100);
+    return `color-mix(in srgb, var(--accent) ${pct}%, var(--bg-3))`;
+  }
+  const pct = Math.round(((f - 0.5) / 0.5) * 100);
+  return `color-mix(in srgb, white ${pct}%, var(--accent))`;
 }
 
 function SessionRow({
