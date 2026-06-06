@@ -9,7 +9,7 @@
 
 .sidebar-resizer {
   position: absolute;
-  top: 0;
+  top: var(--topbar-h, 80px);
   bottom: 0;
   width: 6px;
   margin-left: -3px;

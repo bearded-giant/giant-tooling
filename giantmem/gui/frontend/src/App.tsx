@@ -159,6 +159,9 @@ function App() {
   const [expandedWorktree, setExpandedWorktree] = useState<string | null>(null);
   const [expandedFiles, setExpandedFiles] = useState<main.FileActivity[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+  const topbarRef = useRef<HTMLDivElement>(null);
+  const chipsRef = useRef<HTMLDivElement>(null);
 
   const refreshAll = useCallback(() => {
     setReloadKey((k) => k + 1);
@@ -441,15 +444,33 @@ function App() {
         ? toolHits.length
         : sessionHits.length;
 
+  // measure the topbar + filter-chips stack so the sidebar resizer doesn't
+  // start at the very top of the window and overlay the tab buttons. write
+  // the combined height to a CSS var the resizer reads.
+  useEffect(() => {
+    const apply = () => {
+      const top = topbarRef.current?.getBoundingClientRect().height ?? 0;
+      const chips = chipsRef.current?.getBoundingClientRect().height ?? 0;
+      const h = Math.ceil(top + chips);
+      gridRef.current?.style.setProperty("--topbar-h", `${h}px`);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    if (topbarRef.current) ro.observe(topbarRef.current);
+    if (chipsRef.current) ro.observe(chipsRef.current);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <div
       id="App"
+      ref={gridRef}
       className="app-grid"
       style={{
         gridTemplateColumns: `${sidebarWidth}px 1fr 1fr`,
       }}
     >
-      <div className="topbar">
+      <div className="topbar" ref={topbarRef}>
         <div className="brand">giantmem</div>
         <div className="tabs">
           <button
@@ -555,7 +576,7 @@ function App() {
         )}
       </div>
 
-      <div className="filter-chips">
+      <div className="filter-chips" ref={chipsRef}>
         {tab === "sessions" &&
         (!!selSessionDate || !!selSessionProject || !!selSessionDirType || !!selSessionTopic) ? (
           <>
