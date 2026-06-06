@@ -115,6 +115,44 @@ export namespace main {
 	        this.worktree = source["worktree"];
 	    }
 	}
+	export class FileActivity {
+	    path: string;
+	    project: string;
+	    feature?: string;
+	    dirType: string;
+	    mtime: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileActivity(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.project = source["project"];
+	        this.feature = source["feature"];
+	        this.dirType = source["dirType"];
+	        this.mtime = source["mtime"];
+	    }
+	}
+	export class RepoActivity {
+	    project: string;
+	    worktreePath: string;
+	    docCount: number;
+	    mtime: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new RepoActivity(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.project = source["project"];
+	        this.worktreePath = source["worktreePath"];
+	        this.docCount = source["docCount"];
+	        this.mtime = source["mtime"];
+	    }
+	}
 	export class SessionFacetCounts {
 	    byProject: Record<string, number>;
 	    byDirType: Record<string, number>;

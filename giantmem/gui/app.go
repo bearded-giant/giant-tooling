@@ -689,6 +689,92 @@ func (a *App) ReadFile(path string) (string, error) {
 	return string(body), nil
 }
 
+// RepoActivity describes one (project, worktree) bucket: how many .giantmem
+// docs it holds and when any of them was last touched. Powers the GUI
+// activity tab's rolling-log view — newest project at the top.
+type RepoActivity struct {
+	Project      string `json:"project"`
+	WorktreePath string `json:"worktreePath"`
+	DocCount     int    `json:"docCount"`
+	Mtime        int64  `json:"mtime"`
+}
+
+// FileActivity is one row in the per-project expand panel. Mirrors what
+// `giantmem recent docs -p <project>` returns from the CLI.
+type FileActivity struct {
+	Path    string `json:"path"`
+	Project string `json:"project"`
+	Feature string `json:"feature,omitempty"`
+	DirType string `json:"dirType"`
+	Mtime   int64  `json:"mtime"`
+}
+
+// RecentRepos returns the N most-recently-touched projects (live.db),
+// ordered by last mtime desc. limit<=0 → 30.
+func (a *App) RecentRepos(limit int) ([]RepoActivity, error) {
+	if a.live == nil {
+		return nil, fmt.Errorf("live db not open")
+	}
+	if limit <= 0 {
+		limit = 30
+	}
+	rows, err := a.live.Query(`
+        SELECT project, COALESCE(worktree_path,''),
+               COUNT(*) AS docs, MAX(mtime) AS m
+          FROM live_docs
+         WHERE worktree_path IS NOT NULL AND worktree_path <> ''
+         GROUP BY worktree_path
+         ORDER BY m DESC
+         LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []RepoActivity
+	for rows.Next() {
+		var r RepoActivity
+		if err := rows.Scan(&r.Project, &r.WorktreePath, &r.DocCount, &r.Mtime); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// RecentFiles returns the N most-recently-touched files for one worktree.
+// Caller passes the worktree_path (not the project) so split repo/wt rows
+// stay separate. limit<=0 → 50.
+func (a *App) RecentFiles(worktreePath string, limit int) ([]FileActivity, error) {
+	if a.live == nil {
+		return nil, fmt.Errorf("live db not open")
+	}
+	if worktreePath == "" {
+		return nil, fmt.Errorf("worktreePath required")
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	rows, err := a.live.Query(`
+        SELECT path, project, COALESCE(feature,''), COALESCE(dir_type,''), mtime
+          FROM live_docs
+         WHERE worktree_path = ?
+         ORDER BY mtime DESC
+         LIMIT ?`, worktreePath, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []FileActivity
+	for rows.Next() {
+		var r FileActivity
+		if err := rows.Scan(&r.Path, &r.Project, &r.Feature, &r.DirType, &r.Mtime); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
 // LiveMtime returns the live.db file mtime as unix seconds. Frontend polls
 // this on a 5s interval; when it changes, the GUI bumps reloadKey and re-runs
 // all queries — that's how the GUI tracks daemon-side reconciles and peer

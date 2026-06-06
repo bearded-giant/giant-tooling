@@ -19,6 +19,8 @@ import {
   ListSessions,
   LiveMtime,
   ReadFile,
+  RecentFiles,
+  RecentRepos,
   SearchFTS,
   SearchHybrid,
   SearchToolUses,
@@ -26,7 +28,7 @@ import {
 } from "../wailsjs/go/main/App";
 import { artifacts, main, search } from "../wailsjs/go/models";
 
-type Tab = "artifacts" | "sessions" | "tools";
+type Tab = "artifacts" | "sessions" | "tools" | "activity";
 
 const TOOL_NAMES = [
   "Bash",
@@ -153,6 +155,9 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [justRefreshed, setJustRefreshed] = useState(false);
+  const [repoActivity, setRepoActivity] = useState<main.RepoActivity[]>([]);
+  const [expandedWorktree, setExpandedWorktree] = useState<string | null>(null);
+  const [expandedFiles, setExpandedFiles] = useState<main.FileActivity[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const refreshAll = useCallback(() => {
@@ -193,7 +198,22 @@ function App() {
     SessionFacets()
       .then((sf) => setSessionFacets(sf))
       .catch((e) => setErr(String(e)));
+    RecentRepos(50)
+      .then((rows) => setRepoActivity(rows || []))
+      .catch((e) => setErr(String(e)));
   }, [reloadKey]);
+
+  // load files for the currently-expanded worktree; reset when collapsed or
+  // when reloadKey bumps (auto-refresh from LiveMtime poll).
+  useEffect(() => {
+    if (!expandedWorktree) {
+      setExpandedFiles([]);
+      return;
+    }
+    RecentFiles(expandedWorktree, 100)
+      .then((rows) => setExpandedFiles(rows || []))
+      .catch((e) => setErr(String(e)));
+  }, [expandedWorktree, reloadKey]);
 
   // ordered ids list for j/k nav
   const visibleRowIDs: string[] = useMemo(() => {
@@ -458,6 +478,15 @@ function App() {
             }}
           >
             tools
+          </button>
+          <button
+            className={tab === "activity" ? "active" : ""}
+            onClick={() => {
+              setTab("activity");
+              setSelection(null);
+            }}
+          >
+            activity
           </button>
         </div>
         <div className="search-wrap">
@@ -865,6 +894,16 @@ function App() {
               }
             />
           ))}
+        {tab === "activity" && (
+          <ActivityList
+            repos={repoActivity}
+            expandedWorktree={expandedWorktree}
+            expandedFiles={expandedFiles}
+            onToggle={(wt) =>
+              setExpandedWorktree((cur) => (cur === wt ? null : wt))
+            }
+          />
+        )}
       </section>
 
       <section className="detail">
@@ -1439,6 +1478,96 @@ function ToolUseDetail({
       </div>
     </>
   );
+}
+
+function ActivityList({
+  repos,
+  expandedWorktree,
+  expandedFiles,
+  onToggle,
+}: {
+  repos: main.RepoActivity[];
+  expandedWorktree: string | null;
+  expandedFiles: main.FileActivity[];
+  onToggle: (worktree: string) => void;
+}) {
+  if (!repos.length) {
+    return (
+      <div className="row-meta" style={{ padding: 12 }}>
+        no activity (live.db empty?)
+      </div>
+    );
+  }
+  return (
+    <>
+      {repos.map((r) => {
+        const isOpen = expandedWorktree === r.worktreePath;
+        return (
+          <div key={r.worktreePath} className="result-row">
+            <div
+              onClick={() => onToggle(r.worktreePath)}
+              style={{ cursor: "pointer" }}
+            >
+              <div className="row-head">
+                <span className="chip">{isOpen ? "▾" : "▸"}</span>
+                <span className="row-title">{r.project}</span>
+                <span className="row-meta">{ago(r.mtime)}</span>
+              </div>
+              <div className="row-meta">
+                {r.docCount} doc{r.docCount === 1 ? "" : "s"} · {r.worktreePath}
+              </div>
+            </div>
+            {isOpen && (
+              <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: "2px solid var(--border)" }}>
+                {expandedFiles.length === 0 && (
+                  <div className="row-meta">loading…</div>
+                )}
+                {expandedFiles.map((f) => (
+                  <div key={f.path} style={{ padding: "3px 0", fontSize: 12 }}>
+                    <span className="row-meta" style={{ marginRight: 8 }}>
+                      {ago(f.mtime)}
+                    </span>
+                    {f.feature && (
+                      <span className="chip" style={{ marginRight: 6 }}>
+                        {f.feature}
+                      </span>
+                    )}
+                    {f.dirType && (
+                      <span className="row-meta" style={{ marginRight: 6 }}>
+                        {f.dirType}
+                      </span>
+                    )}
+                    <span style={{ fontFamily: "ui-monospace" }}>
+                      {trimWorktree(f.path, r.worktreePath)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+// ago renders a unix-second mtime as a short relative string (e.g. "23m",
+// "11h", "3d"). Used by ActivityList; keep colocated to avoid pulling in a
+// date lib for one place.
+function ago(mtime: number): string {
+  const s = Math.max(0, Math.floor(Date.now() / 1000 - mtime));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 48) return `${h}h`;
+  const d = Math.floor(h / 24);
+  return `${d}d`;
+}
+
+function trimWorktree(path: string, wt: string): string {
+  if (wt && path.startsWith(wt + "/")) return path.slice(wt.length + 1);
+  return path;
 }
 
 function SessionRow({

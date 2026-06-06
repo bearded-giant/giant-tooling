@@ -34,6 +34,14 @@ export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
 }
 
+export function RecentFiles(arg1, arg2) {
+  return window['go']['main']['App']['RecentFiles'](arg1, arg2);
+}
+
+export function RecentRepos(arg1) {
+  return window['go']['main']['App']['RecentRepos'](arg1);
+}
+
 export function SearchFTS(arg1) {
   return window['go']['main']['App']['SearchFTS'](arg1);
 }

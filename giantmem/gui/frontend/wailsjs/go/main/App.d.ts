@@ -20,6 +20,10 @@ export function LiveMtime():Promise<number>;
 
 export function ReadFile(arg1:string):Promise<string>;
 
+export function RecentFiles(arg1:string,arg2:number):Promise<Array<main.FileActivity>>;
+
+export function RecentRepos(arg1:number):Promise<Array<main.RepoActivity>>;
+
 export function SearchFTS(arg1:search.Params):Promise<Array<search.Hit>>;
 
 export function SearchHybrid(arg1:string,arg2:artifacts.ListFilter,arg3:number):Promise<Array<search.HybridResult>>;
