@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
 import "highlight.js/styles/github-dark.css";
 import {
+  BrowserOpenURL,
   ClipboardSetText,
   WindowGetPosition,
   WindowGetSize,
@@ -30,6 +31,7 @@ import {
   SearchToolUses,
   SessionFacets,
   SetPref,
+  Version,
 } from "../wailsjs/go/main/App";
 import { artifacts, main, search } from "../wailsjs/go/models";
 
@@ -179,6 +181,8 @@ function App() {
   const [activityFilter, setActivityFilter] = useState("");
   const [sparklines, setSparklines] = useState<Record<string, main.SparklinePoint[]>>({});
   const [heatmap, setHeatmap] = useState<main.HeatmapCell[]>([]);
+  const [version, setVersion] = useState<string>("");
+  const [aboutOpen, setAboutOpen] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
   const activityFilterRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -223,6 +227,9 @@ function App() {
     SessionFacets()
       .then((sf) => setSessionFacets(sf))
       .catch((e) => setErr(String(e)));
+    Version()
+      .then((v: string) => setVersion(v))
+      .catch(() => setVersion(""));
     RecentRepos(50)
       .then((rows) => setRepoActivity(rows || []))
       .catch((e) => setErr(String(e)));
@@ -406,7 +413,7 @@ function App() {
               Since: "",
               Until: "",
               Limit: 100,
-              IncludeFull: false,
+              IncludeFull: true,
             };
             hits = (await SearchFTS(params)) || [];
             // client-side topic/date filter for FTS path since search.Run
@@ -417,6 +424,9 @@ function App() {
             if (selSessionDate) {
               hits = filterByDateBucket(hits, selSessionDate);
             }
+            hits = [...hits].sort((a, b) =>
+              (b.timestamp || "").localeCompare(a.timestamp || ""),
+            );
           } else {
             hits = (await ListSessions(sessionFilter, 100)) || [];
           }
@@ -507,6 +517,34 @@ function App() {
         ? toolHits.length
         : sessionHits.length;
 
+  const trimmedQuery = query.trim();
+  const queryActive = trimmedQuery.length > 0;
+  const sessionFilterCount =
+    (selSessionDate ? 1 : 0) +
+    (selSessionProject ? 1 : 0) +
+    (selSessionDirType ? 1 : 0) +
+    (selSessionTopic ? 1 : 0) +
+    (tab === "sessions" && queryActive ? 1 : 0);
+  const artifactFilterCount =
+    selType.size +
+    selStatus.size +
+    selLifecycle.size +
+    (selFeature ? 1 : 0) +
+    (selRepo ? 1 : 0) +
+    (tab === "artifacts" && queryActive ? 1 : 0);
+  const toolFilterCount =
+    (tab === "tools" && queryActive ? 1 : 0) +
+    (tab === "tools" && toolNameFilter !== "any" ? 1 : 0);
+  const activeFilterCount =
+    tab === "sessions"
+      ? sessionFilterCount
+      : tab === "artifacts"
+        ? artifactFilterCount
+        : tab === "tools"
+          ? toolFilterCount
+          : 0;
+  const hasActiveFilters = activeFilterCount > 0;
+
   // measure the topbar + filter-chips stack so the sidebar resizer doesn't
   // start at the very top of the window and overlay the tab buttons. write
   // the combined height to a CSS var the resizer reads.
@@ -553,6 +591,11 @@ function App() {
             }}
           >
             sessions
+            {sessionFilterCount > 0 && (
+              <span className="tab-filter-badge" title={`${sessionFilterCount} filter(s) active`}>
+                {sessionFilterCount}
+              </span>
+            )}
           </button>
           <button
             className={tab === "artifacts" ? "active" : ""}
@@ -562,6 +605,11 @@ function App() {
             }}
           >
             artifacts
+            {artifactFilterCount > 0 && (
+              <span className="tab-filter-badge" title={`${artifactFilterCount} filter(s) active`}>
+                {artifactFilterCount}
+              </span>
+            )}
           </button>
           <button
             className={tab === "tools" ? "active" : ""}
@@ -639,114 +687,145 @@ function App() {
         )}
       </div>
 
-      <div className="filter-chips" ref={chipsRef}>
+      <div
+        className={`filter-chips${hasActiveFilters ? " has-filters" : ""}`}
+        ref={chipsRef}
+      >
+        {hasActiveFilters && (
+          <span className="filter-active-label">
+            {activeFilterCount} filter{activeFilterCount === 1 ? "" : "s"} active:
+          </span>
+        )}
+        {queryActive && (
+          <span className="filter-chip" onClick={() => setQuery("")}>
+            search: {trimmedQuery} <span className="x">×</span>
+          </span>
+        )}
         {tab === "sessions" &&
-        (!!selSessionDate || !!selSessionProject || !!selSessionDirType || !!selSessionTopic) ? (
-          <>
-            {selSessionDate && (
-              <span
-                className="filter-chip"
-                onClick={() => setSelSessionDate("")}
-              >
-                date: {selSessionDate} <span className="x">×</span>
-              </span>
-            )}
-            {selSessionProject && (
-              <span
-                className="filter-chip"
-                onClick={() => setSelSessionProject("")}
-              >
-                project: {selSessionProject} <span className="x">×</span>
-              </span>
-            )}
-            {selSessionDirType && (
-              <span
-                className="filter-chip"
-                onClick={() => setSelSessionDirType("")}
-              >
-                dir_type: {selSessionDirType} <span className="x">×</span>
-              </span>
-            )}
-            {selSessionTopic && (
-              <span
-                className="filter-chip"
-                onClick={() => setSelSessionTopic("")}
-              >
-                topic: {selSessionTopic} <span className="x">×</span>
-              </span>
-            )}
-            <span
-              className="filter-chip"
-              onClick={() => {
+          (!!selSessionDate ||
+            !!selSessionProject ||
+            !!selSessionDirType ||
+            !!selSessionTopic) && (
+            <>
+              {selSessionDate && (
+                <span
+                  className="filter-chip"
+                  onClick={() => setSelSessionDate("")}
+                >
+                  date: {selSessionDate} <span className="x">×</span>
+                </span>
+              )}
+              {selSessionProject && (
+                <span
+                  className="filter-chip"
+                  onClick={() => setSelSessionProject("")}
+                >
+                  project: {selSessionProject} <span className="x">×</span>
+                </span>
+              )}
+              {selSessionDirType && (
+                <span
+                  className="filter-chip"
+                  onClick={() => setSelSessionDirType("")}
+                >
+                  dir_type: {selSessionDirType} <span className="x">×</span>
+                </span>
+              )}
+              {selSessionTopic && (
+                <span
+                  className="filter-chip"
+                  onClick={() => setSelSessionTopic("")}
+                >
+                  topic: {selSessionTopic} <span className="x">×</span>
+                </span>
+              )}
+            </>
+          )}
+        {tab === "artifacts" &&
+          selType.size +
+            selStatus.size +
+            selLifecycle.size +
+            (selFeature ? 1 : 0) +
+            (selRepo ? 1 : 0) >
+            0 && (
+            <>
+              {[...selType].map((v) => (
+                <span
+                  key={`t-${v}`}
+                  className="filter-chip"
+                  onClick={() => toggleSet(selType, v, setSelType)}
+                >
+                  type: {v} <span className="x">×</span>
+                </span>
+              ))}
+              {[...selStatus].map((v) => (
+                <span
+                  key={`s-${v}`}
+                  className="filter-chip"
+                  onClick={() => toggleSet(selStatus, v, setSelStatus)}
+                >
+                  status: {v} <span className="x">×</span>
+                </span>
+              ))}
+              {[...selLifecycle].map((v) => (
+                <span
+                  key={`l-${v}`}
+                  className="filter-chip"
+                  onClick={() => toggleSet(selLifecycle, v, setSelLifecycle)}
+                >
+                  lifecycle: {v} <span className="x">×</span>
+                </span>
+              ))}
+              {selFeature && (
+                <span
+                  className="filter-chip"
+                  onClick={() => setSelFeature("")}
+                >
+                  feature:{" "}
+                  {selRepo ? `${selRepo}/${selFeature}` : selFeature}{" "}
+                  <span className="x">×</span>
+                </span>
+              )}
+              {selRepo && (
+                <span
+                  className="filter-chip"
+                  onClick={() => setSelRepo("")}
+                >
+                  repo: {selRepo} <span className="x">×</span>
+                </span>
+              )}
+            </>
+          )}
+        {tab === "tools" && toolNameFilter !== "any" && (
+          <span
+            className="filter-chip"
+            onClick={() => setToolNameFilter("any")}
+          >
+            tool: {toolNameFilter} <span className="x">×</span>
+          </span>
+        )}
+        {hasActiveFilters && (
+          <span
+            className="filter-chip"
+            onClick={() => {
+              setQuery("");
+              if (tab === "sessions") {
                 setSelSessionDate("");
                 setSelSessionProject("");
                 setSelSessionDirType("");
                 setSelSessionTopic("");
-              }}
-              style={{ color: "var(--fg-muted)" }}
-            >
-              clear all
-            </span>
-          </>
-        ) : tab === "artifacts" &&
-          (selType.size + selStatus.size + selLifecycle.size + (selFeature ? 1 : 0) + (selRepo ? 1 : 0)) > 0 ? (
-          <>
-            {[...selType].map((v) => (
-              <span
-                key={`t-${v}`}
-                className="filter-chip"
-                onClick={() =>
-                  toggleSet(selType, v, setSelType)
-                }
-              >
-                type: {v} <span className="x">×</span>
-              </span>
-            ))}
-            {[...selStatus].map((v) => (
-              <span
-                key={`s-${v}`}
-                className="filter-chip"
-                onClick={() =>
-                  toggleSet(selStatus, v, setSelStatus)
-                }
-              >
-                status: {v} <span className="x">×</span>
-              </span>
-            ))}
-            {[...selLifecycle].map((v) => (
-              <span
-                key={`l-${v}`}
-                className="filter-chip"
-                onClick={() =>
-                  toggleSet(selLifecycle, v, setSelLifecycle)
-                }
-              >
-                lifecycle: {v} <span className="x">×</span>
-              </span>
-            ))}
-            {selFeature && (
-              <span
-                className="filter-chip"
-                onClick={() => setSelFeature("")}
-              >
-                feature: {selRepo ? `${selRepo}/${selFeature}` : selFeature}{" "}
-                <span className="x">×</span>
-              </span>
-            )}
-            {selRepo && (
-              <span className="filter-chip" onClick={() => setSelRepo("")}>
-                repo: {selRepo} <span className="x">×</span>
-              </span>
-            )}
-            <span
-              className="filter-chip"
-              onClick={clearFacets}
-              style={{ color: "var(--fg-muted)" }}
-            >
-              clear all
-            </span>
-          </>
-        ) : (
+              } else if (tab === "artifacts") {
+                clearFacets();
+              } else if (tab === "tools") {
+                setToolNameFilter("any");
+              }
+            }}
+            style={{ color: "var(--fg-muted)" }}
+          >
+            clear all
+          </span>
+        )}
+        {!hasActiveFilters && (
           <span className="filter-hint">
             <span className="kbd">/</span> focus search ·{" "}
             <span className="kbd">j</span>/<span className="kbd">k</span> nav ·{" "}
@@ -1120,6 +1199,76 @@ function App() {
             facets: {Object.values(facets.byType || {}).reduce((a, b) => a + b, 0)} artifacts
           </span>
         )}
+        <span className="status-spacer" />
+        <button
+          type="button"
+          className="status-about"
+          onClick={() => setAboutOpen(true)}
+          title="about giantmem"
+        >
+          about
+        </button>
+        {version && (
+          <span className="status-version" title="giantmem GUI version">
+            v{version}
+          </span>
+        )}
+      </div>
+      {aboutOpen && (
+        <AboutModal version={version} onClose={() => setAboutOpen(false)} />
+      )}
+    </div>
+  );
+}
+
+function AboutModal({
+  version,
+  onClose,
+}: {
+  version: string;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const repoURL = "https://github.com/bearded-giant/giant-tooling";
+  const siteURL = "https://beardedgiantllc.com";
+  const openLink = (e: React.MouseEvent, url: string) => {
+    e.preventDefault();
+    BrowserOpenURL(url);
+  };
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal about-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="About Giantmem"
+      >
+        <button
+          type="button"
+          className="modal-close"
+          onClick={onClose}
+          aria-label="close"
+        >
+          ×
+        </button>
+        <h1 className="about-title">Giantmem</h1>
+        {version && <div className="about-version">v{version}</div>}
+        <div className="about-tagline">Built by Bearded Giant</div>
+        <div className="about-links">
+          <a href={repoURL} onClick={(e) => openLink(e, repoURL)}>
+            {repoURL.replace(/^https?:\/\//, "")}
+          </a>
+          <a href={siteURL} onClick={(e) => openLink(e, siteURL)}>
+            beardedgiantllc.com
+          </a>
+        </div>
       </div>
     </div>
   );

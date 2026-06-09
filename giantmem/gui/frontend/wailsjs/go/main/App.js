@@ -77,3 +77,7 @@ export function SessionFacets() {
 export function SetPref(arg1, arg2) {
   return window['go']['main']['App']['SetPref'](arg1, arg2);
 }
+
+export function Version() {
+  return window['go']['main']['App']['Version']();
+}

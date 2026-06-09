@@ -41,3 +41,5 @@ export function SearchToolUses(arg1:main.ToolUseFilter):Promise<Array<main.ToolU
 export function SessionFacets():Promise<main.SessionFacetCounts>;
 
 export function SetPref(arg1:string,arg2:string):Promise<void>;
+
+export function Version():Promise<string>;

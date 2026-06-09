@@ -25,6 +25,17 @@ type App struct {
 	archive *sql.DB
 }
 
+// Version is the GUI build version. Default mirrors wails.json
+// info.productVersion; the Makefile overrides it via
+// -ldflags "-X main.Version=..." for dev builds (release tag plus
+// git short-sha and optional .dirty marker).
+var Version = "0.1.0"
+
+// Version exposes the GUI build version to the frontend.
+func (a *App) Version() string {
+	return Version
+}
+
 func NewApp() *App {
 	return &App{}
 }
