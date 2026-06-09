@@ -29,7 +29,7 @@ type App struct {
 // info.productVersion; the Makefile overrides it via
 // -ldflags "-X main.Version=..." for dev builds (release tag plus
 // git short-sha and optional .dirty marker).
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 // Version exposes the GUI build version to the frontend.
 func (a *App) Version() string {
