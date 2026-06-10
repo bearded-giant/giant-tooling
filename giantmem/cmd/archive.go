@@ -16,9 +16,13 @@ var archiveCmd = &cobra.Command{
 }
 
 var (
-	arRunProject string
-	arRunDryRun  bool
+	arRunAll      bool
+	arRunForce    bool
+	arRunDryRun   bool
 	arRunNoReinit bool
+
+	arFeatureForce  bool
+	arFeatureDryRun bool
 
 	arDedupDryRun bool
 
@@ -28,23 +32,67 @@ var (
 
 var archiveRunCmd = &cobra.Command{
 	Use:   "run [src]",
-	Short: "Archive a .giantmem directory (mv to ~/giantmem_archive/<project>/<ts>/) and re-init",
-	Long: `Move a .giantmem directory into the archive tree, build the legacy index,
-update the "latest" symlink, kick off a background FTS5 ingest, and re-init a
-fresh .giantmem in its place.
+	Short: "Archive every status=complete feature (or --all to wipe .giantmem/)",
+	Long: `Default mode: iterate features.json and archive every status=complete
+feature — removes its dir, prunes its live_docs rows, sets status=archived in
+features.json.
 
-Defaults: src = ./.giantmem, project = worktree-aware detection.
+--all: wipe the entire .giantmem/ at src (default ./.giantmem), prune its
+live_docs rows, and reinit a fresh workspace in place. Live.db is authoritative;
+backups handled out of band (no FS snapshot is taken).
 
-Replaces: gma`,
+--force: in default mode, include features whose status != complete.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		src := ""
 		if len(args) > 0 {
 			src = args[0]
 		}
-		_, err := archive.Run(src, archiveBasePath(), arRunProject, arRunDryRun, !arRunNoReinit)
-		return err
+		if arRunAll {
+			return archive.RunAll(src, archiveBasePath(), arRunDryRun, !arRunNoReinit)
+		}
+		results, err := archive.ArchiveCompleted(src, arRunForce, arRunDryRun)
+		if err != nil {
+			return err
+		}
+		return reportFeatureResults(results)
 	},
+}
+
+var archiveFeatureCmd = &cobra.Command{
+	Use:   "feature <name>",
+	Short: "Archive a single feature (rm dir, prune live.db, set status=archived)",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		r, err := archive.ArchiveFeature("", args[0], arFeatureForce, arFeatureDryRun)
+		if err != nil {
+			return err
+		}
+		return reportFeatureResults([]archive.FeatureResult{r})
+	},
+}
+
+func reportFeatureResults(results []archive.FeatureResult) error {
+	if len(results) == 0 {
+		fmt.Println("no features matched")
+		return nil
+	}
+	var archived, skipped, errs int
+	for _, r := range results {
+		switch r.Action {
+		case "archived", "would-archive":
+			archived++
+			fmt.Printf("  %-30s %-12s -> archived   (pruned %d rows)\n", r.Name, r.Status, r.Removed)
+		case "skipped":
+			skipped++
+			fmt.Printf("  %-30s %-12s -- skipped   (%s)\n", r.Name, r.Status, r.Reason)
+		case "error":
+			errs++
+			fmt.Printf("  %-30s %-12s !! error     (%s)\n", r.Name, r.Status, r.Reason)
+		}
+	}
+	fmt.Printf("\nsummary: archived=%d skipped=%d errors=%d\n", archived, skipped, errs)
+	return nil
 }
 
 var archiveListCmd = &cobra.Command{
@@ -115,9 +163,13 @@ Examples:
 }
 
 func init() {
-	archiveRunCmd.Flags().StringVar(&arRunProject, "project", "", "override project name")
+	archiveRunCmd.Flags().BoolVar(&arRunAll, "all", false, "wipe entire .giantmem/ instead of per-feature archive")
+	archiveRunCmd.Flags().BoolVar(&arRunForce, "force", false, "in per-feature mode, include status != complete")
 	archiveRunCmd.Flags().BoolVar(&arRunDryRun, "dry-run", false, "show what would happen")
-	archiveRunCmd.Flags().BoolVar(&arRunNoReinit, "no-reinit", false, "skip workspace_init after move")
+	archiveRunCmd.Flags().BoolVar(&arRunNoReinit, "no-reinit", false, "skip workspace_init after --all wipe")
+
+	archiveFeatureCmd.Flags().BoolVar(&arFeatureForce, "force", false, "allow archiving when status != complete")
+	archiveFeatureCmd.Flags().BoolVar(&arFeatureDryRun, "dry-run", false, "show what would happen")
 
 	archiveDedupCmd.Flags().BoolVar(&arDedupDryRun, "dry-run", false, "preview duplicates only")
 
@@ -125,6 +177,7 @@ func init() {
 	archiveStaleCmd.Flags().StringSliceVar(&arStaleRoots, "root", nil, "roots to scan (default ~/dev)")
 
 	archiveCmd.AddCommand(archiveRunCmd)
+	archiveCmd.AddCommand(archiveFeatureCmd)
 	archiveCmd.AddCommand(archiveListCmd)
 	archiveCmd.AddCommand(archiveOpenCmd)
 	archiveCmd.AddCommand(archiveDedupCmd)

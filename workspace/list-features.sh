@@ -1,11 +1,12 @@
 #!/bin/bash
 # list-features - show feature status table from features.json cache
 # read-only: never mutates spec.md, meta.json, or features.json
-# usage: list-features [--dir <path>]
+# usage: list-features [--dir <path>] [--all]
 
 set -euo pipefail
 
 features_dir=""
+show_archived=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -13,10 +14,15 @@ while [[ $# -gt 0 ]]; do
       features_dir="$2"
       shift 2
       ;;
+    --all)
+      show_archived=1
+      shift
+      ;;
     -h|--help)
-      echo "usage: list-features [--dir <path>]"
+      echo "usage: list-features [--dir <path>] [--all]"
       echo "  default: ./.giantmem/features"
-      echo "  --dir appends /.giantmem/features if not already present"
+      echo "  --dir   appends /.giantmem/features if not already present"
+      echo "  --all   include archived features (excluded by default)"
       return 0 2>/dev/null || exit 0
       ;;
     *)
@@ -65,8 +71,10 @@ fi
 #   {"features": [{"name": "x", ...}, ...]}
 #   {"x": {...}, "y": {...}}
 #   [{"name": "x", ...}, ...]
-data=$(python3 -c "
-import json, sys
+data=$(SHOW_ARCHIVED="$show_archived" python3 -c "
+import json, os, sys
+
+show_archived = os.environ.get('SHOW_ARCHIVED') == '1'
 
 with open('$cache') as f:
     raw = json.load(f)
@@ -86,6 +94,8 @@ if not items:
 rows = []
 for name, feat in items:
     status = feat.get('status', 'unknown')
+    if not show_archived and status == 'archived':
+        continue
     branch = feat.get('branch', '') or '-'
     last = feat.get('last_session', feat.get('completed', feat.get('created', 'n/a')))
     rows.append((last, status, branch, name))

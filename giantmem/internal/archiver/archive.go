@@ -1,6 +1,7 @@
 package archiver
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -12,108 +13,209 @@ import (
 	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
-	"github.com/bearded-giant/giant-tooling/giantmem/internal/ingest"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 )
 
 var TimestampRe = regexp.MustCompile(`^[0-9]{8}_[0-9]{6}$`)
 
-// IngestProject re-indexes the project's archive rows into archives.db using
-// the native Go ingester. Runs in a background goroutine.
-func IngestProject(_unused, projectName string) {
-	go func() {
-		home, _ := os.UserHomeDir()
-		archiveBase := os.Getenv("GIANTMEM_ARCHIVE_BASE")
-		if archiveBase == "" {
-			archiveBase = filepath.Join(home, "giantmem_archive")
-		}
-		dbPath := filepath.Join(archiveBase, "archives.db")
-		d, err := db.Open(dbPath)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warn: ingest open db: %v\n", err)
-			return
-		}
-		defer d.Close()
-		_, err = ingest.Run(d, ingest.Options{
-			ArchiveBase:    archiveBase,
-			ClaudeProjects: filepath.Join(home, ".claude", "projects"),
-			Project:        projectName,
-			WorkspacesOnly: true,
-		})
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "warn: ingest failed: %v\n", err)
-		}
-	}()
-}
-
-// Run archives src into archiveBase/<project>/<ts>/.
-func Run(src, archiveBase, projectOverride string, dryRun, reinit bool) (string, error) {
+// RunAll wipes the entire .giantmem/ at src, prunes live_docs rows under it,
+// and reinits a fresh .giantmem in place. Replaces the legacy mv-to-archive
+// behavior (live.db is now authoritative; backups handled out of band).
+func RunAll(src, archiveBase string, dryRun, reinit bool) error {
 	if src == "" {
 		if dirExists(filepath.Join(cwd(), ".giantmem")) {
 			src = filepath.Join(cwd(), ".giantmem")
 		} else if dirExists(filepath.Join(cwd(), "scratch")) {
 			src = filepath.Join(cwd(), "scratch")
 		} else {
-			return "", fmt.Errorf("no .giantmem directory in current dir")
+			return fmt.Errorf("no .giantmem directory in current dir")
 		}
 	}
 	abs, err := filepath.Abs(src)
 	if err != nil {
-		return "", err
+		return err
 	}
 	if !dirExists(abs) {
-		return "", fmt.Errorf("not a directory: %s", abs)
+		return fmt.Errorf("not a directory: %s", abs)
 	}
-
-	projectName := projectOverride
-	if projectName == "" {
-		info := project.Detect(filepath.Dir(abs), archiveBase)
-		projectName = info.Project
-	}
-
-	projectDir := filepath.Join(archiveBase, projectName)
-	ts := time.Now().Format("20060102_150405")
-	destDir := filepath.Join(projectDir, ts)
 
 	size := dirSize(abs)
-	fmt.Printf("Archive: %s (%s)\n", abs, humanSize(size))
-	fmt.Printf("     to: %s\n", destDir)
+	fmt.Printf("Wipe: %s (%s)\n", abs, humanSize(size))
 
 	if dryRun {
-		fmt.Println("(dry run, not moved)")
-		return destDir, nil
+		fmt.Println("(dry run, nothing removed)")
+		return nil
 	}
 
-	if err := os.MkdirAll(projectDir, 0o755); err != nil {
-		return "", err
-	}
-	if err := os.Rename(abs, destDir); err != nil {
-		return "", fmt.Errorf("rename: %w", err)
-	}
-
-	if err := buildLegacyIndex(destDir); err != nil {
-		fmt.Fprintf(os.Stderr, "warn: legacy index: %v\n", err)
-	}
-	if err := updateLatest(projectDir, ts); err != nil {
-		fmt.Fprintf(os.Stderr, "warn: latest symlink: %v\n", err)
-	}
-
-	if err := pruneLiveDocsUnder(abs); err != nil {
+	if _, err := pruneLiveDocsUnder(abs); err != nil {
 		fmt.Fprintf(os.Stderr, "warn: prune live.db: %v\n", err)
 	}
-
-	// archives.db workspace ingest deprecated — live.db is now authoritative
-	// for .giantmem/ content (backfill walker covers every file). Cold archive
-	// dirs at {project}/{ts}/ stay for filesystem-level recovery only.
-
+	if err := os.RemoveAll(abs); err != nil {
+		return fmt.Errorf("remove: %w", err)
+	}
 	if reinit {
 		parent := filepath.Dir(abs)
 		if err := reinitWorkspace(parent); err != nil {
 			fmt.Fprintf(os.Stderr, "warn: re-init: %v\n", err)
 		}
 	}
-	fmt.Printf("Archived to %s (latest -> %s)\n", destDir, ts)
-	return destDir, nil
+	fmt.Printf("Wiped %s\n", abs)
+	_ = archiveBase
+	return nil
+}
+
+// FeatureResult reports one feature's archive outcome.
+type FeatureResult struct {
+	Name    string
+	Status  string // before
+	Action  string // "archived", "skipped", "error"
+	Reason  string
+	Removed int64 // live_docs rows pruned
+}
+
+// ArchiveFeature archives a single feature: removes its dir, prunes live_docs
+// rows under it, and patches features.json to status=archived.
+func ArchiveFeature(workspaceDir, name string, force, dryRun bool) (FeatureResult, error) {
+	res := FeatureResult{Name: name}
+	ws, err := resolveWorkspace(workspaceDir)
+	if err != nil {
+		return res, err
+	}
+	featDir := filepath.Join(ws, "features", name)
+	if !dirExists(featDir) {
+		return res, fmt.Errorf("feature dir not found: %s", featDir)
+	}
+
+	featuresJSON := filepath.Join(ws, "features", "features.json")
+	entries, err := readFeaturesJSON(featuresJSON)
+	if err != nil {
+		return res, fmt.Errorf("read features.json: %w", err)
+	}
+	meta, ok := entries[name]
+	if !ok {
+		return res, fmt.Errorf("feature %q not in features.json", name)
+	}
+	statusBefore, _ := meta["status"].(string)
+	res.Status = statusBefore
+
+	if !strings.EqualFold(statusBefore, "complete") && !force {
+		res.Action = "skipped"
+		res.Reason = fmt.Sprintf("status=%s (use --force)", statusBefore)
+		return res, nil
+	}
+	if strings.EqualFold(statusBefore, "archived") {
+		res.Action = "skipped"
+		res.Reason = "already archived"
+		return res, nil
+	}
+
+	if dryRun {
+		res.Action = "would-archive"
+		return res, nil
+	}
+
+	n, err := pruneLiveDocsUnder(featDir)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warn: prune live.db: %v\n", err)
+	}
+	res.Removed = n
+
+	if err := os.RemoveAll(featDir); err != nil {
+		res.Action = "error"
+		res.Reason = err.Error()
+		return res, err
+	}
+
+	meta["status"] = "archived"
+	meta["archived"] = time.Now().UTC().Format("2006-01-02")
+	entries[name] = meta
+	if err := writeFeaturesJSON(featuresJSON, entries); err != nil {
+		res.Action = "error"
+		res.Reason = fmt.Sprintf("write features.json: %v", err)
+		return res, err
+	}
+	res.Action = "archived"
+	return res, nil
+}
+
+// ArchiveCompleted archives every status=complete feature (or all
+// non-archived when force=true).
+func ArchiveCompleted(workspaceDir string, force, dryRun bool) ([]FeatureResult, error) {
+	ws, err := resolveWorkspace(workspaceDir)
+	if err != nil {
+		return nil, err
+	}
+	featuresJSON := filepath.Join(ws, "features", "features.json")
+	entries, err := readFeaturesJSON(featuresJSON)
+	if err != nil {
+		return nil, fmt.Errorf("read features.json: %w", err)
+	}
+
+	var names []string
+	for name, meta := range entries {
+		status, _ := meta["status"].(string)
+		if strings.EqualFold(status, "archived") {
+			continue
+		}
+		if !force && !strings.EqualFold(status, "complete") {
+			continue
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	var out []FeatureResult
+	for _, n := range names {
+		r, err := ArchiveFeature(ws, n, force, dryRun)
+		if err != nil {
+			r.Action = "error"
+			r.Reason = err.Error()
+		}
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+// resolveWorkspace returns the abs path to the .giantmem dir for the given
+// workspace (which may be the worktree, the .giantmem itself, or empty=cwd).
+func resolveWorkspace(workspaceDir string) (string, error) {
+	if workspaceDir == "" {
+		workspaceDir = cwd()
+	}
+	abs, err := filepath.Abs(workspaceDir)
+	if err != nil {
+		return "", err
+	}
+	if filepath.Base(abs) == ".giantmem" && dirExists(abs) {
+		return abs, nil
+	}
+	ws := filepath.Join(abs, ".giantmem")
+	if !dirExists(ws) {
+		return "", fmt.Errorf("no .giantmem at %s", ws)
+	}
+	return ws, nil
+}
+
+// readFeaturesJSON parses the flat-dict shape: {"<name>": {...}, ...}
+func readFeaturesJSON(path string) (map[string]map[string]any, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]map[string]any{}
+	if err := json.Unmarshal(b, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func writeFeaturesJSON(path string, entries map[string]map[string]any) error {
+	b, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	b = append(b, '\n')
+	return os.WriteFile(path, b, 0o644)
 }
 
 // List shows archives.
@@ -396,30 +498,6 @@ func readLatest(projectDir string) string {
 	return target
 }
 
-func updateLatest(projectDir, ts string) error {
-	link := filepath.Join(projectDir, "latest")
-	_ = os.Remove(link)
-	return os.Symlink(ts, link)
-}
-
-func buildLegacyIndex(archiveDir string) error {
-	indexPath := filepath.Join(archiveDir, ".giantmem-index")
-	rg, err := exec.LookPath("rg")
-	if err != nil {
-		return nil
-	}
-	out, err := os.Create(indexPath)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-	cmd := exec.Command(rg, "-n", "--no-ignore", "--glob", "*.md", "--glob", "domains/*.json", ".", archiveDir)
-	cmd.Stdout = out
-	cmd.Stderr = nil
-	_ = cmd.Run()
-	return nil
-}
-
 func newestMD(root string) time.Time {
 	var newest time.Time
 	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -453,9 +531,9 @@ func reinitWorkspace(dir string) error {
 	return cmd.Run()
 }
 
-// pruneLiveDocsUnder removes live_docs rows whose path is under the (now-moved)
-// workspace dir. Triggers cascade FTS row cleanup.
-func pruneLiveDocsUnder(archivedPath string) error {
+// pruneLiveDocsUnder removes live_docs rows whose path is under the given
+// directory. Returns rows removed. Triggers cascade FTS row cleanup.
+func pruneLiveDocsUnder(dirPath string) (int64, error) {
 	home, _ := os.UserHomeDir()
 	base := os.Getenv("GIANTMEM_ARCHIVE_BASE")
 	if base == "" {
@@ -463,26 +541,25 @@ func pruneLiveDocsUnder(archivedPath string) error {
 	}
 	livePath := filepath.Join(base, "live.db")
 	if _, err := os.Stat(livePath); err != nil {
-		return nil
+		return 0, nil
 	}
 	d, err := db.Open(livePath)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer d.Close()
-	worktree := filepath.Dir(archivedPath)
 	res, err := d.Exec(
-		`DELETE FROM live_docs WHERE worktree_path = ? OR path LIKE ?`,
-		worktree, archivedPath+string(filepath.Separator)+"%",
+		`DELETE FROM live_docs WHERE path = ? OR path LIKE ?`,
+		dirPath, dirPath+string(filepath.Separator)+"%",
 	)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	n, _ := res.RowsAffected()
 	if n > 0 {
-		fmt.Fprintf(os.Stderr, "pruned %d live.db rows under %s\n", n, archivedPath)
+		fmt.Fprintf(os.Stderr, "pruned %d live.db rows under %s\n", n, dirPath)
 	}
-	return nil
+	return n, nil
 }
 
 // WorkspaceLibPath returns the location of workspace-lib.sh.
