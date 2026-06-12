@@ -1,0 +1,43 @@
+# Per-app Chronosphere dashboard params.
+# Run: python3 gen_dashboard.py --from-registry <slug>
+#
+# Fields:
+#   slug              dashboard slug (= chronoctl ref)
+#   name              display name
+#   httproute-regex   envoy_cluster_name regex covering all HTTPRoutes/rules
+#   workload-regex    k8s_workload_name regex for App-containers panel
+#   otel-prefix       (optional) metric prefix if app emits OTel/prom (e.g. chat_orchestrator)
+#                     omit/null to strip the 3 OTel app panels
+#   collection-slug   (optional) chronoctl collection (default: recharge-chat)
+apps:
+  chat-orchestrator:
+    name: Orchestrator
+    httproute-regex: httproute/ai-tooling/chat-orchestrator-.+/.+
+    workload-regex: chat-orchestrator-.*
+    otel-prefix: chat_orchestrator
+    collection-slug: recharge-chat
+
+  chat-api:
+    name: Chat API
+    # NOTE: actual envoy cluster name has no suffix — `httproute/ai-tooling/recharge-chat-api/rule/N`.
+    # Unlike chat-orchestrator which has multiple HTTPRoutes (`-recharge`, `-harness-recharge`, ...).
+    httproute-regex: httproute/ai-tooling/recharge-chat-api/rule/.+
+    workload-regex: recharge-chat-api-.*
+    # statsd→DataDog only today. no OTel/prom_client. strip OTel panels.
+    otel-prefix: null
+    collection-slug: recharge-chat
+
+  support-agent:
+    name: Support Agent
+    httproute-regex: httproute/ai-tooling/support-agent-.+/.+
+    workload-regex: support-agent-.*
+    otel-prefix: null  # TBD — flip once OTel wired
+    collection-slug: recharge-chat
+
+  analytics-agent:
+    name: Analytics Agent
+    # NOTE: lives in `prod` namespace (NOT `ai-tooling`). single HTTPRoute, no -recharge suffix.
+    httproute-regex: httproute/prod/analytics-agent/rule/.+
+    workload-regex: analytics-agent.*
+    otel-prefix: null  # confirmed no analytics_agent_* metrics as of 2026-06-12
+    collection-slug: recharge-chat
