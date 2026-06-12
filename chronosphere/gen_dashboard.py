@@ -38,6 +38,7 @@ OTEL_PANEL_KEYS = {
     "apiRequestP95LatencyByRoute",
     "auditOutboundWriteRateByTool",
     "slackDispatchP95",
+    "apiRequestRateByStatusClass",
 }
 
 TEMPLATE_CLUSTER_REGEX = r"httproute/ai-tooling/chat-orchestrator-.+/.+"
@@ -130,7 +131,7 @@ def main() -> None:
     registry = {}
     if args.from_registry:
         registry = load_registry(args.registry, args.from_registry)
-        args.slug = args.slug or args.from_registry
+        args.slug = args.slug or registry.get("slug") or args.from_registry
 
     def pick(field: str, *, required: bool = True):
         val = getattr(args, field.replace("-", "_"), None)

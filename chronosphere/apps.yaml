@@ -12,6 +12,8 @@
 apps:
   chat-orchestrator:
     name: Orchestrator
+    # deployed dashboard slug is `orchestrator` (template default), not the registry key.
+    slug: orchestrator
     httproute-regex: httproute/ai-tooling/chat-orchestrator-.+/.+
     workload-regex: chat-orchestrator-.*
     otel-prefix: chat_orchestrator
@@ -22,7 +24,8 @@ apps:
     # NOTE: actual envoy cluster name has no suffix — `httproute/ai-tooling/recharge-chat-api/rule/N`.
     # Unlike chat-orchestrator which has multiple HTTPRoutes (`-recharge`, `-harness-recharge`, ...).
     httproute-regex: httproute/ai-tooling/recharge-chat-api/rule/.+
-    workload-regex: recharge-chat-api-.*
+    # workload name is `recharge-chat-api` (no suffix). use `.*` not `-.*` so empty suffix matches.
+    workload-regex: recharge-chat-api.*
     # statsd→DataDog only today. no OTel/prom_client. strip OTel panels.
     otel-prefix: null
     collection-slug: recharge-chat
