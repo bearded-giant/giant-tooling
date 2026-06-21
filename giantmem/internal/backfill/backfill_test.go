@@ -93,6 +93,81 @@ func TestRunOnWorkspace_Idempotent(t *testing.T) {
 	}
 }
 
+func TestRunOnWorkspace_ExtraRootsMarker(t *testing.T) {
+	live, base := newLive(t)
+	repo := filepath.Join(t.TempDir(), "docrepo")
+	ws := filepath.Join(repo, ".giantmem")
+
+	writeFile(t, filepath.Join(ws, "notes.md"), "giantmem note")
+	writeFile(t, filepath.Join(repo, "README.md"), "# readme")
+	writeFile(t, filepath.Join(repo, "SOURCE.md"), "# source of truth")
+	writeFile(t, filepath.Join(repo, "research", "00.md"), "# research")
+	writeFile(t, filepath.Join(repo, "archive", "old.md"), "# archived")
+	writeFile(t, filepath.Join(repo, "main.go"), "package main")         // not .md -> skip
+	writeFile(t, filepath.Join(repo, ".obsidian", "cfg.md"), "obsidian") // dotdir -> skip
+	writeFile(t, filepath.Join(repo, ".git", "HEAD"), "ref: x")          // dotdir -> skip
+
+	// no marker yet: only the .giantmem/ file indexes
+	st, err := RunOnWorkspace(live, base, ws)
+	if err != nil {
+		t.Fatalf("run no-marker: %v", err)
+	}
+	if st.Upserted != 1 {
+		t.Fatalf("no marker upserted = %d, want 1 (only .giantmem)", st.Upserted)
+	}
+
+	// opt in via marker, fresh db so counts are clean
+	live2, base2 := newLive(t)
+	writeFile(t, filepath.Join(ws, extraRootsMarker), "# index repo docs\n*.md\nresearch/\n")
+	st2, err := RunOnWorkspace(live2, base2, ws)
+	if err != nil {
+		t.Fatalf("run marker: %v", err)
+	}
+	// notes.md + README + SOURCE + research/00 + archive/old = 5
+	if st2.Upserted != 5 {
+		t.Fatalf("marker upserted = %d, want 5; stats=%+v", st2.Upserted, st2)
+	}
+
+	var dirType string
+	if err := live2.QueryRow("SELECT dir_type FROM live_docs WHERE path = ?",
+		filepath.Join(repo, "README.md")).Scan(&dirType); err != nil {
+		t.Fatalf("read README dir_type: %v", err)
+	}
+	if dirType != "repo-doc" {
+		t.Errorf("README dir_type = %q, want repo-doc", dirType)
+	}
+
+	var n int
+	if err := live2.QueryRow("SELECT COUNT(*) FROM live_docs WHERE path = ?",
+		filepath.Join(repo, "main.go")).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("main.go indexed (%d), want 0 — not matched by *.md", n)
+	}
+}
+
+func TestMatchesAny(t *testing.T) {
+	pats := []string{"*.md", "research/", "docs/*.txt"}
+	cases := []struct {
+		rel, base string
+		want      bool
+	}{
+		{"README.md", "README.md", true},         // basename glob
+		{"deep/nested/x.md", "x.md", true},       // basename glob is repo-wide
+		{"research/01.md", "01.md", true},        // dir prefix (and *.md)
+		{"research/sub/02.txt", "02.txt", true},  // dir prefix matches subtree
+		{"docs/note.txt", "note.txt", true},      // path glob
+		{"docs/sub/note.txt", "note.txt", false}, // path glob is single-level
+		{"main.go", "main.go", false},            // no match
+	}
+	for _, c := range cases {
+		if got := matchesAny(pats, c.rel, c.base); got != c.want {
+			t.Errorf("matchesAny(%q,%q) = %v, want %v", c.rel, c.base, got, c.want)
+		}
+	}
+}
+
 func TestRunOnWorkspace_DerivesFeatureAndDirType(t *testing.T) {
 	live, base := newLive(t)
 	repo := filepath.Join(t.TempDir(), "r")
