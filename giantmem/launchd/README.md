@@ -2,6 +2,8 @@
 
 macOS LaunchAgents for giantmem background sweeps.
 
+> Repo note: giant-tooling has two push remotes — `origin` (github.com/bearded-giant) and `gitlab` (gitlab.rechargeapps.net). After committing, push BOTH: `git push origin main && git push gitlab main`.
+
 ## session-sweep
 
 Re-indexes `~/.claude/projects/**/*.jsonl` into `archives.db` every 5 minutes. Closes the gap where SessionEnd-only ingest misses still-active sessions and any out-of-band jsonl edits.
