@@ -12,15 +12,17 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/backfill"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 )
 
 var TimestampRe = regexp.MustCompile(`^[0-9]{8}_[0-9]{6}$`)
 
-// RunAll wipes the entire .giantmem/ at src, prunes live_docs rows under it,
-// and reinits a fresh .giantmem in place. Replaces the legacy mv-to-archive
-// behavior (live.db is now authoritative; backups handled out of band).
+// RunAll wipes the entire .giantmem/ at src and reinits a fresh one in place,
+// AFTER verifying every file is mirrored in live.db. The live_docs rows are
+// kept — live.db is the durable archive (protected by the db-backup cron).
+// Replaces the legacy mv-to-archive behavior; no FS snapshot is taken.
 func RunAll(src, archiveBase string, dryRun, reinit bool) error {
 	if src == "" {
 		if dirExists(filepath.Join(cwd(), ".giantmem")) {
@@ -47,9 +49,15 @@ func RunAll(src, archiveBase string, dryRun, reinit bool) error {
 		return nil
 	}
 
-	if _, err := pruneLiveDocsUnder(abs); err != nil {
-		fmt.Fprintf(os.Stderr, "warn: prune live.db: %v\n", err)
+	captured, missing, verr := captureAndVerify(abs)
+	if verr != nil {
+		return fmt.Errorf("verify live.db capture: %w", verr)
 	}
+	if len(missing) > 0 {
+		return fmt.Errorf("refusing to wipe: %d of %d file(s) not captured in live.db (e.g. %s)",
+			len(missing), captured+len(missing), missing[0])
+	}
+	fmt.Printf("verified %d file(s) in live.db; removing dir (rows kept)\n", captured)
 	if err := os.RemoveAll(abs); err != nil {
 		return fmt.Errorf("remove: %w", err)
 	}
@@ -66,15 +74,16 @@ func RunAll(src, archiveBase string, dryRun, reinit bool) error {
 
 // FeatureResult reports one feature's archive outcome.
 type FeatureResult struct {
-	Name    string
-	Status  string // before
-	Action  string // "archived", "skipped", "error"
-	Reason  string
-	Removed int64 // live_docs rows pruned
+	Name     string
+	Status   string // before
+	Action   string // "archived", "skipped", "error"
+	Reason   string
+	Captured int // files verified present in live.db before delete
 }
 
-// ArchiveFeature archives a single feature: removes its dir, prunes live_docs
-// rows under it, and patches features.json to status=archived.
+// ArchiveFeature archives a single feature: verifies its files are mirrored in
+// live.db, removes its dir (live_docs rows kept as the durable record), and
+// patches features.json to status=archived.
 func ArchiveFeature(workspaceDir, name string, force, dryRun bool) (FeatureResult, error) {
 	res := FeatureResult{Name: name}
 	ws, err := resolveWorkspace(workspaceDir)
@@ -114,11 +123,18 @@ func ArchiveFeature(workspaceDir, name string, force, dryRun bool) (FeatureResul
 		return res, nil
 	}
 
-	n, err := pruneLiveDocsUnder(featDir)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "warn: prune live.db: %v\n", err)
+	captured, missing, verr := captureAndVerify(featDir)
+	if verr != nil {
+		res.Action = "error"
+		res.Reason = fmt.Sprintf("verify live.db: %v", verr)
+		return res, verr
 	}
-	res.Removed = n
+	if len(missing) > 0 {
+		res.Action = "error"
+		res.Reason = fmt.Sprintf("%d file(s) not captured in live.db (e.g. %s)", len(missing), filepath.Base(missing[0]))
+		return res, fmt.Errorf("%s", res.Reason)
+	}
+	res.Captured = captured
 
 	if err := os.RemoveAll(featDir); err != nil {
 		res.Action = "error"
@@ -531,35 +547,74 @@ func reinitWorkspace(dir string) error {
 	return cmd.Run()
 }
 
-// pruneLiveDocsUnder removes live_docs rows whose path is under the given
-// directory. Returns rows removed. Triggers cascade FTS row cleanup.
-func pruneLiveDocsUnder(dirPath string) (int64, error) {
-	home, _ := os.UserHomeDir()
-	base := os.Getenv("GIANTMEM_ARCHIVE_BASE")
-	if base == "" {
-		base = filepath.Join(home, "giantmem_archive")
-	}
+// captureAndVerify backfills the enclosing .giantmem into live.db, then confirms
+// every non-empty file under dirPath is mirrored there (content-length match).
+// The caller MUST NOT delete on disk when missing is non-empty — those files
+// have no durable copy and would be lost. Returns the count verified and the
+// list still uncaptured (e.g. files over backfill's 5MB cap).
+func captureAndVerify(dirPath string) (captured int, missing []string, err error) {
+	base := archiveBaseDir()
 	livePath := filepath.Join(base, "live.db")
-	if _, err := os.Stat(livePath); err != nil {
-		return 0, nil
+	if _, serr := os.Stat(livePath); serr != nil {
+		return 0, nil, fmt.Errorf("live.db not found at %s", livePath)
 	}
-	d, err := db.Open(livePath)
-	if err != nil {
-		return 0, err
+	d, oerr := db.Open(livePath)
+	if oerr != nil {
+		return 0, nil, oerr
 	}
 	defer d.Close()
-	res, err := d.Exec(
-		`DELETE FROM live_docs WHERE path = ? OR path LIKE ?`,
-		dirPath, dirPath+string(filepath.Separator)+"%",
-	)
-	if err != nil {
-		return 0, err
+
+	if ws := enclosingGiantmem(dirPath); ws != "" {
+		if _, berr := backfill.RunOnWorkspace(d, base, ws); berr != nil {
+			fmt.Fprintf(os.Stderr, "warn: backfill before verify: %v\n", berr)
+		}
 	}
-	n, _ := res.RowsAffected()
-	if n > 0 {
-		fmt.Fprintf(os.Stderr, "pruned %d live.db rows under %s\n", n, dirPath)
+
+	_ = filepath.WalkDir(dirPath, func(p string, de fs.DirEntry, werr error) error {
+		if werr != nil || de.IsDir() {
+			return nil
+		}
+		name := de.Name()
+		if name == ".giantmem-index" || name == ".DS_Store" || strings.HasPrefix(name, ".") {
+			return nil
+		}
+		info, ierr := de.Info()
+		if ierr != nil || info.Size() == 0 {
+			return nil
+		}
+		var n int64
+		if scanErr := d.QueryRow(
+			"SELECT octet_length(content) FROM live_docs WHERE path = ?", p,
+		).Scan(&n); scanErr != nil || n != info.Size() {
+			missing = append(missing, p)
+			return nil
+		}
+		captured++
+		return nil
+	})
+	return captured, missing, nil
+}
+
+func archiveBaseDir() string {
+	base := os.Getenv("GIANTMEM_ARCHIVE_BASE")
+	if base == "" {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, "giantmem_archive")
 	}
-	return n, nil
+	return base
+}
+
+// enclosingGiantmem returns the .giantmem dir at or above p, or "" if none.
+func enclosingGiantmem(p string) string {
+	p = filepath.Clean(p)
+	if filepath.Base(p) == ".giantmem" {
+		return p
+	}
+	marker := string(filepath.Separator) + ".giantmem" + string(filepath.Separator)
+	if i := strings.LastIndex(p, marker); i >= 0 {
+		return p[:i] + string(filepath.Separator) + ".giantmem"
+	}
+	return ""
 }
 
 // WorkspaceLibPath returns the location of workspace-lib.sh.

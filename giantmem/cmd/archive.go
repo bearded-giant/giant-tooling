@@ -34,12 +34,13 @@ var archiveRunCmd = &cobra.Command{
 	Use:   "run [src]",
 	Short: "Archive every status=complete feature (or --all to wipe .giantmem/)",
 	Long: `Default mode: iterate features.json and archive every status=complete
-feature — removes its dir, prunes its live_docs rows, sets status=archived in
-features.json.
+feature — verifies its files are mirrored in live.db, removes its dir (live_docs
+rows kept), sets status=archived in features.json.
 
---all: wipe the entire .giantmem/ at src (default ./.giantmem), prune its
-live_docs rows, and reinit a fresh workspace in place. Live.db is authoritative;
-backups handled out of band (no FS snapshot is taken).
+--all: wipe the entire .giantmem/ at src (default ./.giantmem) after verifying
+every file is in live.db, and reinit a fresh workspace in place. live.db is the
+durable archive (rows kept; protected by the db-backup cron). No FS snapshot.
+Aborts if any file is not captured in live.db.
 
 --force: in default mode, include features whose status != complete.`,
 	Args: cobra.MaximumNArgs(1),
@@ -61,7 +62,7 @@ backups handled out of band (no FS snapshot is taken).
 
 var archiveFeatureCmd = &cobra.Command{
 	Use:   "feature <name>",
-	Short: "Archive a single feature (rm dir, prune live.db, set status=archived)",
+	Short: "Archive a single feature (verify in live.db, rm dir, set status=archived)",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		r, err := archive.ArchiveFeature("", args[0], arFeatureForce, arFeatureDryRun)
@@ -82,7 +83,7 @@ func reportFeatureResults(results []archive.FeatureResult) error {
 		switch r.Action {
 		case "archived", "would-archive":
 			archived++
-			fmt.Printf("  %-30s %-12s -> archived   (pruned %d rows)\n", r.Name, r.Status, r.Removed)
+			fmt.Printf("  %-30s %-12s -> archived   (kept in db, %d files)\n", r.Name, r.Status, r.Captured)
 		case "skipped":
 			skipped++
 			fmt.Printf("  %-30s %-12s -- skipped   (%s)\n", r.Name, r.Status, r.Reason)
