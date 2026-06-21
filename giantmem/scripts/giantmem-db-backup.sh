@@ -6,14 +6,14 @@
 # the single current copy only after validation (one .prev kept for rollback).
 #
 # No network/VPS/tailscale. gpg is asymmetric: backup needs only the PUBLIC key,
-# RESTORE needs the private key 8390A4002604AC93 -- keep an exported copy safe.
+# RESTORE needs the private key 33F36CDDD530C52910A4608D61258A79557ECB4A -- keep an exported copy safe.
 #
 # Restore:
 #   gpg --decrypt live.db.gpg > live.db && sqlite3 live.db 'PRAGMA integrity_check;'
 set -euo pipefail
 
 ARCHIVE_BASE="${GIANTMEM_ARCHIVE_BASE:-$HOME/giantmem_archive}"
-GPG_KEY="${GIANTMEM_BACKUP_GPG_KEY:-8390A4002604AC93}"
+GPG_KEY="${GIANTMEM_BACKUP_GPG_KEY:-33F36CDDD530C52910A4608D61258A79557ECB4A}"
 DEST="${GIANTMEM_BACKUP_DEST:-$HOME/Library/Mobile Documents/com~apple~CloudDocs/giantmem-db-backups}"
 STAGING="$HOME/.cache/giantmem/db-backup-staging"
 LOG="$HOME/.cache/giantmem/db-backup.log"
