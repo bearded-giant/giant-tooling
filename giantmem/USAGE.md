@@ -56,6 +56,8 @@ The whole point of session search: stop hunting through `~/.claude/projects/**` 
 | `giantmem session find "hub and spoke"` | FTS5 over session transcripts |
 | `giantmem session show <id-prefix>` | metadata: project, cwd, topic, jsonl path |
 | `giantmem session resume <id-prefix>` | chdir to recorded cwd, then `exec claude --resume <uuid>` |
+| `giantmem session prune-orphans` | list `~/.claude/projects` dirs whose every recorded cwd is gone (merged feature, pruned worktree, deleted/renamed repo) |
+| `giantmem session prune-orphans --delete` | remove them (y/N prompt; add `--yes` to skip). A dir keeps if any one session points at a live cwd; dirs with no recorded cwd are never touched |
 
 `<id-prefix>` is any unique prefix of the session UUID (e.g. `40503b40`). Ambiguous prefixes print all candidates and exit.
 

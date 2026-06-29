@@ -1,11 +1,15 @@
 package cmd
 
 import (
+	"bufio"
 	"database/sql"
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"syscall"
 	"text/tabwriter"
@@ -513,6 +517,178 @@ func printSessionDiff(r sessionDiffReport) {
 	}
 }
 
+var (
+	pruneOrphansDelete bool
+	pruneOrphansYes    bool
+	pruneOrphansJSON   bool
+)
+
+type orphanRow struct {
+	Dir   string   `json:"dir"`
+	Cwds  []string `json:"cwds"`
+	Files int      `json:"files"`
+	Bytes int64    `json:"bytes"`
+}
+
+var sessPruneOrphansCmd = &cobra.Command{
+	Use:   "prune-orphans",
+	Short: "Remove ~/.claude/projects dirs whose recorded cwd no longer exists",
+	Long: `Walk ~/.claude/projects, read each project dir's recorded cwd(s) from its
+session JSONLs, and flag a dir only when it has at least one recorded cwd and
+NONE of them still exist on disk (merged feature, pruned worktree, deleted or
+renamed repo). A dir keeps if any one of its sessions points at a live cwd, so
+a renamed repo whose project dir still holds a current-name session is safe.
+
+Session prose stays searchable in archives.db; only 'claude --resume' and
+'session export/diff' for the removed dirs are lost.
+
+Lists by default. Pass --delete to remove, with a y/N prompt unless --yes.
+Dirs with no recorded cwd are reported as unverifiable and never deleted.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		home, _ := os.UserHomeDir()
+		root := filepath.Join(home, ".claude", "projects")
+		entries, err := os.ReadDir(root)
+		if err != nil {
+			return err
+		}
+		var orphans, unknown []orphanRow
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			dir := filepath.Join(root, e.Name())
+			cwds := projectCwds(dir)
+			row := orphanRow{Dir: e.Name(), Cwds: cwds, Files: len(jsonlFiles(dir)), Bytes: dirSizeBytes(dir)}
+			switch {
+			case len(cwds) == 0:
+				unknown = append(unknown, row)
+			case anyDirExists(cwds):
+				// at least one live cwd — keep
+			default:
+				orphans = append(orphans, row)
+			}
+		}
+		sort.Slice(orphans, func(i, j int) bool { return orphans[i].Bytes > orphans[j].Bytes })
+
+		if pruneOrphansJSON {
+			return output.JSON(map[string]any{"orphans": orphans, "unverifiable": unknown})
+		}
+
+		var total int64
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "SIZE_MB\tFILES\tCWD (gone)\tDIR")
+		for _, r := range orphans {
+			total += r.Bytes
+			fmt.Fprintf(w, "%d\t%d\t%s\t%s\n", r.Bytes/(1024*1024), r.Files, strings.Join(r.Cwds, ","), r.Dir)
+		}
+		w.Flush()
+		fmt.Printf("\n%d orphaned dirs, %d MB reclaimable\n", len(orphans), total/(1024*1024))
+		if len(unknown) > 0 {
+			fmt.Printf("(%d dirs have no recorded cwd — unverifiable, left alone)\n", len(unknown))
+		}
+
+		if !pruneOrphansDelete || len(orphans) == 0 {
+			if len(orphans) > 0 {
+				fmt.Println("\nre-run with --delete to remove them")
+			}
+			return nil
+		}
+
+		if !pruneOrphansYes {
+			fmt.Printf("\ndelete %d dirs (%d MB)? [y/N] ", len(orphans), total/(1024*1024))
+			ans, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+			if a := strings.ToLower(strings.TrimSpace(ans)); a != "y" && a != "yes" {
+				fmt.Println("aborted")
+				return nil
+			}
+		}
+		var freed int64
+		for _, r := range orphans {
+			if err := os.RemoveAll(filepath.Join(root, r.Dir)); err != nil {
+				fmt.Fprintf(os.Stderr, "  failed %s: %v\n", r.Dir, err)
+				continue
+			}
+			freed += r.Bytes
+			fmt.Printf("  removed %s\n", r.Dir)
+		}
+		fmt.Printf("freed %d MB\n", freed/(1024*1024))
+		return nil
+	},
+}
+
+func jsonlFiles(dir string) []string {
+	var out []string
+	ents, _ := os.ReadDir(dir)
+	for _, e := range ents {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".jsonl") {
+			out = append(out, filepath.Join(dir, e.Name()))
+		}
+	}
+	return out
+}
+
+// projectCwds returns the distinct cwd recorded across a project dir's session
+// files (one per session; cwd is fixed at session start).
+func projectCwds(dir string) []string {
+	seen := map[string]bool{}
+	for _, jf := range jsonlFiles(dir) {
+		f, err := os.Open(jf)
+		if err != nil {
+			continue
+		}
+		sc := bufio.NewScanner(f)
+		sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+		n := 0
+		for sc.Scan() {
+			if n++; n > 200 {
+				break
+			}
+			line := sc.Text()
+			if !strings.Contains(line, `"cwd"`) {
+				continue
+			}
+			var m map[string]any
+			if json.Unmarshal([]byte(line), &m) != nil {
+				continue
+			}
+			if c, ok := m["cwd"].(string); ok && c != "" {
+				seen[c] = true
+				break
+			}
+		}
+		f.Close()
+	}
+	out := make([]string, 0, len(seen))
+	for c := range seen {
+		out = append(out, c)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func anyDirExists(paths []string) bool {
+	for _, p := range paths {
+		if dirExists(p) {
+			return true
+		}
+	}
+	return false
+}
+
+func dirSizeBytes(dir string) int64 {
+	var t int64
+	filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return nil
+		}
+		if info, e := d.Info(); e == nil {
+			t += info.Size()
+		}
+		return nil
+	})
+	return t
+}
+
 func init() {
 	sessListCmd.Flags().StringVarP(&sessListProject, "project", "p", "", "filter by project (LIKE)")
 	sessListCmd.Flags().IntVarP(&sessListLimit, "limit", "n", 20, "max rows")
@@ -525,6 +701,10 @@ func init() {
 	sessExportCmd.Flags().BoolVar(&sessExportTools, "tools", true, "include tool-call summary blocks")
 	sessDiffCmd.Flags().BoolVar(&sessDiffJSON, "json", false, "JSON output")
 
+	sessPruneOrphansCmd.Flags().BoolVar(&pruneOrphansDelete, "delete", false, "remove orphaned dirs (default: list only)")
+	sessPruneOrphansCmd.Flags().BoolVar(&pruneOrphansYes, "yes", false, "skip the confirmation prompt with --delete")
+	sessPruneOrphansCmd.Flags().BoolVar(&pruneOrphansJSON, "json", false, "JSON output")
+
 	sessionCmd.AddCommand(sessListCmd)
 	sessionCmd.AddCommand(sessFindCmd)
 	sessionCmd.AddCommand(sessShowCmd)
@@ -532,5 +712,6 @@ func init() {
 	sessionCmd.AddCommand(sessResumeCmd)
 	sessionCmd.AddCommand(sessExportCmd)
 	sessionCmd.AddCommand(sessDiffCmd)
+	sessionCmd.AddCommand(sessPruneOrphansCmd)
 	rootCmd.AddCommand(sessionCmd)
 }
