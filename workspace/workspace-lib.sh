@@ -9,12 +9,11 @@
 #   workspace_init [dir] [name]   - Initialize workspace structure
 #   workspace_bootstrap           - Smart init: creates, migrates, or syncs
 #   workspace_migrate             - Move loose .giantmem files to subdirs
-#   workspace_tree [dir]          - Generate tree.md
 #   workspace_discover "note"     - Add discovery note
 #   workspace_session_note [note] - Add session marker/note
 #   workspace_complete            - Mark workspace complete
 #   workspace_status              - Show workspace status
-#   workspace_sync                - Refresh tree + git log
+#   workspace_sync                - Refresh git log
 #   workspace_gitlog              - Update git-log.md
 #   workspace_archive [src] [proj] [branch] - Archive to ~/giantmem_archive/
 #   workspace_archive_list [proj] - List archives
@@ -65,7 +64,7 @@ workspace_init() {
     workspace_migrate_dir "$target_dir"
 
     # Create workspace structure
-    mkdir -p "$scratch_dir"/{context,plans,history,filebox,prompts,research,reviews,features,specs}
+    mkdir -p "$scratch_dir"/{context,plans,history,filebox,research,reviews,features,specs}
 
     # Create WORKSPACE.md if it doesn't exist
     if [ ! -f "$scratch_dir/WORKSPACE.md" ]; then
@@ -134,34 +133,7 @@ EOF
         echo "Created .giantmem/specs/_history.md"
     fi
 
-    # Generate initial tree
-    workspace_tree "$target_dir"
-
     echo "Workspace initialized in $scratch_dir"
-}
-
-# Generate tree structure
-workspace_tree() {
-    local target_dir="${1:-$PWD}"
-    local context_dir="$target_dir/.giantmem/context"
-    mkdir -p "$context_dir"
-
-    if command -v tree &>/dev/null; then
-        tree "$target_dir" -I 'node_modules|venv|__pycache__|.git|.giantmem|scratch|.bare|*.pyc|.venv|.tox|dist|build|*.egg-info' -L 4 --dirsfirst > "$context_dir/tree.md" 2>/dev/null
-        echo "Updated .giantmem/context/tree.md"
-    else
-        # Fallback to find
-        find "$target_dir" -maxdepth 4 -type f \
-            -not -path '*/.git/*' \
-            -not -path '*/.giantmem/*' \
-            -not -path '*/scratch/*' \
-            -not -path '*/node_modules/*' \
-            -not -path '*/__pycache__/*' \
-            -not -path '*/.venv/*' \
-            -not -path '*/venv/*' \
-            > "$context_dir/tree.md"
-        echo "Updated .giantmem/context/tree.md (using find)"
-    fi
 }
 
 # Add a discovery note
@@ -233,7 +205,7 @@ workspace_status() {
 
     echo ""
     echo "=== Files ==="
-    for subdir in features specs context plans history prompts research reviews filebox; do
+    for subdir in features specs context plans history research reviews filebox; do
         if [ -d "$scratch_dir/$subdir" ]; then
             count=$(find "$scratch_dir/$subdir" -type f 2>/dev/null | wc -l | tr -d ' ')
             echo "  $subdir/: $count files"
@@ -275,9 +247,8 @@ workspace_gitlog() {
     echo "Updated .giantmem/context/git-log.md"
 }
 
-# Sync all context (tree + git log)
+# Sync context (git log)
 workspace_sync() {
-    workspace_tree
     if git rev-parse --is-inside-work-tree &>/dev/null; then
         workspace_gitlog
     fi
@@ -296,7 +267,7 @@ workspace_migrate() {
     fi
 
     # Create structure if missing
-    mkdir -p "$scratch_dir"/{context,plans,history,filebox,prompts,research,reviews,features,specs}
+    mkdir -p "$scratch_dir"/{context,plans,history,filebox,research,reviews,features,specs}
 
     # Process each file in .giantmem root (not in subdirs)
     for file in "$scratch_dir"/*; do
@@ -323,10 +294,6 @@ workspace_migrate() {
                 dest="history"
                 reason="history-related name"
                 ;;
-            *prompt*.md|*template*.md)
-                dest="prompts"
-                reason="prompt-related name"
-                ;;
             *research*.md|*notes*.md|*reference*.md)
                 dest="research"
                 reason="research-related name"
@@ -335,7 +302,7 @@ workspace_migrate() {
                 dest="reviews"
                 reason="review-related name"
                 ;;
-            tree.md|git-log.md|*.tree)
+            git-log.md)
                 dest="context"
                 reason="context file"
                 ;;
@@ -383,11 +350,6 @@ Status: [ ] In Progress  [ ] Complete
 <!-- Session notes, decisions, context -->
 EOF
         echo "  Created WORKSPACE.md"
-    fi
-
-    # Generate tree if missing
-    if [ ! -f "$scratch_dir/context/tree.md" ]; then
-        workspace_tree
     fi
 
     if [ $migrated -gt 0 ]; then

@@ -32,7 +32,6 @@ source "$HOME/dev/giant-tooling/workspace/workspace-lib.sh"
 
 # Short aliases
 alias ws='workspace_status'
-alias wst='workspace_tree'
 alias wsd='workspace_discover'
 alias wsc='workspace_complete'
 alias wssync='workspace_sync'
@@ -48,14 +47,12 @@ project/
 └── .giantmem/
     ├── WORKSPACE.md          # Branch/project purpose, status
     ├── context/
-    │   ├── tree.md           # Auto-generated project structure
     │   ├── discoveries.md    # Codebase learnings
     │   └── git-log.md        # Recent commits
     ├── plans/
     │   └── current.md        # Implementation plans
     ├── history/
     │   └── sessions.md       # Session timestamps/notes
-    ├── prompts/              # Reusable prompt templates
     ├── research/             # Web research findings
     ├── reviews/              # Code review notes
     └── filebox/              # Scratch files, samples, temp stuff
@@ -91,10 +88,9 @@ See `WORKSPACE-CLAUDE-HOOKS.md` for full hook documentation.
 | `workspace_migrate` | `wsm` | Move loose .giantmem files to appropriate subdirs |
 | `workspace_init` | `wsi` | Initialize workspace in current dir |
 | `workspace_status` | `ws` | Show workspace status and recent discoveries |
-| `workspace_tree` | `wst` | Regenerate tree.md |
 | `workspace_discover "note"` | `wsd` | Add a discovery note |
 | `workspace_complete` | `wsc` | Mark workspace as complete |
-| `workspace_sync` | `wssync` | Refresh tree + git log |
+| `workspace_sync` | `wssync` | Refresh git log |
 | `workspace_session_note` | - | Add session marker/note to history |
 | `workspace_gitlog` | - | Update git-log.md |
 
@@ -120,10 +116,9 @@ This will:
 | `*plan*.md`, `*todo*.md`, `*steps*.md` | plans/ |
 | `*discover*.md`, `*context*.md` | context/ |
 | `*history*.md`, `*session*.md` | history/ |
-| `*prompt*.md`, `*template*.md` | prompts/ |
 | `*research*.md`, `*notes*.md` | research/ |
 | `*review*.md`, `*feedback*.md` | reviews/ |
-| `tree.md`, `git-log.md` | context/ |
+| `git-log.md` | context/ |
 | Other `.md` files | Checked for content hints, else filebox/ |
 | Non-markdown files | filebox/ |
 
@@ -157,7 +152,6 @@ During work:
 ```bash
 wsd "Auth middleware in src/middleware/auth.py"
 wsd "JWT tokens stored in Redis with 24h TTL"
-wst                          # Refresh tree after adding files
 ```
 
 Finishing:
@@ -195,7 +189,7 @@ cat .giantmem/context/discoveries.md
 
 Before a Claude session:
 ```bash
-wssync                       # Update tree.md and git-log.md
+wssync                       # Update git-log.md
 ws                           # Review current state
 ```
 

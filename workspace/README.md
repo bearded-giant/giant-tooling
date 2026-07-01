@@ -16,10 +16,9 @@ source ~/dev/giant-tooling/workspace/workspace-lib.sh
 | `ws` | Status | Show workspace status | |
 | `wsb` | Bootstrap | Init or migrate workspace | Use mid-session |
 | `wsm` | Migrate | Move loose files to subdirs | Auto-categorizes by filename |
-| `wst` | Tree | Regenerate tree.md | |
 | `wsd "note"` | Discover | Add discovery note | Deprecated, use patterns.md |
 | `wsc` | Complete | Mark workspace complete | |
-| `wssync` | Sync | Refresh tree + git log | |
+| `wssync` | Sync | Refresh git log | |
 | `wsf` | Features | List features index | Reads _index.md |
 | `wsa` | Archive | Archive .giantmem to ~/giantmem_archive | |
 | `wsal [project]` | Archive List | List archives | Omit project to list all |
@@ -50,15 +49,13 @@ Run these inside Claude Code sessions:
 │       ├── facts.md       # Beta flags, config, test commands
 │       └── meta.json      # Machine-readable metadata
 ├── context/
-│   ├── patterns.md        # Curated architectural patterns
-│   └── tree.md            # Directory tree
+│   └── patterns.md        # Curated architectural patterns
 ├── plans/
 │   └── current.md         # Active session work (transient)
 ├── research/              # External topic research
 ├── reviews/               # Code review notes
 ├── history/               # Session logs
-├── filebox/               # Raw data, exports
-└── prompts/               # Reusable prompt templates
+└── filebox/               # Raw data, exports
 ```
 
 ## Feature Workflow

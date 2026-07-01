@@ -122,7 +122,7 @@ Workspace hooks run first, then memory hooks.
 **Output** (stdout, injected into session):
 ```
 [Workspace bootstrapped for project-name]
-Created .giantmem/ with: context/, plans/, history/, prompts/, research/, reviews/, filebox/
+Created .giantmem/ with: context/, plans/, history/, research/, reviews/, filebox/
 
 === WORKSPACE CONTEXT ===
 # Workspace: project-name
@@ -370,7 +370,6 @@ Brief: Add refresh token endpoint
 workspace-lib.sh          Shell functions for manual workspace ops
        |
        +-- workspace_init()     Called by start hook
-       +-- workspace_tree()     Called by start hook
        |
        v
 workspace_session_hook.py    Bootstrap + inject context + recent sessions (SessionStart)
@@ -387,8 +386,7 @@ workspace_session_end.py     Create session file + extract + persist (SessionEnd
 .giantmem/                     Persistent workspace state
 ├── WORKSPACE.md
 ├── context/
-│   ├── discoveries.md       <-- End hook appends here
-│   └── tree.md              <-- Start hook generates
+│   └── discoveries.md       <-- End hook appends here
 ├── plans/
 │   └── current.md           <-- End hook updates here
 └── history/
@@ -404,7 +402,6 @@ workspace_session_end.py     Create session file + extract + persist (SessionEnd
 | Action | Manual (shell) | Automatic (hooks) |
 |--------|----------------|-------------------|
 | Bootstrap workspace | `wsi` / `workspace_init` | SessionStart hook |
-| Generate tree | `wst` / `workspace_tree` | SessionStart hook |
 | Add discovery | `wsd "note"` | SessionEnd hook (extracted) |
 | Update plan | Edit `.giantmem/plans/current.md` | SessionEnd hook (extracted) |
 | Mark complete | `wsc` / `workspace_complete` | Manual only |
@@ -414,7 +411,6 @@ The hooks automate context injection and extraction. Manual commands still usefu
 - Explicit discovery notes during session
 - Marking completion
 - Checking status
-- Ad-hoc tree refresh
 
 ## Troubleshooting
 

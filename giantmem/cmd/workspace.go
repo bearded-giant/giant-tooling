@@ -57,11 +57,10 @@ func init() {
 		workspaceSubcmd("init", "workspace_init", "Initialize .giantmem in [dir] [name]"),
 		workspaceSubcmd("bootstrap", "workspace_bootstrap", "Smart init/migrate/sync"),
 		workspaceSubcmd("migrate", "workspace_migrate", "Move loose .giantmem files into subdirs"),
-		workspaceSubcmd("tree", "workspace_tree", "Generate tree.md"),
 		workspaceSubcmd("note", "workspace_session_note", "Add a session note"),
 		workspaceSubcmd("discover", "workspace_discover", "Add a discovery note"),
 		workspaceSubcmd("complete", "workspace_complete", "Mark workspace complete"),
-		workspaceSubcmd("sync", "workspace_sync", "Refresh tree + git log"),
+		workspaceSubcmd("sync", "workspace_sync", "Refresh git log"),
 		workspaceSubcmd("features", "workspace_features", "Show feature status table"),
 		workspaceSubcmd("gitlog", "workspace_gitlog", "Update git-log.md"),
 	)

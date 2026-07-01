@@ -141,11 +141,10 @@ This is the autoarchive entry point: deleting a worktree no longer leaves `.gian
 | `giantmem workspace status` | show workspace status |
 | `giantmem workspace bootstrap` | smart init/migrate/sync |
 | `giantmem workspace migrate` | move loose `.giantmem/` files into the right subdirs |
-| `giantmem workspace tree` | regenerate `tree.md` |
 | `giantmem workspace note "..."` | add a session note |
 | `giantmem workspace discover "..."` | add a discovery note |
 | `giantmem workspace complete` | mark workspace complete |
-| `giantmem workspace sync` | refresh tree + git log |
+| `giantmem workspace sync` | refresh git log |
 | `giantmem workspace features` | show feature status table |
 | `giantmem workspace gitlog` | update `git-log.md` |
 | `giantmem workspace init [dir] [name]` | initialize `.giantmem/` |
