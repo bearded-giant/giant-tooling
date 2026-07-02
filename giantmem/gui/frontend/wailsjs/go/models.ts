@@ -211,7 +211,8 @@ export namespace main {
 	    project?: string;
 	    dirType?: string;
 	    topic?: string;
-	    dateBucket?: string;
+	    since?: string;
+	    until?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionFilter(source);
@@ -222,7 +223,8 @@ export namespace main {
 	        this.project = source["project"];
 	        this.dirType = source["dirType"];
 	        this.topic = source["topic"];
-	        this.dateBucket = source["dateBucket"];
+	        this.since = source["since"];
+	        this.until = source["until"];
 	    }
 	}
 	export class SparklinePoint {
@@ -244,6 +246,8 @@ export namespace main {
 	    toolName?: string;
 	    project?: string;
 	    useFTSPre?: boolean;
+	    since?: string;
+	    until?: string;
 	    limit?: number;
 	
 	    static createFrom(source: any = {}) {
@@ -256,6 +260,8 @@ export namespace main {
 	        this.toolName = source["toolName"];
 	        this.project = source["project"];
 	        this.useFTSPre = source["useFTSPre"];
+	        this.since = source["since"];
+	        this.until = source["until"];
 	        this.limit = source["limit"];
 	    }
 	}

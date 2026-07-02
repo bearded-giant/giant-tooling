@@ -29,7 +29,33 @@ var (
 	artifactJSON        bool
 	artifactPaths       bool
 	artifactIncludeArch bool
+	artifactSince       string
+	artifactUntil       string
+	artifactSinceDate   string
+	artifactUntilDate   string
 )
+
+// resolveArtifactDates validates --since/--until and stashes them as YYYY-MM-DD
+// bounds (compared lexically against Artifact.Updated). A bad spec errors before
+// any query runs.
+func resolveArtifactDates() error {
+	artifactSinceDate, artifactUntilDate = "", ""
+	if artifactSince != "" {
+		t, err := search.ParseSince(artifactSince)
+		if err != nil {
+			return err
+		}
+		artifactSinceDate = t.Format("2006-01-02")
+	}
+	if artifactUntil != "" {
+		t, err := search.ParseUntil(artifactUntil)
+		if err != nil {
+			return err
+		}
+		artifactUntilDate = t.Format("2006-01-02")
+	}
+	return nil
+}
 
 var artifactCmd = &cobra.Command{
 	Use:     "artifact",
@@ -112,6 +138,8 @@ func init() {
 		c.Flags().BoolVar(&artifactIncludeArch, "include-archived", false, "with --repo all, also include archived .giantmem/ snapshots")
 		c.Flags().BoolVar(&artifactJSON, "json", false, "JSON output")
 		c.Flags().BoolVar(&artifactPaths, "paths", false, "print absolute paths only")
+		c.Flags().StringVar(&artifactSince, "since", "", `only artifacts updated on/after (e.g. "7d", "2026-06-01", RFC3339)`)
+		c.Flags().StringVar(&artifactUntil, "until", "", `only artifacts updated on/before (e.g. "1d", "2026-06-30", RFC3339)`)
 	}
 	artifactStaleCmd.Flags().IntVar(&artifactStaleDays, "days", 30, "stale threshold in days; 0 = use lifecycle tier policy")
 	artifactStaleCmd.Flags().BoolVar(&artifactStaleAll, "all-repos", false, "scan every discovered workspace, not just current")
@@ -203,6 +231,12 @@ func filterArtifacts(rows []artifacts.Artifact) []artifacts.Artifact {
 				continue
 			}
 		}
+		if artifactSinceDate != "" && a.Updated < artifactSinceDate {
+			continue
+		}
+		if artifactUntilDate != "" && a.Updated >= artifactUntilDate {
+			continue
+		}
 		out = append(out, a)
 	}
 	sort.SliceStable(out, func(i, j int) bool {
@@ -237,6 +271,9 @@ func setFromSlice(in []string) map[string]bool {
 }
 
 func runArtifactList(cmd *cobra.Command, args []string) error {
+	if err := resolveArtifactDates(); err != nil {
+		return err
+	}
 	// Prefer the SQL projection when populated; fall back to a filesystem scan
 	// on first run (before any reconcile has filled the artifacts table).
 	if live := openLiveDBQuiet(); live != nil {

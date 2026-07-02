@@ -51,6 +51,28 @@ const TOOL_NAMES = [
   "TodoWrite",
 ];
 
+type DateRange = { preset: string; from: string; to: string };
+
+// preset -> duration spec understood by the Go side (search.parseSinceUntil).
+// "all" clears the bound; "custom" uses the from/to date inputs.
+const DATE_PRESETS: { value: string; label: string }[] = [
+  { value: "all", label: "All time" },
+  { value: "15m", label: "Last 15 min" },
+  { value: "1h", label: "Last 1 hour" },
+  { value: "4h", label: "Last 4 hours" },
+  { value: "24h", label: "Last 24 hours" },
+  { value: "7d", label: "Last 7 days" },
+  { value: "30d", label: "Last 30 days" },
+  { value: "90d", label: "Last 90 days" },
+  { value: "custom", label: "Custom range…" },
+];
+
+function rangeSinceUntil(r: DateRange): { since: string; until: string } {
+  if (r.preset === "all") return { since: "", until: "" };
+  if (r.preset === "custom") return { since: r.from || "", until: r.to || "" };
+  return { since: r.preset, until: "" };
+}
+
 type Selection =
   | { kind: "artifact"; id: string }
   | { kind: "session"; path: string }
@@ -170,7 +192,30 @@ function App() {
   const [selSessionProject, setSelSessionProject] = useState("");
   const [selSessionDirType, setSelSessionDirType] = useState("");
   const [selSessionTopic, setSelSessionTopic] = useState("");
-  const [selSessionDate, setSelSessionDate] = useState("");
+  const [dateRange, setDateRange] = useState<DateRange>(() => {
+    try {
+      const raw = localStorage.getItem("gm.dateRange");
+      if (raw) return JSON.parse(raw) as DateRange;
+    } catch {}
+    return { preset: "all", from: "", to: "" };
+  });
+  const { since, until } = useMemo(() => rangeSinceUntil(dateRange), [dateRange]);
+  useEffect(() => {
+    GetPref("dateRange")
+      .then((v) => {
+        if (v) {
+          try {
+            setDateRange(JSON.parse(v) as DateRange);
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    const s = JSON.stringify(dateRange);
+    localStorage.setItem("gm.dateRange", s);
+    SetPref("dateRange", s).catch(() => {});
+  }, [dateRange]);
   const [artifactRows, setArtifactRows] = useState<artifacts.Artifact[]>([]);
   const [hybridRows, setHybridRows] = useState<search.HybridResult[]>([]);
   const [sessionHits, setSessionHits] = useState<search.Hit[]>([]);
@@ -391,7 +436,7 @@ function App() {
             setHybridRows(r || []);
             setArtifactRows([]);
           } else {
-            const r = await ListArtifacts(filter, sortBy, 200);
+            const r = await ListArtifacts(filter, sortBy, 200, since, until);
             setArtifactRows(r || []);
             setHybridRows([]);
           }
@@ -401,6 +446,8 @@ function App() {
             toolName: toolNameFilter === "any" ? "" : toolNameFilter,
             project: "",
             useFTSPre: toolUseFTSPre,
+            since,
+            until,
             limit: 200,
           };
           const hits = (await SearchToolUses(f)) || [];
@@ -411,7 +458,8 @@ function App() {
             project: selSessionProject,
             dirType: selSessionDirType,
             topic: selSessionTopic,
-            dateBucket: selSessionDate,
+            since,
+            until,
           };
           if (debouncedQuery.trim()) {
             const params: search.Params = {
@@ -423,19 +471,16 @@ function App() {
               Latest: false,
               LiveOnly: false,
               ArchiveOnly: true,
-              Since: "",
-              Until: "",
+              Since: since,
+              Until: until,
               Limit: 100,
               IncludeFull: true,
             };
             hits = (await SearchFTS(params)) || [];
-            // client-side topic/date filter for FTS path since search.Run
-            // doesn't know our buckets
+            // client-side topic filter for FTS path since search.Run doesn't
+            // know our topic dimension; date range is handled server-side
             if (selSessionTopic) {
               hits = hits.filter((h) => h.topic === selSessionTopic);
-            }
-            if (selSessionDate) {
-              hits = filterByDateBucket(hits, selSessionDate);
             }
             hits = [...hits].sort((a, b) =>
               (b.timestamp || "").localeCompare(a.timestamp || ""),
@@ -460,7 +505,8 @@ function App() {
     selSessionProject,
     selSessionDirType,
     selSessionTopic,
-    selSessionDate,
+    since,
+    until,
     toolNameFilter,
     toolUseFTSPre,
     reloadKey,
@@ -533,7 +579,6 @@ function App() {
   const trimmedQuery = query.trim();
   const queryActive = trimmedQuery.length > 0;
   const sessionFilterCount =
-    (selSessionDate ? 1 : 0) +
     (selSessionProject ? 1 : 0) +
     (selSessionDirType ? 1 : 0) +
     (selSessionTopic ? 1 : 0) +
@@ -647,6 +692,45 @@ function App() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        {tab !== "activity" && (
+          <div className="date-range" title="filter results by date range">
+            <select
+              value={dateRange.preset}
+              onChange={(e) =>
+                setDateRange((r) => ({ ...r, preset: e.target.value }))
+              }
+            >
+              {DATE_PRESETS.map((p) => (
+                <option key={p.value} value={p.value}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            {dateRange.preset === "custom" && (
+              <>
+                <input
+                  type="date"
+                  value={dateRange.from}
+                  max={dateRange.to || undefined}
+                  onChange={(e) =>
+                    setDateRange((r) => ({ ...r, from: e.target.value }))
+                  }
+                  title="from (inclusive)"
+                />
+                <span className="date-range-sep">→</span>
+                <input
+                  type="date"
+                  value={dateRange.to}
+                  min={dateRange.from || undefined}
+                  onChange={(e) =>
+                    setDateRange((r) => ({ ...r, to: e.target.value }))
+                  }
+                  title="to (inclusive)"
+                />
+              </>
+            )}
+          </div>
+        )}
         <button
           className={`refresh-btn ${loading ? "spinning" : ""} ${justRefreshed ? "flash" : ""}`}
           onClick={refreshAll}
@@ -715,19 +799,10 @@ function App() {
           </span>
         )}
         {tab === "sessions" &&
-          (!!selSessionDate ||
-            !!selSessionProject ||
+          (!!selSessionProject ||
             !!selSessionDirType ||
             !!selSessionTopic) && (
             <>
-              {selSessionDate && (
-                <span
-                  className="filter-chip"
-                  onClick={() => setSelSessionDate("")}
-                >
-                  date: {selSessionDate} <span className="x">×</span>
-                </span>
-              )}
               {selSessionProject && (
                 <span
                   className="filter-chip"
@@ -823,7 +898,6 @@ function App() {
             onClick={() => {
               setQuery("");
               if (tab === "sessions") {
-                setSelSessionDate("");
                 setSelSessionProject("");
                 setSelSessionDirType("");
                 setSelSessionTopic("");
@@ -965,15 +1039,6 @@ function App() {
               />
             </div>
             <SingleFacetGroup
-              title="date"
-              counts={sessionFacets.byDate || {}}
-              selected={selSessionDate}
-              onPick={setSelSessionDate}
-              filter={sidebarFilter}
-              isCollapsed={collapsed.has("date")}
-              onToggleCollapse={() => toggleCollapsed("date")}
-            />
-            <SingleFacetGroup
               title="project"
               counts={sessionFacets.byProject || {}}
               selected={selSessionProject}
@@ -1001,14 +1066,12 @@ function App() {
               isCollapsed={collapsed.has("topic")}
               onToggleCollapse={() => toggleCollapsed("topic")}
             />
-            {(selSessionDate ||
-              selSessionProject ||
+            {(selSessionProject ||
               selSessionDirType ||
               selSessionTopic) && (
               <button
                 className="facet-clear"
                 onClick={() => {
-                  setSelSessionDate("");
                   setSelSessionProject("");
                   setSelSessionDirType("");
                   setSelSessionTopic("");
@@ -2586,32 +2649,6 @@ function ToolSection({
 // shortPath returns ~/last-2-segments form of an absolute path so the UI can
 // surface worktree context like 'cc-wt/stage' or 'python/recharge-auth'
 // without eating row width.
-// filterByDateBucket trims a hit list to one of the same bucket labels the
-// backend's dateBucketWhere recognises ("today", "yesterday", "7d", "30d",
-// "older"). Used on the FTS path which doesn't see those buckets.
-function filterByDateBucket(hits: search.Hit[], bucket: string): search.Hit[] {
-  if (!bucket) return hits;
-  const now = new Date();
-  const dayMs = 86400_000;
-  return hits.filter((h) => {
-    if (!h.timestamp) return false;
-    const t = new Date(h.timestamp);
-    if (Number.isNaN(t.getTime())) return false;
-    const diff = (now.getTime() - t.getTime()) / dayMs;
-    const sameLocalDay = (a: Date, b: Date) =>
-      a.getFullYear() === b.getFullYear() &&
-      a.getMonth() === b.getMonth() &&
-      a.getDate() === b.getDate();
-    const yest = new Date(now.getTime() - dayMs);
-    if (bucket === "today") return sameLocalDay(t, now);
-    if (bucket === "yesterday") return sameLocalDay(t, yest);
-    if (bucket === "7d") return diff > 1 && diff <= 7;
-    if (bucket === "30d") return diff > 7 && diff <= 30;
-    if (bucket === "older") return diff > 30;
-    return true;
-  });
-}
-
 function debounce<F extends (...a: any[]) => void>(fn: F, ms: number): F {
   let t: number | undefined;
   return ((...args: any[]) => {

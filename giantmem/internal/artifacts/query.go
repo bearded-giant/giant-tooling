@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 )
 
 // ListFilter selects rows from the artifacts projection table. Empty fields are
@@ -18,6 +19,8 @@ type ListFilter struct {
 	Branch    string
 	Feature   string
 	Domain    string
+	Since     time.Time `json:"-"`
+	Until     time.Time `json:"-"`
 }
 
 // TableHasRows reports whether the artifacts projection has been populated.
@@ -73,6 +76,17 @@ func ListArtifacts(live *sql.DB, f ListFilter, sortBy string, limit int) ([]Arti
 	addEq("domain", f.Domain)
 	if f.Repo != "" && f.Repo != "all" && f.Repo != "current" {
 		addEq("repo", f.Repo)
+	}
+	// artifacts.updated is date-only (YYYY-MM-DD); compare lexically. Until is
+	// pre-resolved to next-day 00:00 by search.ParseUntil, so `< untilDate`
+	// includes the whole named day.
+	if !f.Since.IsZero() {
+		where = append(where, "a.updated >= ?")
+		args = append(args, f.Since.Format("2006-01-02"))
+	}
+	if !f.Until.IsZero() {
+		where = append(where, "a.updated < ?")
+		args = append(args, f.Until.Format("2006-01-02"))
 	}
 
 	q := `SELECT a.id, a.type, a.feature, a.domain, a.name, a.status, a.lifecycle,

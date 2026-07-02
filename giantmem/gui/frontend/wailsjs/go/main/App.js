@@ -26,8 +26,8 @@ export function GetPref(arg1) {
   return window['go']['main']['App']['GetPref'](arg1);
 }
 
-export function ListArtifacts(arg1, arg2, arg3) {
-  return window['go']['main']['App']['ListArtifacts'](arg1, arg2, arg3);
+export function ListArtifacts(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['ListArtifacts'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function ListSessions(arg1, arg2) {

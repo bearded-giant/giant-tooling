@@ -17,6 +17,7 @@ import (
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 	sessionsExport "github.com/bearded-giant/giant-tooling/giantmem/internal/sessions"
 	"github.com/spf13/cobra"
 )
@@ -29,6 +30,8 @@ var sessionCmd = &cobra.Command{
 var (
 	sessListProject string
 	sessListLimit   int
+	sessListSince   string
+	sessListUntil   string
 	sessFindLimit   int
 	sessJSON        bool
 )
@@ -63,6 +66,22 @@ var sessListCmd = &cobra.Command{
 		if sessListProject != "" {
 			conds = append(conds, "project LIKE ?")
 			qargs = append(qargs, "%"+sessListProject+"%")
+		}
+		if sessListSince != "" {
+			t, err := search.ParseSince(sessListSince)
+			if err != nil {
+				return err
+			}
+			conds = append(conds, "timestamp >= ?")
+			qargs = append(qargs, t.Format("20060102_150405"))
+		}
+		if sessListUntil != "" {
+			t, err := search.ParseUntil(sessListUntil)
+			if err != nil {
+				return err
+			}
+			conds = append(conds, "timestamp < ?")
+			qargs = append(qargs, t.Format("20060102_150405"))
 		}
 		q := fmt.Sprintf(`
             SELECT COALESCE(session_id,''), filepath, project, COALESCE(cwd,''),
@@ -692,6 +711,8 @@ func dirSizeBytes(dir string) int64 {
 func init() {
 	sessListCmd.Flags().StringVarP(&sessListProject, "project", "p", "", "filter by project (LIKE)")
 	sessListCmd.Flags().IntVarP(&sessListLimit, "limit", "n", 20, "max rows")
+	sessListCmd.Flags().StringVar(&sessListSince, "since", "", `only sessions on/after (e.g. "7d", "2026-06-01", RFC3339)`)
+	sessListCmd.Flags().StringVar(&sessListUntil, "until", "", `only sessions on/before (e.g. "1d", "2026-06-30", RFC3339)`)
 	sessListCmd.Flags().BoolVar(&sessJSON, "json", false, "JSON output")
 
 	sessFindCmd.Flags().IntVarP(&sessFindLimit, "limit", "n", 20, "max rows")

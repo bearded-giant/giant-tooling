@@ -69,9 +69,23 @@ func (a *App) shutdown(ctx context.Context) {
 // ListArtifacts returns artifact rows filtered + sorted. limit<=0 means no limit.
 // Frontend sees a JS-side artifacts.ListFilter object (Type/Status/Lifecycle as
 // arrays; Scope/Repo/Branch/Feature/Domain as strings).
-func (a *App) ListArtifacts(filter artifacts.ListFilter, sortBy string, limit int) ([]artifacts.Artifact, error) {
+func (a *App) ListArtifacts(filter artifacts.ListFilter, sortBy string, limit int, since, until string) ([]artifacts.Artifact, error) {
 	if a.live == nil {
 		return nil, fmt.Errorf("live db not open")
+	}
+	if since != "" {
+		t, err := search.ParseSince(since)
+		if err != nil {
+			return nil, err
+		}
+		filter.Since = t
+	}
+	if until != "" {
+		t, err := search.ParseUntil(until)
+		if err != nil {
+			return nil, err
+		}
+		filter.Until = t
 	}
 	return artifacts.ListArtifacts(a.live, filter, sortBy, limit)
 }
@@ -167,32 +181,34 @@ func (a *App) FeaturesByRepo() ([]FeatureRow, error) {
 }
 
 // SessionFilter scopes ListSessions and SessionFacets. Each non-empty field
-// is ANDed into the WHERE clause. DateBucket accepts one of:
-//   "today" / "yesterday" / "7d" / "30d" / "older"
-// matching the same buckets the sidebar renders.
+// is ANDed into the WHERE clause. Since/Until are date-range specs (duration
+// like "7d", a bare date "2006-01-02", or RFC3339) shared with the other views.
 type SessionFilter struct {
-	Project    string `json:"project,omitempty"`
-	DirType    string `json:"dirType,omitempty"`
-	Topic      string `json:"topic,omitempty"`
-	DateBucket string `json:"dateBucket,omitempty"`
+	Project string `json:"project,omitempty"`
+	DirType string `json:"dirType,omitempty"`
+	Topic   string `json:"topic,omitempty"`
+	Since   string `json:"since,omitempty"`
+	Until   string `json:"until,omitempty"`
 }
 
-// dateBucketWhere translates a SessionFilter.DateBucket label into a SQL
-// fragment + bound args using SQLite's datetime('now') anchor.
-func dateBucketWhere(bucket string) (string, []any) {
-	switch bucket {
-	case "today":
-		return ` AND date(timestamp) = date('now', 'localtime')`, nil
-	case "yesterday":
-		return ` AND date(timestamp) = date('now', '-1 day', 'localtime')`, nil
-	case "7d":
-		return ` AND timestamp >= datetime('now', '-7 days') AND date(timestamp) < date('now', '-1 day', 'localtime')`, nil
-	case "30d":
-		return ` AND timestamp >= datetime('now', '-30 days') AND timestamp < datetime('now', '-7 days')`, nil
-	case "older":
-		return ` AND timestamp < datetime('now', '-30 days')`, nil
+// docTimeBounds resolves since/until specs to the compact documents.timestamp
+// layout (YYYYMMDD_HHMMSS) for lexical comparison. Empty spec → empty bound.
+func docTimeBounds(since, until string) (lo, hi string, err error) {
+	if since != "" {
+		t, e := search.ParseSince(since)
+		if e != nil {
+			return "", "", e
+		}
+		lo = t.Format("20060102_150405")
 	}
-	return "", nil
+	if until != "" {
+		t, e := search.ParseUntil(until)
+		if e != nil {
+			return "", "", e
+		}
+		hi = t.Format("20060102_150405")
+	}
+	return lo, hi, nil
 }
 
 // ListSessions returns the most recent session rows from archives.db without
@@ -225,8 +241,17 @@ func (a *App) ListSessions(filter SessionFilter, limit int) ([]search.Hit, error
 		q += ` AND topic = ?`
 		args = append(args, filter.Topic)
 	}
-	if frag, _ := dateBucketWhere(filter.DateBucket); frag != "" {
-		q += frag
+	lo, hi, err := docTimeBounds(filter.Since, filter.Until)
+	if err != nil {
+		return nil, err
+	}
+	if lo != "" {
+		q += ` AND timestamp >= ?`
+		args = append(args, lo)
+	}
+	if hi != "" {
+		q += ` AND timestamp < ?`
+		args = append(args, hi)
 	}
 	q += ` ORDER BY timestamp DESC LIMIT ?`
 	args = append(args, limit)
@@ -279,6 +304,8 @@ type ToolUseFilter struct {
 	ToolName  string `json:"toolName,omitempty"`
 	Project   string `json:"project,omitempty"`
 	UseFTSPre bool   `json:"useFTSPre,omitempty"`
+	Since     string `json:"since,omitempty"`
+	Until     string `json:"until,omitempty"`
 	Limit     int    `json:"limit,omitempty"`
 }
 
@@ -349,9 +376,28 @@ func (a *App) SearchToolUses(filter ToolUseFilter) ([]ToolUseHit, error) {
 	}
 	needle := strings.ToLower(strings.TrimSpace(filter.Query))
 	wantTool := filter.ToolName
+	var sinceT, untilT time.Time
+	if filter.Since != "" {
+		t, err := search.ParseSince(filter.Since)
+		if err != nil {
+			return nil, err
+		}
+		sinceT = t
+	}
+	if filter.Until != "" {
+		t, err := search.ParseUntil(filter.Until)
+		if err != nil {
+			return nil, err
+		}
+		untilT = t
+	}
+	// no SQL time-prune: documents.timestamp is session-representative, so a
+	// session that starts before `since` may still hold in-range tool_uses.
+	// filter per-hit inside the scan. ponytail: full scan for sparse narrow
+	// ranges; add a documents.timestamp early-break if this gets slow.
 	var out []ToolUseHit
 	for _, rr := range rows {
-		hits, err := scanToolUses(rr.path, rr.sessionID, rr.project, rr.timestamp, wantTool, needle, filter.Limit-len(out))
+		hits, err := scanToolUses(rr.path, rr.sessionID, rr.project, rr.timestamp, wantTool, needle, sinceT, untilT, filter.Limit-len(out))
 		if err != nil {
 			continue
 		}
@@ -369,7 +415,7 @@ func (a *App) SearchToolUses(filter ToolUseFilter) ([]ToolUseHit, error) {
 // tool_result by id, and emits ToolUseHit rows for blocks matching wantTool
 // (when non-empty) and needle (case-insensitive substring on input json +
 // result body). Stops once remaining hits are exhausted.
-func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, remaining int) ([]ToolUseHit, error) {
+func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, since, until time.Time, remaining int) ([]ToolUseHit, error) {
 	if remaining <= 0 {
 		return nil, nil
 	}
@@ -378,6 +424,23 @@ func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, 
 		return nil, err
 	}
 	defer f.Close()
+
+	inRange := func(tsStr string) bool {
+		if since.IsZero() && until.IsZero() {
+			return true
+		}
+		mt, err := time.Parse(time.RFC3339, tsStr)
+		if err != nil {
+			return true // compact-format fallback / unparseable — don't drop
+		}
+		if !since.IsZero() && mt.Before(since) {
+			return false
+		}
+		if !until.IsZero() && !mt.Before(until) {
+			return false
+		}
+		return true
+	}
 
 	type pending struct {
 		hit       ToolUseHit
@@ -441,7 +504,7 @@ func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, 
 				}
 				if id != "" {
 					byID[id] = p
-				} else if matches {
+				} else if matches && inRange(p.hit.Timestamp) {
 					out = append(out, p.hit)
 				}
 			case "tool_result":
@@ -460,7 +523,7 @@ func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, 
 						p.matchesIn = true
 					}
 				}
-				if p.matchesIn {
+				if p.matchesIn && inRange(p.hit.Timestamp) {
 					out = append(out, p.hit)
 					delete(byID, id)
 				}
@@ -472,7 +535,7 @@ func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, 
 	}
 	// unpaired tool_use blocks (no tool_result yet) that still matched on input
 	for _, p := range byID {
-		if p.matchesIn {
+		if p.matchesIn && inRange(p.hit.Timestamp) {
 			out = append(out, p.hit)
 		}
 	}

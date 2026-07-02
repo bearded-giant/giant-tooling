@@ -68,6 +68,19 @@
 .topbar select {
   width: auto;
 }
+.topbar .date-range {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.topbar .date-range input[type="date"] {
+  width: auto;
+  font-size: 12px;
+}
+.topbar .date-range .date-range-sep {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
 
 .refresh-btn {
   background: transparent;

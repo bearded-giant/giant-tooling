@@ -117,7 +117,7 @@ func QueryArchive(d *sql.DB, p Params) ([]Hit, error) {
 		conds = append(conds, "d.is_latest = 1")
 	}
 	if p.Since != "" {
-		t, err := parseSinceUntil(p.Since)
+		t, err := ParseSince(p.Since)
 		if err != nil {
 			return nil, err
 		}
@@ -125,7 +125,7 @@ func QueryArchive(d *sql.DB, p Params) ([]Hit, error) {
 		args = append(args, t.Format("20060102_150405"))
 	}
 	if p.Until != "" {
-		t, err := parseSinceUntil(p.Until)
+		t, err := ParseUntil(p.Until)
 		if err != nil {
 			return nil, err
 		}
@@ -184,7 +184,7 @@ func QueryLive(d *sql.DB, p Params) ([]Hit, error) {
 		args = append(args, p.Feature)
 	}
 	if p.Since != "" {
-		t, err := parseSinceUntil(p.Since)
+		t, err := ParseSince(p.Since)
 		if err != nil {
 			return nil, err
 		}
@@ -192,7 +192,7 @@ func QueryLive(d *sql.DB, p Params) ([]Hit, error) {
 		args = append(args, t.Unix())
 	}
 	if p.Until != "" {
-		t, err := parseSinceUntil(p.Until)
+		t, err := ParseUntil(p.Until)
 		if err != nil {
 			return nil, err
 		}
@@ -232,14 +232,40 @@ func QueryLive(d *sql.DB, p Params) ([]Hit, error) {
 }
 
 func parseSinceUntil(s string) (time.Time, error) {
+	s = strings.TrimSpace(s)
 	if t, err := time.Parse(time.RFC3339, s); err == nil {
 		return t, nil
 	}
+	if dateOnlyRE.MatchString(s) {
+		if t, err := time.ParseInLocation("2006-01-02", s, time.Local); err == nil {
+			return t, nil
+		}
+	}
 	dur, err := parseDuration(s)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("bad time spec %q: must be duration or RFC3339", s)
+		return time.Time{}, fmt.Errorf("bad time spec %q: must be duration, date, or RFC3339", s)
 	}
 	return time.Now().Add(-dur), nil
+}
+
+var dateOnlyRE = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// ParseSince resolves a since-bound: a duration ("7d","4h"), an RFC3339
+// timestamp, or a bare local date "2006-01-02" (start of that day).
+func ParseSince(s string) (time.Time, error) { return parseSinceUntil(s) }
+
+// ParseUntil resolves an until-bound. A bare local date means "through the end
+// of that day": it resolves to 00:00 local of the NEXT day so callers using
+// `col < until` include every row on the named day.
+func ParseUntil(s string) (time.Time, error) {
+	t, err := parseSinceUntil(s)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if dateOnlyRE.MatchString(strings.TrimSpace(s)) {
+		t = t.AddDate(0, 0, 1)
+	}
+	return t, nil
 }
 
 // parseDuration accepts durations Go's time.ParseDuration handles plus "d".
