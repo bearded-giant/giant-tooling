@@ -151,9 +151,22 @@ function App() {
   const [sessionFacets, setSessionFacets] =
     useState<main.SessionFacetCounts | null>(null);
   const [toolHits, setToolHits] = useState<main.ToolUseHit[]>([]);
-  const [toolNameFilter, setToolNameFilter] = useState<string>("Bash");
+  const [toolNameFilter, setToolNameFilter] = useState<string>(
+    () => localStorage.getItem("gm.toolNameFilter") || "any",
+  );
   const [toolUseFTSPre, setToolUseFTSPre] = useState(true);
   const [toolSelected, setToolSelected] = useState<main.ToolUseHit | null>(null);
+  useEffect(() => {
+    GetPref("toolNameFilter")
+      .then((v) => {
+        if (v) setToolNameFilter(v);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("gm.toolNameFilter", toolNameFilter);
+    SetPref("toolNameFilter", toolNameFilter).catch(() => {});
+  }, [toolNameFilter]);
   const [selSessionProject, setSelSessionProject] = useState("");
   const [selSessionDirType, setSelSessionDirType] = useState("");
   const [selSessionTopic, setSelSessionTopic] = useState("");

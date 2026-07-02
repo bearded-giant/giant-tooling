@@ -360,6 +360,8 @@ func (a *App) SearchToolUses(filter ToolUseFilter) ([]ToolUseHit, error) {
 			break
 		}
 	}
+	// recent first across all scanned sessions (ISO ts sorts chronologically)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Timestamp > out[j].Timestamp })
 	return out, nil
 }
 
@@ -441,9 +443,6 @@ func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, 
 					byID[id] = p
 				} else if matches {
 					out = append(out, p.hit)
-					if len(out) >= remaining {
-						return out, nil
-					}
 				}
 			case "tool_result":
 				id, _ := bm["tool_use_id"].(string)
@@ -464,9 +463,6 @@ func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, 
 				if p.matchesIn {
 					out = append(out, p.hit)
 					delete(byID, id)
-					if len(out) >= remaining {
-						return out, nil
-					}
 				}
 			}
 		}
@@ -474,20 +470,17 @@ func scanToolUses(path, sessionID, project, timestamp, wantTool, needle string, 
 	if err := sc.Err(); err != nil {
 		return out, err
 	}
-	// flush remaining pending entries that matched on input but never paired
-	// with a result.
-	ordered := make([]*pending, 0, len(byID))
+	// unpaired tool_use blocks (no tool_result yet) that still matched on input
 	for _, p := range byID {
 		if p.matchesIn {
-			ordered = append(ordered, p)
+			out = append(out, p.hit)
 		}
 	}
-	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].hit.TurnIndex < ordered[j].hit.TurnIndex })
-	for _, p := range ordered {
-		out = append(out, p.hit)
-		if len(out) >= remaining {
-			break
-		}
+	// newest turn first, then cap — a >remaining session yields its most recent
+	// hits, not its oldest.
+	sort.SliceStable(out, func(i, j int) bool { return out[i].TurnIndex > out[j].TurnIndex })
+	if len(out) > remaining {
+		out = out[:remaining]
 	}
 	return out, nil
 }
@@ -1053,11 +1046,21 @@ func writePrefs(m map[string]string) error {
 // rather than thrash on transient failures.
 func (a *App) LiveMtime() int64 {
 	base := archiveBase()
-	st, err := os.Stat(filepath.Join(base, "live.db"))
-	if err != nil {
-		return 0
+	var newest int64
+	// watch both dbs (session sweep writes archives.db, doc edits write live.db)
+	// AND their -wal sidecars: in WAL mode writes land in <db>-wal and only reach
+	// the main file on checkpoint, so the main mtime freezes for hours between.
+	for _, name := range []string{
+		"live.db", "live.db-wal",
+		"archives.db", "archives.db-wal",
+	} {
+		if st, err := os.Stat(filepath.Join(base, name)); err == nil {
+			if m := st.ModTime().Unix(); m > newest {
+				newest = m
+			}
+		}
 	}
-	return st.ModTime().Unix()
+	return newest
 }
 
 // daemonEmbed asks the running giantmemd to embed text with its real backend.
