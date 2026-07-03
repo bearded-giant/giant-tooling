@@ -4,7 +4,7 @@ How to search across the giantmem indexes. One CLI verb (`giantmem`) covers four
 
 | Corpus | DB | What's in it | How it gets there |
 |---|---|---|---|
-| **archive** | `~/giantmem_archive/archives.db` | Archived `.giantmem/` markdown, Claude JSONL transcripts, domain JSON | `giantmem archive run` (workspace), session-end hook (sessions), explicit `giantmem ingest` |
+| **archive** | `~/giantmem_archive/archives.db` | Archived `.giantmem/` markdown, Claude JSONL transcripts | `giantmem archive run` (workspace), session-end hook (sessions), explicit `giantmem ingest` |
 | **live** | `~/giantmem_archive/live.db` | Current `.giantmem/` content across every workspace | `live_index.py` PostToolUse hook, `giantmem index live` (full rescan) |
 | **artifacts** | `<workspace>/artifacts.json` | Typed artifact index (proposal/delta-spec/tasks/...) | `giantmem artifact reindex` (or `giantmem watch start` for auto) |
 | **access log** | `live.db.artifact_access` | Per-call list/show/find rows. Feeds hybrid ranking. | every `artifact list|show|search` and MCP `find_artifact` call |
@@ -21,7 +21,6 @@ giantmem find "jwt refresh" --live          # current .giantmem/ only
 giantmem find "jwt refresh" --archive       # archives.db only
 giantmem find "jwt refresh" -s session      # session transcripts only (archive)
 giantmem find "jwt refresh" -s workspace
-giantmem find "jwt refresh" -s domain
 
 # filters
 giantmem find "jwt refresh" -p cc-wt        # project
@@ -118,12 +117,11 @@ After `giantmem mcp serve` (or daemon `mcp install`), agents call:
 
 | Tool | Purpose |
 |---|---|
-| `search_archive` | Content FTS over `archives.db` (sessions + workspace + domain). Mirrors `giantmem find --archive`. Args: `query`, `project`, `source_type`, `topic`, `tool_filter`, `ext_filter`, `include_read`, `limit`. |
+| `search_archive` | Content FTS over `archives.db` (sessions + workspace). Mirrors `giantmem find --archive`. Args: `query`, `project`, `source_type`, `topic`, `tool_filter`, `ext_filter`, `include_read`, `limit`. |
 | `find_artifact` | Typed artifact lookup. Args: `type`, `status`, `feature`, `domain`, `repo`, `branch`, `scope`, `lifecycle`, `query`, `semantic`, `limit`. `semantic=true` routes through hybrid scorer. |
 | `get_artifact` | Full body + frontmatter for one artifact id. |
 | `list_features_with_artifacts` | Group artifacts by feature across one or all repos. |
 | `get_stats` | Counts by type/lifecycle/status/repo + `recent_writes_24h`, `recent_accesses_24h`, `top_accessed[5]`. |
-| `find_entity` | Domain `key_files[]` lookup; returns entity + back-references. |
 | `feature_status`, `workspace_tree`, `recent_writes`, `list_sessions`, `get_session_summary` | other lookups |
 
 All MCP tools log artifact accesses to `artifact_access` so the hybrid scorer learns from agent activity.

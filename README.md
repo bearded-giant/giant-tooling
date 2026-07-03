@@ -42,19 +42,11 @@ See [git-worktrees/README.md](git-worktrees/README.md) for the full command refe
 
 Go CLI that unifies search, sessions, worktree, workspace, and ingest under one binary (`giantmem`). Replaced the prior bash + python `giantmem-archive/` scripts. Key surfaces: `giantmem find` (FTS5 across live + Claude session transcripts, ranked and merged); `giantmem index backfill` (filesystem walker that fills live.db from every `.giantmem/`); `giantmem session list|find|resume|export|diff`; `giantmem worktree`, `giantmem workspace`, and `giantmem doctor [--fix]`; plus `giantmem mcp serve` exposing read-only tools so Claude can self-discover state. `giantmem archive run` still exists as a cold filesystem backup; it no longer feeds any DB.
 
-Storage is two SQLite FTS5 databases. `live.db` is authoritative for `.giantmem/` content: `live_docs` (every file, populated by PostToolUse hook + daemon backfill + CLI backfill), `artifacts` (typed projection), `live_docs_fts` (FTS5). `archives.db` holds Claude session JSONL transcripts (`documents` where `source_type='session'`), written by the SessionEnd hook and a 5-min launchd sweep. The legacy workspace-md/domain-json ingest pass into archives.db is deprecated. Schema is versioned via `PRAGMA user_version` and migrated on open.
+Storage is two SQLite FTS5 databases. `live.db` is authoritative for `.giantmem/` content: `live_docs` (every file, populated by PostToolUse hook + daemon backfill + CLI backfill), `artifacts` (typed projection), `live_docs_fts` (FTS5). `archives.db` holds Claude session JSONL transcripts (`documents` where `source_type='session'`), written by the SessionEnd hook and a 5-min launchd sweep. The legacy workspace-md snapshot ingest pass into archives.db is deprecated. Schema is versioned via `PRAGMA user_version` and migrated on open.
 
 Optional companion daemon `giantmemd` (started via `giantmem daemon start`, installable as a launchd LaunchAgent on macOS) serves a JSON-RPC 2.0 unix socket at `~/.cache/giantmem/giantmemd.sock`. The CLI auto-routes through it when alive and falls back to direct DB open otherwise. Schema-drift after a migration returns a "restart pending" error so the daemon never serves stale views.
 
 See [giantmem/README.md](giantmem/README.md) for capabilities, [giantmem/USAGE.md](giantmem/USAGE.md) for the daily-driver cheat sheet, and [giantmem/PLAN.md](giantmem/PLAN.md) + [giantmem/PLAN-2.md](giantmem/PLAN-2.md) for the roadmap and shipped phases.
-
-### domain-search/
-
-Standalone CLI (`domains`) for browsing and searching the code domain knowledge base outside of Claude Code. Domain JSONs are structured explorations of code areas (auth layer, payment flow, etc.) created by `/plan-feature` inside Claude Code sessions. This tool lets you list, show, search, and export them from any terminal.
-
-Commands: `list` (show all domains with staleness), `show` (pretty-print a domain), `search` (keyword search across live workspace domains), `archive` (search the FTS5 database across all projects and history), `export` (dump as shareable markdown), `fzf` (interactive picker with preview).
-
-See [domain-search/usage.md](domain-search/usage.md) for the full command reference and workflow examples.
 
 ## Setup
 
@@ -96,12 +88,6 @@ Source the worktree library, then create or adopt projects:
 source ~/dev/giant-tooling/git-worktrees/worktree-core.sh
 wt_init                              # wizard for a fresh clone
 wt_adopt /path/to/existing/repo      # convert an existing clone in place
-```
-
-Make the domain search CLI available:
-
-```bash
-alias domains='~/dev/giant-tooling/domain-search/domains'
 ```
 
 ## Conventions
