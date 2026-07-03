@@ -23,6 +23,8 @@ type findArtifactArgs struct {
 	Scope     string  `json:"scope"`
 	Lifecycle string  `json:"lifecycle"`
 	Query     string  `json:"query"`
+	Since     string  `json:"since"`
+	Until     string  `json:"until"`
 	Limit     float64 `json:"limit"`
 	Semantic  bool    `json:"semantic"`
 }
@@ -47,6 +49,22 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 	limit := int(args.Limit)
 	if limit <= 0 {
 		limit = 20
+	}
+
+	var sinceDate, untilDate string
+	if args.Since != "" {
+		t, err := search.ParseSince(args.Since)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		sinceDate = t.Format("2006-01-02")
+	}
+	if args.Until != "" {
+		t, err := search.ParseUntil(args.Until)
+		if err != nil {
+			return mcp.NewToolResultError(err.Error()), nil
+		}
+		untilDate = t.Format("2006-01-02")
 	}
 
 	rows, err := mcpSourceArtifacts(args.Repo)
@@ -87,6 +105,12 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 			continue
 		}
 		if args.Branch != "" && a.Branch != args.Branch {
+			continue
+		}
+		if sinceDate != "" && a.Updated < sinceDate {
+			continue
+		}
+		if untilDate != "" && a.Updated >= untilDate {
 			continue
 		}
 		if args.Scope != "" {

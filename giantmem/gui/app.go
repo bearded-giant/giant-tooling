@@ -122,9 +122,23 @@ func (a *App) FacetCounts() (FacetCountsResult, error) {
 // via the daemon's `embed` RPC so the GUI never loads an embedding model.
 // When the daemon is down, vector score collapses to zero — FTS/recency/access
 // still rank the result set.
-func (a *App) SearchHybrid(query string, filter artifacts.ListFilter, limit int) ([]search.HybridResult, error) {
+func (a *App) SearchHybrid(query string, filter artifacts.ListFilter, limit int, since, until string) ([]search.HybridResult, error) {
 	if a.live == nil {
 		return nil, fmt.Errorf("live db not open")
+	}
+	if since != "" {
+		t, err := search.ParseSince(since)
+		if err != nil {
+			return nil, err
+		}
+		filter.Since = t
+	}
+	if until != "" {
+		t, err := search.ParseUntil(until)
+		if err != nil {
+			return nil, err
+		}
+		filter.Until = t
 	}
 	candidates, err := artifacts.ListArtifacts(a.live, filter, "", 0)
 	if err != nil {

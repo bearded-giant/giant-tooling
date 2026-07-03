@@ -34,7 +34,7 @@ export function RecentRepos(arg1:number):Promise<Array<main.RepoActivity>>;
 
 export function SearchFTS(arg1:search.Params):Promise<Array<search.Hit>>;
 
-export function SearchHybrid(arg1:string,arg2:artifacts.ListFilter,arg3:number):Promise<Array<search.HybridResult>>;
+export function SearchHybrid(arg1:string,arg2:artifacts.ListFilter,arg3:number,arg4:string,arg5:string):Promise<Array<search.HybridResult>>;
 
 export function SearchToolUses(arg1:main.ToolUseFilter):Promise<Array<main.ToolUseHit>>;
 

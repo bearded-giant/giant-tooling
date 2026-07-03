@@ -432,7 +432,7 @@ function App() {
       try {
         if (tab === "artifacts") {
           if (debouncedQuery.trim()) {
-            const r = await SearchHybrid(debouncedQuery, filter, 100);
+            const r = await SearchHybrid(debouncedQuery, filter, 100, since, until);
             setHybridRows(r || []);
             setArtifactRows([]);
           } else {
