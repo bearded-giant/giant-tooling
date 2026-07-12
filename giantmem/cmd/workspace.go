@@ -62,6 +62,11 @@ func init() {
 		workspaceSubcmd("complete", "workspace_complete", "Mark workspace complete"),
 		workspaceSubcmd("sync", "workspace_sync", "Refresh git log"),
 		workspaceSubcmd("features", "workspace_features", "Show feature status table"),
+		workspaceSubcmd("new-feature", "workspace_new_feature", "Create a feature (proposal/tasks/facts/notes)"),
+		workspaceSubcmd("start-feature", "workspace_start_feature", "Promote a pending feature to in_progress"),
+		workspaceSubcmd("pause-feature", "workspace_pause_feature", "Pause the active (or named) feature"),
+		workspaceSubcmd("reopen-feature", "workspace_reopen_feature", "Reopen a paused/completed feature"),
+		workspaceSubcmd("complete-feature", "workspace_complete_feature", "Mark the active (or named) feature complete"),
 		workspaceSubcmd("gitlog", "workspace_gitlog", "Update git-log.md"),
 	)
 	rootCmd.AddCommand(workspaceCmd)

@@ -232,6 +232,31 @@ workspace_features() {
     fi
 }
 
+# Feature lifecycle (giantmem has no native feature verbs; delegates to feature.py)
+__ws_feature() {
+    local verb="$1"; shift
+    local feature_py="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/scripts/feature.py"
+    if [ ! -f "$feature_py" ]; then
+        echo "feature.py not found at $feature_py" >&2
+        return 1
+    fi
+    python3 "$feature_py" --cwd "$PWD" "$verb" "$@"
+}
+
+workspace_new_feature() {
+    if [ -z "$1" ]; then
+        echo "Usage: giantmem workspace new-feature <name> [--branch=X --base=Y --builds-on=Z --paired --skip-checkout --discovery=...]" >&2
+        return 1
+    fi
+    __ws_feature new "$@"
+}
+
+# start/pause/reopen/complete take an optional feature name; omit to infer the active one
+workspace_start_feature()    { __ws_feature start "$@"; }
+workspace_pause_feature()    { __ws_feature pause "$@"; }
+workspace_reopen_feature()   { __ws_feature reopen "$@"; }
+workspace_complete_feature() { __ws_feature complete "$@"; }
+
 # Generate git log context
 workspace_gitlog() {
     local scratch_dir="${PWD}/.giantmem"

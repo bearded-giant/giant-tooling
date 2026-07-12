@@ -146,8 +146,46 @@ This is the autoarchive entry point: deleting a worktree no longer leaves `.gian
 | `giantmem workspace complete` | mark workspace complete |
 | `giantmem workspace sync` | refresh git log |
 | `giantmem workspace features` | show feature status table |
+| `giantmem workspace new-feature <name> [flags]` | create a feature (proposal/tasks/facts/notes); wraps `feature.py new`, same as `/new-feature` |
+| `giantmem workspace start-feature [name] [flags]` | promote a pending feature to in_progress |
+| `giantmem workspace pause-feature [name] [flags]` | pause the active (or named) feature |
+| `giantmem workspace reopen-feature [name] [flags]` | reopen a paused/completed feature |
+| `giantmem workspace complete-feature [name] [flags]` | mark the active (or named) feature complete (merges delta-specs) |
 | `giantmem workspace gitlog` | update `git-log.md` |
 | `giantmem workspace init [dir] [name]` | initialize `.giantmem/` |
+
+The five `*-feature` verbs are thin wrappers over `feature.py` — the same tool Claude's `/new-feature`, `/start-feature`, `/pause-feature`, `/reopen-feature`, `/complete-feature` commands call. They exist so you can flip a feature's state from the shell without going through the LLM. `start`/`pause`/`reopen`/`complete` take an optional name; omit it and they act on the active (in_progress) feature. All of them flip status across `features.json`, `meta.json`, `proposal.md` frontmatter, and `_index.md`.
+
+Flag examples:
+
+```bash
+# create
+giantmem workspace new-feature oauth-ttl
+giantmem workspace new-feature oauth-ttl --branch=feat/oauth --base=stage
+giantmem workspace new-feature oauth-ttl --builds-on=session-store       # dependency link
+giantmem workspace new-feature oauth-ttl --discovery="token expiry bug"  # seeds a pending stub
+giantmem workspace new-feature oauth-ttl --skip-checkout                 # don't touch git (already on branch)
+giantmem workspace new-feature oauth-ttl --paired                        # only for the cc-wt <-> frontend-wt map
+
+# start a pending feature
+giantmem workspace start-feature oauth-ttl --base=main --branch=feat/oauth
+giantmem workspace start-feature oauth-ttl --skip-checkout
+
+# pause (--note = resumption note, --paused-state = snapshot; both default to placeholders)
+giantmem workspace pause-feature                                         # infer active
+giantmem workspace pause-feature oauth-ttl --note="waiting on API key rotation"
+
+# reopen
+giantmem workspace reopen-feature oauth-ttl --skip-checkout
+
+# complete (merges delta-specs into source-specs by default)
+giantmem workspace complete-feature                                      # infer active
+giantmem workspace complete-feature oauth-ttl --quick                    # skip delta-spec merge
+giantmem workspace complete-feature oauth-ttl --no-merge                 # same, keep specs unmerged
+giantmem workspace complete-feature oauth-ttl --reason="shipped in v3.2" # merge-commit reason
+```
+
+`--branch`/`--base` default sensibly: base resolves origin/HEAD then develop → stage → main → master, and branch defaults to the current HEAD (or the feature name when HEAD is the base). `--skip-checkout` matters most from the worktree-create prompt, where you're already on the branch; from a plain repo shell, omit it and the tool does the checkout for you.
 
 ## Index management
 
