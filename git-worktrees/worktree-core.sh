@@ -172,6 +172,9 @@ __wt_setup() {
         [ ! -d "$target_dir/.giantmem" ] && mkdir -p "$target_dir/.giantmem"
     fi
 
+    # offer initial workspace feature (branch name -> feature name)
+    __wt_offer_feature "$prefix" "$branch" "$target_dir"
+
     # custom post-setup hook
     if type "_${prefix}_post_setup" &>/dev/null 2>&1; then
         "_${prefix}_post_setup" "$branch" "$target_dir"
@@ -180,6 +183,32 @@ __wt_setup() {
     cd "$target_dir"
     local hint=$(__wt_config "$prefix" PKG_HINT)
     [ -n "$hint" ] && echo "$hint"
+}
+
+# ---------------------------------------------------------------------------
+# offer initial workspace feature (branch name -> feature name, like /new-feature)
+# ---------------------------------------------------------------------------
+
+__wt_offer_feature() {
+    local prefix="$1" branch="$2" target_dir="$3"
+    local feature_py="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/scripts/feature.py"
+
+    [ -t 0 ] || return 0
+    [ -f "$feature_py" ] || return 0
+    [ -d "$target_dir/.giantmem/features" ] || return 0
+
+    # skip base/default branches — feature.py rejects a feature named == base
+    local search_branches
+    search_branches=$(__wt_config "$prefix" DEFAULT_BRANCHES "main master develop")
+    for b in $search_branches; do
+        [ "$branch" = "$b" ] && return 0
+    done
+
+    echo -n "Create initial workspace feature '$branch'? (Y/n) "
+    read -r response
+    [[ "$response" =~ ^[Nn]$ ]] && return 0
+
+    python3 "$feature_py" --cwd "$target_dir" new "$branch" --skip-checkout
 }
 
 # ---------------------------------------------------------------------------

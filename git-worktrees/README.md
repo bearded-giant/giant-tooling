@@ -33,6 +33,8 @@ Per-project prefix functions (`cwt`, `awt`, etc.) are how you actually use this.
 
 Worktrees are throwaway. Spin one up for a feature, do the work, kill the worktree when done, never touch git directly. Before removal, `.giantmem/` is swept into the giantmem `live.db` (via `giantmem index backfill --workspace`), so context survives in the searchable DB even after the worktree dir is gone. Stack-aware setup (python/node/lua/bash) runs on create so you don't re-pin versions per worktree.
 
+Because a worktree usually maps one-to-one to a feature, creating one prompts `Create initial workspace feature '<branch>'? (Y/n)` (defaults to yes). Answer yes and it runs the same `feature.py new <branch>` that Claude's `/new-feature` uses, so the `.giantmem/features/<branch>/` folder (proposal, tasks, facts, notes, specs) is scaffolded before you start. Base branches (main/master/develop/stage) skip the prompt, and it's skipped entirely when stdin isn't a terminal.
+
 `wt_init` is for greenfield (clone fresh). `wt_adopt` is for "I already have a working clone with WIP I don't want to lose" -- it converts the existing repo in place, preserving uncommitted/untracked files. The two flows exist because the cost of getting either one wrong is real lost work, and most "convert to worktree" advice on the internet drops your WIP on the floor.
 
 `worktree-core.sh` is bash-only, no external deps, no config files outside of the per-project shell scripts it generates. You can read the whole thing in one sitting. If something breaks, the call graph is small and obvious.
