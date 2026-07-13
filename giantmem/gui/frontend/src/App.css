@@ -872,3 +872,48 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* browse-mode compact rows */
+.browse-group-head {
+  font-size: 11px;
+  color: var(--fg-muted);
+  font-family: ui-monospace, monospace;
+  padding: 8px 6px 3px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  position: sticky;
+  top: 0;
+  background: var(--bg, #111);
+  z-index: 1;
+}
+.browse-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  min-width: 0;
+}
+.browse-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.browse-row.selected {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent-2);
+}
+.browse-row .chip {
+  flex: none;
+}
+.browse-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.browse-meta {
+  margin-left: auto;
+  flex: none;
+  color: var(--fg-muted);
+  font-size: 11px;
+}

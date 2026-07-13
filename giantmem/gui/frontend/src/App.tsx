@@ -19,7 +19,6 @@ import {
   GetArtifactBody,
   GetLiveBody,
   GetPref,
-  ListArtifacts,
   ListSessions,
   LiveMtime,
   ProjectHeatmap,
@@ -81,19 +80,10 @@ type Selection =
   | { kind: "session"; path: string }
   | null;
 
-const SORT_OPTIONS: { value: string; label: string }[] = [
-  { value: "updated", label: "updated (newest)" },
-  { value: "created", label: "created (newest)" },
-  { value: "access", label: "most accessed" },
-  { value: "type", label: "type" },
-  { value: "", label: "repo / type (default)" },
-];
-
 function App() {
   const [tab, setTab] = useState<Tab>("activity");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [sortBy, setSortBy] = useState<string>("updated");
 
   const [selFeature, setSelFeature] = useState<string>("");
   const [selRepo, setSelRepo] = useState<string>("");
@@ -217,7 +207,6 @@ function App() {
     localStorage.setItem("gm.dateRange", s);
     SetPref("dateRange", s).catch(() => {});
   }, [dateRange]);
-  const [artifactRows, setArtifactRows] = useState<artifacts.Artifact[]>([]);
   const [hybridRows, setHybridRows] = useState<search.HybridResult[]>([]);
   const [sessionHits, setSessionHits] = useState<search.Hit[]>([]);
 
@@ -342,15 +331,49 @@ function App() {
       .catch((e) => setErr(String(e)));
   }, [expandedWorktree, reloadKey]);
 
+  // browse mode (no query): compact dir-grouped list from the tree data.
+  // repo/feature context lives in the group header once, not on every row —
+  // the old flat ListArtifacts wall repeated it 80 times.
+  const browseGroups = useMemo(() => {
+    let rows = browseRows;
+    if (selRepo) rows = rows.filter((r) => r.repo === selRepo);
+    if (selFeature) rows = rows.filter((r) => r.feature === selFeature);
+    if (!selRepo && !selFeature) {
+      const recent = [...rows].sort((a, b) => b.mtime - a.mtime).slice(0, 200);
+      return recent.length ? [{ dir: "", files: recent }] : [];
+    }
+    const byDir = new Map<string, main.BrowseRow[]>();
+    for (const r of rows) {
+      let rel = r.rel;
+      if (selFeature && rel.startsWith(`features/${r.feature}/`)) {
+        rel = rel.slice(`features/${r.feature}/`.length);
+      }
+      const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "./";
+      const list = byDir.get(dir);
+      if (list) list.push(r);
+      else byDir.set(dir, [r]);
+    }
+    return [...byDir.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([dir, files]) => ({
+        dir,
+        files: [...files].sort((a, b) => a.rel.localeCompare(b.rel)),
+      }));
+  }, [browseRows, selRepo, selFeature]);
+  const browsePaths = useMemo(
+    () => browseGroups.flatMap((g) => g.files.map((f) => f.path)),
+    [browseGroups],
+  );
+
   // ordered ids list for j/k nav
   const visibleRowIDs: string[] = useMemo(() => {
     if (tab === "artifacts") {
       return hybridRows.length
         ? hybridRows.map((h) => h.artifact.id)
-        : artifactRows.map((a) => a.id);
+        : browsePaths;
     }
     return sessionHits.map((h) => h.filepath);
-  }, [tab, hybridRows, artifactRows, sessionHits]);
+  }, [tab, hybridRows, browsePaths, sessionHits]);
 
   // keyboard nav: j/k move row, esc clear, / focus search
   useEffect(() => {
@@ -387,7 +410,7 @@ function App() {
       const curID =
         selection?.kind === "artifact"
           ? selection.id
-          : selection?.kind === "session"
+          : selection?.kind === "file" || selection?.kind === "session"
             ? selection.path
             : null;
       const i = curID ? visibleRowIDs.indexOf(curID) : -1;
@@ -398,14 +421,16 @@ function App() {
       const id = visibleRowIDs[next];
       setSelection(
         tab === "artifacts"
-          ? { kind: "artifact", id }
+          ? hybridRows.length
+            ? { kind: "artifact", id }
+            : { kind: "file", path: id }
           : { kind: "session", path: id },
       );
       e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visibleRowIDs, selection, tab, refreshAll]);
+  }, [visibleRowIDs, selection, tab, hybridRows, refreshAll]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 200);
@@ -436,10 +461,8 @@ function App() {
           if (debouncedQuery.trim()) {
             const r = await SearchHybrid(debouncedQuery, filter, 100, since, until);
             setHybridRows(r || []);
-            setArtifactRows([]);
           } else {
-            const r = await ListArtifacts(filter, sortBy, 200, since, until);
-            setArtifactRows(r || []);
+            // browse mode renders from browseRows client-side
             setHybridRows([]);
           }
         } else if (tab === "tools") {
@@ -502,7 +525,6 @@ function App() {
   }, [
     tab,
     debouncedQuery,
-    sortBy,
     filter,
     selSessionProject,
     selSessionDirType,
@@ -525,7 +547,6 @@ function App() {
     }
     if (selection.kind === "artifact") {
       const row =
-        artifactRows.find((a) => a.id === selection.id) ||
         hybridRows.find((h) => h.artifact?.id === selection.id)?.artifact ||
         null;
       setDetailArt(row);
@@ -552,7 +573,7 @@ function App() {
           setErr(String(e));
         });
     }
-  }, [selection, artifactRows, hybridRows, browseRows, reloadKey]);
+  }, [selection, hybridRows, browseRows, reloadKey]);
 
   const clearFacets = () => {
     setSelFeature("");
@@ -570,7 +591,7 @@ function App() {
 
   const totalRows =
     tab === "artifacts"
-      ? hybridRows.length || artifactRows.length
+      ? hybridRows.length || browsePaths.length
       : tab === "tools"
         ? toolHits.length
         : sessionHits.length;
@@ -736,15 +757,6 @@ function App() {
         >
           ⟳
         </button>
-        {tab === "artifacts" && (
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        )}
         {tab === "tools" && (
           <>
             <select
@@ -1029,17 +1041,14 @@ function App() {
               }
             />
           ))}
-        {tab === "artifacts" && hybridRows.length === 0 &&
-          artifactRows.map((a) => (
-            <ArtifactRow
-              key={a.id}
-              row={a}
-              selected={
-                selection?.kind === "artifact" && selection.id === a.id
-              }
-              onClick={() => setSelection({ kind: "artifact", id: a.id })}
-            />
-          ))}
+        {tab === "artifacts" && hybridRows.length === 0 && (
+          <BrowseList
+            groups={browseGroups}
+            grouped={!!selRepo || !!selFeature}
+            selPath={selection?.kind === "file" ? selection.path : ""}
+            onPick={(path) => setSelection({ kind: "file", path })}
+          />
+        )}
         {tab === "tools" &&
           toolHits.map((h, i) => (
             <ToolUseRow
@@ -1811,41 +1820,63 @@ function SingleFacetGroup({
   );
 }
 
-function ArtifactRow({
-  row,
-  selected,
-  onClick,
+// BrowseList: compact rows for browse mode. Grouped = a repo/feature is
+// picked, so shared context lives in the dir header once. Ungrouped = recent
+// files across everything, so each row carries its repo/feature.
+function BrowseList({
+  groups,
+  grouped,
+  selPath,
+  onPick,
 }: {
-  row: artifacts.Artifact;
-  selected: boolean;
-  onClick: () => void;
+  groups: { dir: string; files: main.BrowseRow[] }[];
+  grouped: boolean;
+  selPath: string;
+  onPick: (path: string) => void;
 }) {
+  if (groups.length === 0) {
+    return null;
+  }
   return (
-    <div
-      className={`result-row ${selected ? "selected" : ""}`}
-      onClick={onClick}
-    >
-      <div className="row-head">
-        <span className={`chip type-${row.type}`}>{row.type}</span>
-        <span className="row-title">
-          {row.feature || row.name || row.path.split("/").pop()}
-        </span>
-        {row.status && <span className="row-meta">{row.status}</span>}
-      </div>
-      <div className="row-path">{row.path}</div>
-      <div className="row-meta">
-        <strong>{row.repo}</strong>
-        {row.worktree && shortPath(row.worktree) !== row.repo && (
-          <> · <span title={row.worktree}>{shortPath(row.worktree)}</span></>
-        )}
-        {row.feature && <> · <span style={{ color: "var(--accent-2)" }}>{row.feature}</span></>}
-        {row.branch && row.branch !== "main" && <> · {row.branch}</>}
-        {" · "}
-        {formatTime(row.updated)}
-        {row.access_count ? ` · ${row.access_count} access` : ""}
-        {row.has_vec ? " · vec" : ""}
-      </div>
-    </div>
+    <>
+      {!grouped && (
+        <div className="browse-group-head">recently updated</div>
+      )}
+      {groups.map((g) => (
+        <div key={g.dir || "(recent)"}>
+          {grouped && <div className="browse-group-head">{g.dir}</div>}
+          {g.files.map((f) => (
+            <div
+              key={f.path}
+              className={`browse-row ${selPath === f.path ? "selected" : ""}`}
+              onClick={() => onPick(f.path)}
+              title={f.path}
+            >
+              {f.type && <span className={`chip type-${f.type}`}>{f.type}</span>}
+              <span className="browse-name">
+                {grouped ? f.rel.split("/").pop() : f.rel}
+              </span>
+              {f.dead && <span className="chip dead">gone</span>}
+              <span className="browse-meta">
+                {!grouped && (
+                  <>
+                    <strong>{f.repo}</strong>
+                    {f.feature ? (
+                      <span style={{ color: "var(--accent-2)" }}>
+                        {" "}
+                        · {f.feature}
+                      </span>
+                    ) : null}
+                    {" · "}
+                  </>
+                )}
+                {new Date(f.mtime * 1000).toLocaleDateString()}
+              </span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
   );
 }
 
