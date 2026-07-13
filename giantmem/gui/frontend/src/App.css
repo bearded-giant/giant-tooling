@@ -940,19 +940,105 @@
 
 /* settings modal */
 .settings-modal {
-  min-width: 320px;
+  width: 560px;
+  max-width: 90vw;
+  padding: 28px 32px 24px;
+  text-align: left;
 }
 .settings-title {
-  margin: 0 0 14px;
+  margin: 0 0 6px;
+  font-size: 22px;
+}
+.settings-section {
+  margin: 22px 0 4px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding-bottom: 6px;
 }
 .settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 6px 0;
-  font-size: 14px;
+  gap: 24px;
+  padding: 14px 0;
 }
-.settings-row label {
+.settings-row + .settings-row {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.settings-info {
+  min-width: 0;
+}
+.settings-label {
+  font-size: 15px;
+  color: var(--fg);
+}
+.settings-desc {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--fg-muted);
+}
+
+/* segmented control */
+.segmented {
+  display: flex;
+  flex: none;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.segmented button {
+  font-size: 12px;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--fg-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.segmented button:last-child {
+  border-right: none;
+}
+.segmented button:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.segmented button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+/* slide switch */
+.switch {
+  flex: none;
+  width: 42px;
+  height: 24px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.1);
+  position: relative;
+  cursor: pointer;
+  padding: 0;
+  transition: background 0.15s ease;
+}
+.switch .switch-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.15s ease;
+}
+.switch.on {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.switch.on .switch-knob {
+  transform: translateX(18px);
 }

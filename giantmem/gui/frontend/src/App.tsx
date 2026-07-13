@@ -1389,7 +1389,36 @@ function App() {
   );
 }
 
-const ZOOM_STEPS = [80, 90, 100, 110, 120, 130, 150];
+// text size is a scale, not an absolute px — the UI mixes 11-28px on
+// purpose (hierarchy), so one fixed size would flatten it. Each step
+// scales everything proportionally.
+const TEXT_SIZES: { label: string; zoom: number }[] = [
+  { label: "Small", zoom: 90 },
+  { label: "Default", zoom: 100 },
+  { label: "Large", zoom: 110 },
+  { label: "X-Large", zoom: 120 },
+  { label: "Huge", zoom: 135 },
+];
+
+function Switch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`switch ${checked ? "on" : ""}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="switch-knob" />
+    </button>
+  );
+}
 
 function SettingsModal({
   uiZoom,
@@ -1429,26 +1458,41 @@ function SettingsModal({
           ×
         </button>
         <h2 className="settings-title">Settings</h2>
+
+        <div className="settings-section">Appearance</div>
         <div className="settings-row">
-          <label>UI zoom</label>
-          <select
-            value={uiZoom}
-            onChange={(e) => onZoom(Number(e.target.value))}
-          >
-            {ZOOM_STEPS.map((z) => (
-              <option key={z} value={z}>
-                {z}%
-              </option>
+          <div className="settings-info">
+            <div className="settings-label">Text size</div>
+            <div className="settings-desc">
+              Scales the whole UI proportionally — element sizes differ by
+              design, so there's no single font size to set.
+            </div>
+          </div>
+          <div className="segmented">
+            {TEXT_SIZES.map((s) => (
+              <button
+                key={s.zoom}
+                type="button"
+                className={uiZoom === s.zoom ? "active" : ""}
+                onClick={() => onZoom(s.zoom)}
+                title={`${s.zoom}%`}
+              >
+                {s.label}
+              </button>
             ))}
-          </select>
+          </div>
         </div>
+
+        <div className="settings-section">File list</div>
         <div className="settings-row">
-          <label>history docs in file list</label>
-          <input
-            type="checkbox"
-            checked={showHistory}
-            onChange={(e) => onShowHistory(e.target.checked)}
-          />
+          <div className="settings-info">
+            <div className="settings-label">Show history docs</div>
+            <div className="settings-desc">
+              Per-session turn-set summaries (history/). Every session bumps
+              them, so hiding them keeps the recent view to real work docs.
+            </div>
+          </div>
+          <Switch checked={showHistory} onChange={onShowHistory} />
         </div>
       </div>
     </div>
