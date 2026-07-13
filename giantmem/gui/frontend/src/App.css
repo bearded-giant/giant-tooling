@@ -759,3 +759,116 @@
 .about-links a:hover {
   text-decoration: underline;
 }
+
+/* tree sidebar */
+.tree {
+  font-size: 12px;
+  overflow-x: hidden;
+}
+.tree-indent {
+  margin-left: 12px;
+}
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  min-width: 0;
+}
+.tree-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.tree-row.selected {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent-2);
+}
+.tree-row .tree-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.tree-row.repo .tree-label {
+  font-weight: 600;
+}
+.tree-row.feature .tree-label {
+  color: var(--accent-2);
+}
+.tree-row.dir .tree-label {
+  color: var(--fg-muted);
+}
+.tree-row .count {
+  margin-left: auto;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+.tree-row .chip {
+  flex: none;
+  font-size: 9px;
+  padding: 0 4px;
+}
+.chip.dead {
+  background: var(--danger, #b33);
+  color: #fff;
+}
+
+/* file detail raw + csv */
+.raw-body {
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.csv-wrap {
+  overflow-x: auto;
+}
+.csv-table {
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.csv-table th,
+.csv-table td {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 3px 8px;
+  text-align: left;
+  vertical-align: top;
+  max-width: 340px;
+  overflow-wrap: break-word;
+}
+.csv-table th {
+  position: sticky;
+  top: 0;
+  background: var(--bg-2, #222);
+}
+
+/* session files panel */
+.session-files {
+  margin: 8px 0 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+.session-files-title {
+  font-size: 11px;
+  color: var(--fg-muted);
+  margin-bottom: 4px;
+}
+.session-file-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.session-file-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+.session-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

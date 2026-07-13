@@ -95,6 +95,34 @@ export namespace main {
 	        this.activeFeatures = source["activeFeatures"];
 	    }
 	}
+	export class BrowseRow {
+	    path: string;
+	    rel: string;
+	    repo: string;
+	    feature: string;
+	    worktree: string;
+	    type: string;
+	    mtime: number;
+	    sessionId: string;
+	    dead: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new BrowseRow(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.rel = source["rel"];
+	        this.repo = source["repo"];
+	        this.feature = source["feature"];
+	        this.worktree = source["worktree"];
+	        this.type = source["type"];
+	        this.mtime = source["mtime"];
+	        this.sessionId = source["sessionId"];
+	        this.dead = source["dead"];
+	    }
+	}
 	export class FacetCountsResult {
 	    byType: Record<string, number>;
 	    byLifecycle: Record<string, number>;

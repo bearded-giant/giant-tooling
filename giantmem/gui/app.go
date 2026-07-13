@@ -749,6 +749,111 @@ func (a *App) GetArtifactBody(id string) (string, error) {
 	return artifacts.Body(a.live, art)
 }
 
+// BrowseRow is one live_docs file for the tree sidebar. Flat — the frontend
+// nests by repo/feature/rel. Dead marks a worktree that no longer exists on
+// disk; the body still serves from live_docs.content.
+type BrowseRow struct {
+	Path      string `json:"path"`
+	Rel       string `json:"rel"`
+	Repo      string `json:"repo"`
+	Feature   string `json:"feature"`
+	Worktree  string `json:"worktree"`
+	Type      string `json:"type"`
+	Mtime     int64  `json:"mtime"`
+	SessionID string `json:"sessionId"`
+	Dead      bool   `json:"dead"`
+}
+
+// BrowseTree returns every .giantmem/ file known to live_docs, typed via the
+// same classifier as the artifacts projection (empty type = infra/unknown).
+func (a *App) BrowseTree() ([]BrowseRow, error) {
+	if a.live == nil {
+		return nil, fmt.Errorf("live db not open")
+	}
+	rows, err := a.live.Query(
+		`SELECT path, project, COALESCE(feature,''), COALESCE(worktree_path,''),
+                COALESCE(session_id,''), mtime
+           FROM live_docs
+          WHERE instr(path, '/.giantmem/') > 0
+          ORDER BY project, path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	deadCache := map[string]bool{}
+	isDead := func(wt string) bool {
+		if wt == "" {
+			return false
+		}
+		d, ok := deadCache[wt]
+		if !ok {
+			_, err := os.Stat(wt)
+			d = err != nil
+			deadCache[wt] = d
+		}
+		return d
+	}
+
+	var out []BrowseRow
+	for rows.Next() {
+		var r BrowseRow
+		if err := rows.Scan(&r.Path, &r.Repo, &r.Feature, &r.Worktree, &r.SessionID, &r.Mtime); err != nil {
+			return nil, err
+		}
+		rel, ok := artifacts.RelFromLivePath(r.Path)
+		if !ok {
+			continue
+		}
+		r.Rel = rel
+		if cls, ok := artifacts.Classify(rel); ok {
+			r.Type = cls.Type
+			if r.Feature == "" {
+				r.Feature = cls.Feature
+			}
+		}
+		r.Dead = isDead(r.Worktree)
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetLiveBody returns any live_docs file's body — disk first, DB fallback.
+// Works for files that never classified as typed artifacts.
+func (a *App) GetLiveBody(path string) (string, error) {
+	if a.live == nil {
+		return "", fmt.Errorf("live db not open")
+	}
+	return artifacts.BodyByPath(a.live, path)
+}
+
+// SessionPathByID resolves a session id to its transcript jsonl path so the
+// browse view can jump file -> owning session.
+func (a *App) SessionPathByID(id string) (string, error) {
+	if id == "" {
+		return "", fmt.Errorf("empty session id")
+	}
+	if a.archive != nil {
+		var p string
+		err := a.archive.QueryRow(
+			`SELECT filepath FROM documents
+              WHERE source_type='session' AND session_id=?
+              ORDER BY timestamp DESC LIMIT 1`, id).Scan(&p)
+		if err == nil && p != "" {
+			return p, nil
+		}
+	}
+	if a.live != nil {
+		var p string
+		err := a.live.QueryRow(
+			`SELECT COALESCE(jsonl_path,'') FROM active_sessions WHERE id=?`, id).Scan(&p)
+		if err == nil && p != "" {
+			return p, nil
+		}
+	}
+	return "", fmt.Errorf("no transcript for session %s", id)
+}
+
 // ReadFile returns the raw bytes of any file as a string. Used by the session
 // viewer to render Claude transcript JSONL given a Hit.Filepath. No path
 // sandboxing yet — GUI is single-user localhost.

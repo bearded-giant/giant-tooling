@@ -6,6 +6,8 @@ import {search} from '../models';
 
 export function ActivityCounts():Promise<main.ActivityCounts>;
 
+export function BrowseTree():Promise<Array<main.BrowseRow>>;
+
 export function FacetCounts():Promise<main.FacetCountsResult>;
 
 export function FeaturesByRepo():Promise<Array<main.FeatureRow>>;
@@ -13,6 +15,8 @@ export function FeaturesByRepo():Promise<Array<main.FeatureRow>>;
 export function GetArtifact(arg1:string):Promise<artifacts.Artifact>;
 
 export function GetArtifactBody(arg1:string):Promise<string>;
+
+export function GetLiveBody(arg1:string):Promise<string>;
 
 export function GetPref(arg1:string):Promise<string>;
 
@@ -39,6 +43,8 @@ export function SearchHybrid(arg1:string,arg2:artifacts.ListFilter,arg3:number,a
 export function SearchToolUses(arg1:main.ToolUseFilter):Promise<Array<main.ToolUseHit>>;
 
 export function SessionFacets():Promise<main.SessionFacetCounts>;
+
+export function SessionPathByID(arg1:string):Promise<string>;
 
 export function SetPref(arg1:string,arg2:string):Promise<void>;
 
