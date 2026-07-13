@@ -16,7 +16,8 @@ wt_init                              # wizard for a fresh clone
 wt_adopt /path/to/existing/repo      # convert an existing clone in place
 
 # 4. Use the prefix functions the wizard binds
-{prefix} <branch>                    # switch to or create a worktree
+{prefix} <branch>                    # switch to or create a worktree (local branch only)
+{prefix} <branch> --push             # ...and push the new branch to origin
 {prefix}l                            # list worktrees
 {prefix}r <branch>                   # remove (sweeps .giantmem into live.db first)
 ```
@@ -101,11 +102,11 @@ After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions ex
 
 | Command | What |
 |---------|------|
-| `{prefix} <branch>` | switch to worktree, or create if missing |
+| `{prefix} <branch>` | switch to worktree, or create if missing (add `--push`/`-p` to push the new branch to origin; default is local-only) |
 | `{prefix}l` | list worktrees |
 | `{prefix}b` | list branches |
 | `{prefix}s` | status across worktrees |
-| `{prefix}a <branch>` | add worktree explicitly |
+| `{prefix}a <branch> [base] [--push]` | add worktree explicitly (local-only unless `--push`/`-p`) |
 | `{prefix}r <branch>` | remove worktree (sweeps `.giantmem/` into `live.db` first) |
 | `{prefix}rn <old> <new>` | rename worktree |
 | `{prefix}p` / `{prefix}pr` | pull / pull --rebase |

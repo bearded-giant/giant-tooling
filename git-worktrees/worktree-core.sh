@@ -314,6 +314,17 @@ __wt_main() {
     local base=$(__wt_config "$prefix" BASE)
     local last_file=$(__wt_config "$prefix" LAST_FILE)
 
+    # push branch to origin only when opted in; default keeps new branches local
+    local push_branch=0
+    local args=() a
+    for a in "$@"; do
+        case "$a" in
+            --push|-p) push_branch=1 ;;
+            *) args+=("$a") ;;
+        esac
+    done
+    if [ ${#args[@]} -gt 0 ]; then set -- "${args[@]}"; else set --; fi
+
     # auto-init prompt if bare repo doesn't exist
     if [ ! -d "$base/.bare" ]; then
         echo "Worktree structure not initialized at $base"
@@ -448,11 +459,15 @@ __wt_main() {
             if [ $created -eq 1 ]; then
                 echo "$1" >"$last_file"
                 cd "$base/$1"
-                echo "Setting upstream to origin/$1..."
-                if git push -u origin "$1" 2>/dev/null; then
-                    echo "Upstream set to origin/$1"
+                if [ $push_branch -eq 1 ]; then
+                    echo "Setting upstream to origin/$1..."
+                    if git push -u origin "$1" 2>/dev/null; then
+                        echo "Upstream set to origin/$1"
+                    else
+                        echo "Note: Could not push to origin (may need permissions or remote setup)"
+                    fi
                 else
-                    echo "Note: Could not push to origin (may need permissions or remote setup)"
+                    echo "Branch '$1' is local-only (no remote). Push later: git push -u origin $1"
                 fi
 
                 __wt_setup "$prefix" "$1"
@@ -606,8 +621,19 @@ __wt_add() {
     local base=$(__wt_config "$prefix" BASE)
     local last_file=$(__wt_config "$prefix" LAST_FILE)
 
+    # push branch to origin only when opted in; default keeps new branches local
+    local push_branch=0
+    local args=() a
+    for a in "$@"; do
+        case "$a" in
+            --push|-p) push_branch=1 ;;
+            *) args+=("$a") ;;
+        esac
+    done
+    if [ ${#args[@]} -gt 0 ]; then set -- "${args[@]}"; else set --; fi
+
     if [ -z "$1" ]; then
-        echo "Usage: ${prefix}a <branch-name> [base-branch]"
+        echo "Usage: ${prefix}a <branch-name> [base-branch] [--push|-p]"
         return 1
     fi
 
@@ -721,13 +747,15 @@ __wt_add() {
         if ! git branch -vv | grep -q "^\* $1 .*\[origin/$1\]"; then
             needs_upstream=1
         fi
-        if [ $needs_upstream -eq 1 ]; then
+        if [ $needs_upstream -eq 1 ] && [ $push_branch -eq 1 ]; then
             echo "Setting upstream to origin/$1..."
             if git push -u origin "$1" 2>/dev/null; then
                 echo "Upstream set to origin/$1"
             else
                 echo "Note: Could not push to origin (may need permissions or remote setup)"
             fi
+        elif [ $needs_upstream -eq 1 ]; then
+            echo "Branch '$1' is local-only (no remote). Push later: git push -u origin $1"
         fi
 
         __wt_setup "$prefix" "$1"
