@@ -917,3 +917,23 @@
   color: var(--fg-muted);
   font-size: 11px;
 }
+
+/* browse toggles */
+.browse-toggles {
+  display: flex;
+  gap: 6px;
+  margin: 4px 0 8px;
+}
+.toggle-pill {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: transparent;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.toggle-pill.on {
+  color: var(--accent-2);
+  border-color: var(--accent-2);
+}

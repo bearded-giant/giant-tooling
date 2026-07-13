@@ -134,6 +134,23 @@ function App() {
   const [sidebarFilter, setSidebarFilter] = useState("");
   const [browseRows, setBrowseRows] = useState<main.BrowseRow[]>([]);
   const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
+  // history docs = per-session turn-set summaries. Useful, but they bump on
+  // every session and drown the recent view — hence the toggle.
+  const [showHistory, setShowHistory] = useState<boolean>(
+    () => localStorage.getItem("gm.showHistory") !== "0",
+  );
+  useEffect(() => {
+    GetPref("showHistory")
+      .then((v) => {
+        if (v) setShowHistory(v !== "0");
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    const v = showHistory ? "1" : "0";
+    localStorage.setItem("gm.showHistory", v);
+    SetPref("showHistory", v).catch(() => {});
+  }, [showHistory]);
   // sidebarWidth: localStorage seeds first paint (avoids flash) and the
   // Go-backed prefs file is the source of truth across restarts. Read both
   // — file wins, then writes go to both.
@@ -385,6 +402,7 @@ function App() {
   const browseGroups = useMemo(() => {
     const { from, to } = rangeToMs(dateRange);
     let rows = browseRows.filter((r) => {
+      if (!showHistory && r.type === "history") return false;
       const ms = r.mtime * 1000;
       if (ms < from || ms >= to) return false;
       return rowMatchesFilter(r, sbFilter);
@@ -424,7 +442,7 @@ function App() {
         dir,
         files: [...files].sort((a, b) => a.rel.localeCompare(b.rel)),
       }));
-  }, [browseRows, selRepo, selFeature, sbFilter, dateRange, reloadKey]);
+  }, [browseRows, selRepo, selFeature, sbFilter, dateRange, showHistory, reloadKey]);
   const browsePaths = useMemo(
     () => browseGroups.flatMap((g) => g.files.map((f) => f.path)),
     [browseGroups],
@@ -974,6 +992,15 @@ function App() {
                 value={sidebarFilter}
                 onChange={(e) => setSidebarFilter(e.target.value)}
               />
+            </div>
+            <div className="browse-toggles">
+              <button
+                className={`toggle-pill ${showHistory ? "on" : ""}`}
+                onClick={() => setShowHistory((v) => !v)}
+                title="session turn-set summaries (history/) in the file list"
+              >
+                history {showHistory ? "on" : "off"}
+              </button>
             </div>
             <TreeSidebar
               rows={browseRows}
