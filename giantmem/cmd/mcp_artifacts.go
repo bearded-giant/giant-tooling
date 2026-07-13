@@ -423,18 +423,18 @@ func getArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args getArtifa
 	if match == nil {
 		return mcp.NewToolResultError("no artifact with id " + args.ID), nil
 	}
-	abs := mcpArtifactAbsPath(*match)
-	if abs == "" {
-		return mcp.NewToolResultError("could not resolve path for " + args.ID), nil
+	live := openLiveDBQuiet()
+	if live != nil {
+		defer live.Close()
 	}
-	raw, err := os.ReadFile(abs)
+	raw, err := artifacts.Body(live, *match)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	fm, body, _ := artifacts.ParseFrontmatter(string(raw))
+	fm, body, _ := artifacts.ParseFrontmatter(raw)
 	return jsonResult(map[string]any{
 		"id":          match.ID,
-		"path":        abs,
+		"path":        artifacts.LiveAbsPath(*match),
 		"frontmatter": fm,
 		"content":     body,
 	})

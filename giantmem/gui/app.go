@@ -738,22 +738,15 @@ func (a *App) GetArtifact(id string) (artifacts.Artifact, error) {
 	return artifacts.Artifact{}, fmt.Errorf("artifact not found: %s", id)
 }
 
-// GetArtifactBody returns the raw markdown of one artifact, resolved via the
-// stored worktree + .giantmem/ + path. Empty string when the file is missing.
+// GetArtifactBody returns the raw markdown of one artifact. Reads disk when the
+// worktree is live, else the durable copy in live_docs.content — so a removed
+// worktree no longer means a lost doc.
 func (a *App) GetArtifactBody(id string) (string, error) {
 	art, err := a.GetArtifact(id)
 	if err != nil {
 		return "", err
 	}
-	if art.Worktree == "" || art.Path == "" {
-		return "", fmt.Errorf("artifact has no path: %s", id)
-	}
-	abs := filepath.Join(art.Worktree, ".giantmem", art.Path)
-	body, err := os.ReadFile(abs)
-	if err != nil {
-		return "", err
-	}
-	return string(body), nil
+	return artifacts.Body(a.live, art)
 }
 
 // ReadFile returns the raw bytes of any file as a string. Used by the session
