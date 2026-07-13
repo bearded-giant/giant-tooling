@@ -103,8 +103,11 @@ func TestDeriveFromLiveDoc_TasksStatusFromCheckboxes(t *testing.T) {
 }
 
 func TestDeriveFromLiveDoc_NonArtifactRejected(t *testing.T) {
-	if _, ok := DeriveFromLiveDoc("WORKSPACE.md", "x", "r", "", ""); ok {
-		t.Error("WORKSPACE.md should not classify as an artifact")
+	if _, ok := DeriveFromLiveDoc(".mdlive/tabs.json", "x", "r", "", ""); ok {
+		t.Error(".mdlive infra should not classify as an artifact")
+	}
+	if _, ok := DeriveFromLiveDoc("artifacts.json", "x", "r", "", ""); ok {
+		t.Error("artifacts.json should not classify as an artifact")
 	}
 }
 

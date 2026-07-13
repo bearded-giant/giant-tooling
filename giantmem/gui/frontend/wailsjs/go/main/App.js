@@ -6,6 +6,10 @@ export function ActivityCounts() {
   return window['go']['main']['App']['ActivityCounts']();
 }
 
+export function BrowseTree() {
+  return window['go']['main']['App']['BrowseTree']();
+}
+
 export function FacetCounts() {
   return window['go']['main']['App']['FacetCounts']();
 }
@@ -20,6 +24,10 @@ export function GetArtifact(arg1) {
 
 export function GetArtifactBody(arg1) {
   return window['go']['main']['App']['GetArtifactBody'](arg1);
+}
+
+export function GetLiveBody(arg1) {
+  return window['go']['main']['App']['GetLiveBody'](arg1);
 }
 
 export function GetPref(arg1) {
@@ -72,6 +80,10 @@ export function SearchToolUses(arg1) {
 
 export function SessionFacets() {
   return window['go']['main']['App']['SessionFacets']();
+}
+
+export function SessionPathByID(arg1) {
+  return window['go']['main']['App']['SessionPathByID'](arg1);
 }
 
 export function SetPref(arg1, arg2) {

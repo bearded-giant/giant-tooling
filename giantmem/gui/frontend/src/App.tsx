@@ -14,11 +14,11 @@ import {
 import "./App.css";
 import {
   ActivityCounts,
+  BrowseTree,
   FacetCounts,
-  FeaturesByRepo,
   GetArtifactBody,
+  GetLiveBody,
   GetPref,
-  ListArtifacts,
   ListSessions,
   LiveMtime,
   ProjectHeatmap,
@@ -30,6 +30,7 @@ import {
   SearchHybrid,
   SearchToolUses,
   SessionFacets,
+  SessionPathByID,
   SetPref,
   Version,
 } from "../wailsjs/go/main/App";
@@ -73,31 +74,83 @@ function rangeSinceUntil(r: DateRange): { since: string; until: string } {
   return { since: r.preset, until: "" };
 }
 
+// client-side ms bounds for browse mode (mtime filtering without a backend trip)
+function rangeToMs(r: DateRange): { from: number; to: number } {
+  if (r.preset === "all") return { from: 0, to: Infinity };
+  if (r.preset === "custom") {
+    const from = r.from ? Date.parse(r.from) : 0;
+    const to = r.to ? Date.parse(r.to) + 86400000 : Infinity;
+    return { from, to };
+  }
+  const m = /^(\d+)([mhd])$/.exec(r.preset);
+  if (!m) return { from: 0, to: Infinity };
+  const unit = m[2] === "m" ? 60000 : m[2] === "h" ? 3600000 : 86400000;
+  return { from: Date.now() - Number(m[1]) * unit, to: Infinity };
+}
+
+// sidebar filter grammar: free text (substring over rel/repo/feature/worktree)
+// plus ext:md style tokens
+type SidebarFilter = { text: string; ext: string };
+
+function parseSidebarFilter(q: string): SidebarFilter {
+  let ext = "";
+  const words: string[] = [];
+  for (const w of q.trim().toLowerCase().split(/\s+/)) {
+    if (!w) continue;
+    if (w.startsWith("ext:")) ext = w.slice(4).replace(/^\./, "");
+    else words.push(w);
+  }
+  return { text: words.join(" "), ext };
+}
+
+function rowMatchesFilter(r: main.BrowseRow, f: SidebarFilter): boolean {
+  if (f.ext) {
+    const name = r.rel.split("/").pop() || "";
+    const e = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+    if (e !== f.ext) return false;
+  }
+  if (
+    f.text &&
+    !`${r.rel} ${r.repo} ${r.feature} ${r.worktree}`.toLowerCase().includes(f.text)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 type Selection =
   | { kind: "artifact"; id: string }
+  | { kind: "file"; path: string }
   | { kind: "session"; path: string }
   | null;
-
-const SORT_OPTIONS: { value: string; label: string }[] = [
-  { value: "updated", label: "updated (newest)" },
-  { value: "created", label: "created (newest)" },
-  { value: "access", label: "most accessed" },
-  { value: "type", label: "type" },
-  { value: "", label: "repo / type (default)" },
-];
 
 function App() {
   const [tab, setTab] = useState<Tab>("activity");
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
-  const [sortBy, setSortBy] = useState<string>("updated");
 
-  const [selType, setSelType] = useState<Set<string>>(new Set());
-  const [selStatus, setSelStatus] = useState<Set<string>>(new Set());
-  const [selLifecycle, setSelLifecycle] = useState<Set<string>>(new Set());
   const [selFeature, setSelFeature] = useState<string>("");
   const [selRepo, setSelRepo] = useState<string>("");
   const [sidebarFilter, setSidebarFilter] = useState("");
+  const [browseRows, setBrowseRows] = useState<main.BrowseRow[]>([]);
+  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
+  // history docs = per-session turn-set summaries. Useful, but they bump on
+  // every session and drown the recent view — hence the toggle.
+  const [showHistory, setShowHistory] = useState<boolean>(
+    () => localStorage.getItem("gm.showHistory") !== "0",
+  );
+  useEffect(() => {
+    GetPref("showHistory")
+      .then((v) => {
+        if (v) setShowHistory(v !== "0");
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    const v = showHistory ? "1" : "0";
+    localStorage.setItem("gm.showHistory", v);
+    SetPref("showHistory", v).catch(() => {});
+  }, [showHistory]);
   // sidebarWidth: localStorage seeds first paint (avoids flash) and the
   // Go-backed prefs file is the source of truth across restarts. Read both
   // — file wins, then writes go to both.
@@ -169,7 +222,6 @@ function App() {
   );
 
   const [facets, setFacets] = useState<main.FacetCountsResult | null>(null);
-  const [featuresByRepo, setFeaturesByRepo] = useState<main.FeatureRow[]>([]);
   const [sessionFacets, setSessionFacets] =
     useState<main.SessionFacetCounts | null>(null);
   const [toolHits, setToolHits] = useState<main.ToolUseHit[]>([]);
@@ -216,12 +268,12 @@ function App() {
     localStorage.setItem("gm.dateRange", s);
     SetPref("dateRange", s).catch(() => {});
   }, [dateRange]);
-  const [artifactRows, setArtifactRows] = useState<artifacts.Artifact[]>([]);
   const [hybridRows, setHybridRows] = useState<search.HybridResult[]>([]);
   const [sessionHits, setSessionHits] = useState<search.Hit[]>([]);
 
   const [selection, setSelection] = useState<Selection>(null);
   const [detailArt, setDetailArt] = useState<artifacts.Artifact | null>(null);
+  const [detailFile, setDetailFile] = useState<main.BrowseRow | null>(null);
   const [detailBody, setDetailBody] = useState<string>("");
   const [sessionLines, setSessionLines] = useState<SessionTurn[] | null>(null);
   const [turnFilter, setTurnFilter] = useState("");
@@ -241,6 +293,25 @@ function App() {
   const [heatmap, setHeatmap] = useState<main.HeatmapCell[]>([]);
   const [version, setVersion] = useState<string>("");
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [uiZoom, setUiZoom] = useState<number>(() => {
+    const n = Number(localStorage.getItem("gm.uiZoom"));
+    return Number.isFinite(n) && n >= 80 && n <= 150 ? n : 100;
+  });
+  useEffect(() => {
+    GetPref("uiZoom")
+      .then((v) => {
+        const n = Number(v);
+        if (Number.isFinite(n) && n >= 80 && n <= 150) setUiZoom(n);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("gm.uiZoom", String(uiZoom));
+    SetPref("uiZoom", String(uiZoom)).catch(() => {});
+    // css zoom scales the whole app; supported by WKWebView
+    (document.body.style as any).zoom = uiZoom === 100 ? "" : `${uiZoom}%`;
+  }, [uiZoom]);
   const searchRef = useRef<HTMLInputElement>(null);
   const activityFilterRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -279,8 +350,8 @@ function App() {
     FacetCounts()
       .then((f) => setFacets(f))
       .catch((e) => setErr(String(e)));
-    FeaturesByRepo()
-      .then((rows) => setFeaturesByRepo(rows || []))
+    BrowseTree()
+      .then((rows) => setBrowseRows(rows || []))
       .catch((e) => setErr(String(e)));
     SessionFacets()
       .then((sf) => setSessionFacets(sf))
@@ -340,15 +411,71 @@ function App() {
       .catch((e) => setErr(String(e)));
   }, [expandedWorktree, reloadKey]);
 
+  // browse mode (no query): compact grouped list from the tree data. Shared
+  // context (repo · feature, or dir) lives in the group header once, not on
+  // every row — the old flat ListArtifacts wall repeated it 80 times. Sidebar
+  // filter (text + ext:md) and the topbar date range both apply here, so
+  // "md files touched in the last 15 min for repo X" is: pick repo, 15m
+  // preset, type ext:md.
+  const sbFilter = useMemo(() => parseSidebarFilter(sidebarFilter), [sidebarFilter]);
+  const browseGroups = useMemo(() => {
+    const { from, to } = rangeToMs(dateRange);
+    let rows = browseRows.filter((r) => {
+      if (!showHistory && r.type === "history") return false;
+      const ms = r.mtime * 1000;
+      if (ms < from || ms >= to) return false;
+      return rowMatchesFilter(r, sbFilter);
+    });
+    if (selRepo) rows = rows.filter((r) => r.repo === selRepo);
+    if (selFeature) rows = rows.filter((r) => r.feature === selFeature);
+    if (!selRepo && !selFeature) {
+      // recent across everything: bucket by repo · feature, freshest bucket
+      // first, newest file first inside, 300-row cap
+      const recent = [...rows].sort((a, b) => b.mtime - a.mtime).slice(0, 300);
+      const buckets = new Map<string, { dir: string; files: main.BrowseRow[] }>();
+      for (const r of recent) {
+        const key = `${r.repo} ${r.feature}`;
+        let b = buckets.get(key);
+        if (!b) {
+          b = { dir: r.feature ? `${r.repo} · ${r.feature}` : r.repo, files: [] };
+          buckets.set(key, b);
+        }
+        b.files.push(r);
+      }
+      return [...buckets.values()];
+    }
+    const byDir = new Map<string, main.BrowseRow[]>();
+    for (const r of rows) {
+      let rel = r.rel;
+      if (selFeature && rel.startsWith(`features/${r.feature}/`)) {
+        rel = rel.slice(`features/${r.feature}/`.length);
+      }
+      const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "./";
+      const list = byDir.get(dir);
+      if (list) list.push(r);
+      else byDir.set(dir, [r]);
+    }
+    return [...byDir.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([dir, files]) => ({
+        dir,
+        files: [...files].sort((a, b) => a.rel.localeCompare(b.rel)),
+      }));
+  }, [browseRows, selRepo, selFeature, sbFilter, dateRange, showHistory, reloadKey]);
+  const browsePaths = useMemo(
+    () => browseGroups.flatMap((g) => g.files.map((f) => f.path)),
+    [browseGroups],
+  );
+
   // ordered ids list for j/k nav
   const visibleRowIDs: string[] = useMemo(() => {
     if (tab === "artifacts") {
       return hybridRows.length
         ? hybridRows.map((h) => h.artifact.id)
-        : artifactRows.map((a) => a.id);
+        : browsePaths;
     }
     return sessionHits.map((h) => h.filepath);
-  }, [tab, hybridRows, artifactRows, sessionHits]);
+  }, [tab, hybridRows, browsePaths, sessionHits]);
 
   // keyboard nav: j/k move row, esc clear, / focus search
   useEffect(() => {
@@ -385,7 +512,7 @@ function App() {
       const curID =
         selection?.kind === "artifact"
           ? selection.id
-          : selection?.kind === "session"
+          : selection?.kind === "file" || selection?.kind === "session"
             ? selection.path
             : null;
       const i = curID ? visibleRowIDs.indexOf(curID) : -1;
@@ -396,14 +523,16 @@ function App() {
       const id = visibleRowIDs[next];
       setSelection(
         tab === "artifacts"
-          ? { kind: "artifact", id }
+          ? hybridRows.length
+            ? { kind: "artifact", id }
+            : { kind: "file", path: id }
           : { kind: "session", path: id },
       );
       e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visibleRowIDs, selection, tab, refreshAll]);
+  }, [visibleRowIDs, selection, tab, hybridRows, refreshAll]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 200);
@@ -412,16 +541,16 @@ function App() {
 
   const filter = useMemo<artifacts.ListFilter>(
     () => ({
-      Type: [...selType],
-      Status: [...selStatus],
-      Lifecycle: [...selLifecycle],
+      Type: [],
+      Status: [],
+      Lifecycle: [],
       Scope: "",
       Repo: selRepo,
       Branch: "",
       Feature: selFeature,
       Domain: "",
     }),
-    [selType, selStatus, selLifecycle, selFeature, selRepo],
+    [selFeature, selRepo],
   );
 
   // refetch results when inputs change
@@ -434,10 +563,8 @@ function App() {
           if (debouncedQuery.trim()) {
             const r = await SearchHybrid(debouncedQuery, filter, 100, since, until);
             setHybridRows(r || []);
-            setArtifactRows([]);
           } else {
-            const r = await ListArtifacts(filter, sortBy, 200, since, until);
-            setArtifactRows(r || []);
+            // browse mode renders from browseRows client-side
             setHybridRows([]);
           }
         } else if (tab === "tools") {
@@ -500,7 +627,6 @@ function App() {
   }, [
     tab,
     debouncedQuery,
-    sortBy,
     filter,
     selSessionProject,
     selSessionDirType,
@@ -516,22 +642,31 @@ function App() {
   useEffect(() => {
     if (!selection) {
       setDetailArt(null);
+      setDetailFile(null);
       setDetailBody("");
       setSessionLines(null);
       return;
     }
     if (selection.kind === "artifact") {
       const row =
-        artifactRows.find((a) => a.id === selection.id) ||
         hybridRows.find((h) => h.artifact?.id === selection.id)?.artifact ||
         null;
       setDetailArt(row);
+      setDetailFile(null);
       setSessionLines(null);
       GetArtifactBody(selection.id)
         .then(setDetailBody)
         .catch((e: unknown) => setDetailBody(`# error\n\n${String(e)}`));
+    } else if (selection.kind === "file") {
+      setDetailArt(null);
+      setSessionLines(null);
+      setDetailFile(browseRows.find((r) => r.path === selection.path) || null);
+      GetLiveBody(selection.path)
+        .then(setDetailBody)
+        .catch((e: unknown) => setDetailBody(`# error\n\n${String(e)}`));
     } else {
       setDetailArt(null);
+      setDetailFile(null);
       setDetailBody("");
       ReadFile(selection.path)
         .then((raw: string) => setSessionLines(parseJSONL(raw)))
@@ -540,22 +675,9 @@ function App() {
           setErr(String(e));
         });
     }
-  }, [selection, artifactRows, hybridRows, reloadKey]);
-
-  const toggleSet = useCallback(
-    (s: Set<string>, v: string, setter: (n: Set<string>) => void) => {
-      const next = new Set(s);
-      if (next.has(v)) next.delete(v);
-      else next.add(v);
-      setter(next);
-    },
-    [],
-  );
+  }, [selection, hybridRows, browseRows, reloadKey]);
 
   const clearFacets = () => {
-    setSelType(new Set());
-    setSelStatus(new Set());
-    setSelLifecycle(new Set());
     setSelFeature("");
     setSelRepo("");
   };
@@ -571,7 +693,7 @@ function App() {
 
   const totalRows =
     tab === "artifacts"
-      ? hybridRows.length || artifactRows.length
+      ? hybridRows.length || browsePaths.length
       : tab === "tools"
         ? toolHits.length
         : sessionHits.length;
@@ -584,9 +706,6 @@ function App() {
     (selSessionTopic ? 1 : 0) +
     (tab === "sessions" && queryActive ? 1 : 0);
   const artifactFilterCount =
-    selType.size +
-    selStatus.size +
-    selLifecycle.size +
     (selFeature ? 1 : 0) +
     (selRepo ? 1 : 0) +
     (tab === "artifacts" && queryActive ? 1 : 0);
@@ -740,15 +859,6 @@ function App() {
         >
           ⟳
         </button>
-        {tab === "artifacts" && (
-          <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}>
-            {SORT_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        )}
         {tab === "tools" && (
           <>
             <select
@@ -765,7 +875,7 @@ function App() {
             </select>
             <label
               style={{
-                fontSize: 11,
+                fontSize: 13,
                 color: "var(--fg-muted)",
                 display: "flex",
                 alignItems: "center",
@@ -830,40 +940,8 @@ function App() {
             </>
           )}
         {tab === "artifacts" &&
-          selType.size +
-            selStatus.size +
-            selLifecycle.size +
-            (selFeature ? 1 : 0) +
-            (selRepo ? 1 : 0) >
-            0 && (
+          (selFeature ? 1 : 0) + (selRepo ? 1 : 0) > 0 && (
             <>
-              {[...selType].map((v) => (
-                <span
-                  key={`t-${v}`}
-                  className="filter-chip"
-                  onClick={() => toggleSet(selType, v, setSelType)}
-                >
-                  type: {v} <span className="x">×</span>
-                </span>
-              ))}
-              {[...selStatus].map((v) => (
-                <span
-                  key={`s-${v}`}
-                  className="filter-chip"
-                  onClick={() => toggleSet(selStatus, v, setSelStatus)}
-                >
-                  status: {v} <span className="x">×</span>
-                </span>
-              ))}
-              {[...selLifecycle].map((v) => (
-                <span
-                  key={`l-${v}`}
-                  className="filter-chip"
-                  onClick={() => toggleSet(selLifecycle, v, setSelLifecycle)}
-                >
-                  lifecycle: {v} <span className="x">×</span>
-                </span>
-              ))}
               {selFeature && (
                 <span
                   className="filter-chip"
@@ -924,80 +1002,55 @@ function App() {
 
       <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
       <aside className="sidebar">
-        {tab === "artifacts" && facets && (
+        {tab === "artifacts" && (
           <>
             <div className="sidebar-filter">
               <input
                 type="search"
-                placeholder="filter facets…"
+                placeholder="filter files… (text, ext:md)"
                 value={sidebarFilter}
                 onChange={(e) => setSidebarFilter(e.target.value)}
               />
             </div>
-            <FacetGroup
-              title="type"
-              counts={facets.byType || {}}
-              selected={selType}
-              onToggle={(v) => toggleSet(selType, v, setSelType)}
+            <div className="browse-toggles">
+              <button
+                className={`toggle-pill ${showHistory ? "on" : ""}`}
+                onClick={() => setShowHistory((v) => !v)}
+                title="session turn-set summaries (history/) in the file list"
+              >
+                history {showHistory ? "on" : "off"}
+              </button>
+            </div>
+            <TreeSidebar
+              rows={browseRows}
               filter={sidebarFilter}
-              isCollapsed={collapsed.has("type")}
-              onToggleCollapse={() => toggleCollapsed("type")}
-            />
-            <FacetGroup
-              title="status"
-              counts={facets.byStatus || {}}
-              selected={selStatus}
-              onToggle={(v) => toggleSet(selStatus, v, setSelStatus)}
-              filter={sidebarFilter}
-              isCollapsed={collapsed.has("status")}
-              onToggleCollapse={() => toggleCollapsed("status")}
-            />
-            <FacetGroup
-              title="lifecycle"
-              counts={facets.byLifecycle || {}}
-              selected={selLifecycle}
-              onToggle={(v) => toggleSet(selLifecycle, v, setSelLifecycle)}
-              filter={sidebarFilter}
-              isCollapsed={collapsed.has("lifecycle")}
-              onToggleCollapse={() => toggleCollapsed("lifecycle")}
-            />
-            <SingleFacetGroup
-              title="repo"
-              counts={facets.byRepo || {}}
-              selected={selRepo}
-              onPick={(v) => {
-                setSelRepo(v);
-                if (
-                  selFeature &&
-                  v &&
-                  !featuresByRepo.some(
-                    (f) => f.repo === v && f.feature === selFeature,
-                  )
-                ) {
+              expanded={treeExpanded}
+              onToggle={(key) =>
+                setTreeExpanded((prev) => {
+                  const next = new Set(prev);
+                  if (next.has(key)) next.delete(key);
+                  else next.add(key);
+                  return next;
+                })
+              }
+              selRepo={selRepo}
+              selFeature={selFeature}
+              selection={selection}
+              onPickRepo={(repo) => {
+                setSelFeature("");
+                setSelRepo(selRepo === repo && !selFeature ? "" : repo);
+              }}
+              onPickFeature={(repo, feature) => {
+                if (selRepo === repo && selFeature === feature) {
                   setSelFeature("");
+                } else {
+                  setSelRepo(repo);
+                  setSelFeature(feature);
                 }
               }}
-              filter={sidebarFilter}
-              isCollapsed={collapsed.has("repo")}
-              onToggleCollapse={() => toggleCollapsed("repo")}
+              onPickFile={(path) => setSelection({ kind: "file", path })}
             />
-            <FeaturesByRepoGroup
-              rows={featuresByRepo}
-              filterRepo={selRepo}
-              selected={selFeature}
-              onPick={(repo, feature) => {
-                setSelRepo(repo);
-                setSelFeature(feature);
-              }}
-              filter={sidebarFilter}
-              isCollapsed={collapsed.has("feature")}
-              onToggleCollapse={() => toggleCollapsed("feature")}
-            />
-            {(selType.size > 0 ||
-              selStatus.size > 0 ||
-              selLifecycle.size > 0 ||
-              !!selFeature ||
-              !!selRepo) && (
+            {(!!selFeature || !!selRepo) && (
               <button className="facet-clear" onClick={clearFacets}>
                 clear filters
               </button>
@@ -1014,7 +1067,7 @@ function App() {
           />
         )}
         {tab === "tools" && (
-          <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>
+          <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>
             <p style={{ marginTop: 0 }}>
               Searches each session's JSONL for <strong>tool_use</strong> blocks.
               Matches on input JSON and the paired tool_result body.
@@ -1099,17 +1152,14 @@ function App() {
               }
             />
           ))}
-        {tab === "artifacts" && hybridRows.length === 0 &&
-          artifactRows.map((a) => (
-            <ArtifactRow
-              key={a.id}
-              row={a}
-              selected={
-                selection?.kind === "artifact" && selection.id === a.id
-              }
-              onClick={() => setSelection({ kind: "artifact", id: a.id })}
-            />
-          ))}
+        {tab === "artifacts" && hybridRows.length === 0 && (
+          <BrowseList
+            groups={browseGroups}
+            grouped={!!selRepo || !!selFeature}
+            selPath={selection?.kind === "file" ? selection.path : ""}
+            onPick={(path) => setSelection({ kind: "file", path })}
+          />
+        )}
         {tab === "tools" &&
           toolHits.map((h, i) => (
             <ToolUseRow
@@ -1240,12 +1290,37 @@ function App() {
             </ReactMarkdown>
           </>
         )}
+        {selection?.kind === "file" && (
+          <FileDetail
+            path={selection.path}
+            row={detailFile}
+            body={detailBody}
+            onOpenSession={async (sid) => {
+              try {
+                const p = await SessionPathByID(sid);
+                setTab("sessions");
+                setSelection({ kind: "session", path: p });
+              } catch (e) {
+                setErr(String(e));
+              }
+            }}
+          />
+        )}
         {selection?.kind === "session" && (
           <SessionDetail
             path={selection.path}
             turns={sessionLines}
             filter={turnFilter}
             onFilterChange={setTurnFilter}
+            files={browseRows.filter(
+              (r) =>
+                r.sessionId &&
+                r.sessionId === sessionIDFromPath(selection.path),
+            )}
+            onOpenFile={(path) => {
+              setTab("artifacts");
+              setSelection({ kind: "file", path });
+            }}
             defaultExpanded={defaultExpanded}
             expandRev={expandRev}
             order={turnOrder}
@@ -1279,6 +1354,14 @@ function App() {
         <button
           type="button"
           className="status-about"
+          onClick={() => setSettingsOpen(true)}
+          title="ui settings"
+        >
+          settings
+        </button>
+        <button
+          type="button"
+          className="status-about"
           onClick={() => setAboutOpen(true)}
           title="about giantmem"
         >
@@ -1293,6 +1376,125 @@ function App() {
       {aboutOpen && (
         <AboutModal version={version} onClose={() => setAboutOpen(false)} />
       )}
+      {settingsOpen && (
+        <SettingsModal
+          uiZoom={uiZoom}
+          onZoom={setUiZoom}
+          showHistory={showHistory}
+          onShowHistory={setShowHistory}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+// text size is a scale, not an absolute px — the UI mixes 11-28px on
+// purpose (hierarchy), so one fixed size would flatten it. Each step
+// scales everything proportionally.
+const TEXT_SIZES: { label: string; zoom: number }[] = [
+  { label: "Small", zoom: 90 },
+  { label: "Default", zoom: 100 },
+  { label: "Large", zoom: 110 },
+  { label: "X-Large", zoom: 120 },
+  { label: "Huge", zoom: 135 },
+];
+
+function Switch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      className={`switch ${checked ? "on" : ""}`}
+      onClick={() => onChange(!checked)}
+    >
+      <span className="switch-knob" />
+    </button>
+  );
+}
+
+function SettingsModal({
+  uiZoom,
+  onZoom,
+  showHistory,
+  onShowHistory,
+  onClose,
+}: {
+  uiZoom: number;
+  onZoom: (n: number) => void;
+  showHistory: boolean;
+  onShowHistory: (v: boolean) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal settings-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+      >
+        <button
+          type="button"
+          className="modal-close"
+          onClick={onClose}
+          aria-label="close"
+        >
+          ×
+        </button>
+        <h2 className="settings-title">Settings</h2>
+
+        <div className="settings-section">Appearance</div>
+        <div className="settings-row">
+          <div className="settings-info">
+            <div className="settings-label">Text size</div>
+            <div className="settings-desc">
+              Scales the whole UI proportionally — element sizes differ by
+              design, so there's no single font size to set.
+            </div>
+          </div>
+          <div className="segmented">
+            {TEXT_SIZES.map((s) => (
+              <button
+                key={s.zoom}
+                type="button"
+                className={uiZoom === s.zoom ? "active" : ""}
+                onClick={() => onZoom(s.zoom)}
+                title={`${s.zoom}%`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="settings-section">File list</div>
+        <div className="settings-row">
+          <div className="settings-info">
+            <div className="settings-label">Show history docs</div>
+            <div className="settings-desc">
+              Per-session turn-set summaries (history/). Every session bumps
+              them, so hiding them keeps the recent view to real work docs.
+            </div>
+          </div>
+          <Switch checked={showHistory} onChange={onShowHistory} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -1350,48 +1552,355 @@ function AboutModal({
   );
 }
 
-function FacetGroup({
-  title,
-  counts,
-  selected,
+// ----- tree sidebar ---------------------------------------------------------
+
+type TreeDir = {
+  dirs: Map<string, TreeDir>;
+  files: main.BrowseRow[];
+};
+
+type RepoNode = {
+  repo: string;
+  dead: boolean;
+  features: Map<string, TreeDir>; // "" key = repo-level docs
+  count: number;
+};
+
+function newDir(): TreeDir {
+  return { dirs: new Map(), files: [] };
+}
+
+function insertPath(root: TreeDir, segs: string[], row: main.BrowseRow) {
+  let cur = root;
+  for (let i = 0; i < segs.length - 1; i++) {
+    let next = cur.dirs.get(segs[i]);
+    if (!next) {
+      next = newDir();
+      cur.dirs.set(segs[i], next);
+    }
+    cur = next;
+  }
+  cur.files.push(row);
+}
+
+function sessionIDFromPath(p: string): string {
+  const stem = p.split("/").pop() || "";
+  return stem.replace(/\.jsonl$/, "");
+}
+
+function TreeSidebar({
+  rows,
+  filter,
+  expanded,
   onToggle,
-  filter = "",
-  isCollapsed = false,
-  onToggleCollapse,
+  selRepo,
+  selFeature,
+  selection,
+  onPickRepo,
+  onPickFeature,
+  onPickFile,
 }: {
-  title: string;
-  counts: Record<string, number>;
-  selected: Set<string>;
-  onToggle: (v: string) => void;
-  filter?: string;
-  isCollapsed?: boolean;
-  onToggleCollapse?: () => void;
+  rows: main.BrowseRow[];
+  filter: string;
+  expanded: Set<string>;
+  onToggle: (key: string) => void;
+  selRepo: string;
+  selFeature: string;
+  selection: Selection;
+  onPickRepo: (repo: string) => void;
+  onPickFeature: (repo: string, feature: string) => void;
+  onPickFile: (path: string) => void;
 }) {
-  const q = filter.toLowerCase();
-  const sorted = Object.entries(counts)
-    .filter(([k]) => !q || k.toLowerCase().includes(q))
-    .sort((a, b) => b[1] - a[1]);
+  const f = useMemo(() => parseSidebarFilter(filter), [filter]);
+  const q = f.text || f.ext;
+  const repos = useMemo(() => {
+    const byRepo = new Map<string, RepoNode>();
+    for (const r of rows) {
+      if (!rowMatchesFilter(r, f)) {
+        continue;
+      }
+      let node = byRepo.get(r.repo);
+      if (!node) {
+        node = { repo: r.repo, dead: true, features: new Map(), count: 0 };
+        byRepo.set(r.repo, node);
+      }
+      node.count++;
+      if (!r.dead) node.dead = false;
+      let root = node.features.get(r.feature);
+      if (!root) {
+        root = newDir();
+        node.features.set(r.feature, root);
+      }
+      // strip the features/{name}/ prefix so the feature node shows its own
+      // subtree, not the fixed features/ scaffolding
+      let rel = r.rel;
+      if (r.feature && rel.startsWith(`features/${r.feature}/`)) {
+        rel = rel.slice(`features/${r.feature}/`.length);
+      }
+      insertPath(root, rel.split("/"), r);
+    }
+    return [...byRepo.values()].sort((a, b) => a.repo.localeCompare(b.repo));
+  }, [rows, f]);
+
+  // filtering auto-expands everything that survived; manual expand state
+  // drives the unfiltered browse
+  const isOpen = (key: string) => (q ? true : expanded.has(key));
+
+  const selPath = selection?.kind === "file" ? selection.path : "";
+
   return (
-    <div className="facet-group">
-      <FacetHeader
-        title={title}
-        count={sorted.length}
-        isCollapsed={isCollapsed}
-        onToggleCollapse={onToggleCollapse}
-        activeCount={selected.size}
-      />
-      {!isCollapsed &&
-        sorted.map(([v, n]) => (
-          <div
-            key={v}
-            className={`facet-row ${selected.has(v) ? "selected" : ""}`}
-            onClick={() => onToggle(v)}
-          >
-            <span>{v || "(blank)"}</span>
-            <span className="count">{n}</span>
+    <div className="tree">
+      {repos.map((node) => {
+        const rkey = `r:${node.repo}`;
+        const featureNames = [...node.features.keys()].sort((a, b) => {
+          if (a === "") return 1; // repo-level docs after features
+          if (b === "") return -1;
+          return a.localeCompare(b);
+        });
+        return (
+          <div key={rkey}>
+            <div
+              className={`tree-row repo ${selRepo === node.repo && !selFeature ? "selected" : ""}`}
+              onClick={() => onToggle(rkey)}
+            >
+              <span className="facet-arrow">{isOpen(rkey) ? "▾" : "▸"}</span>
+              <span
+                className="tree-label"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPickRepo(node.repo);
+                  if (!isOpen(rkey)) onToggle(rkey);
+                }}
+                title={node.repo}
+              >
+                {node.repo}
+              </span>
+              {node.dead && <span className="chip dead">gone</span>}
+              <span className="count">{node.count}</span>
+            </div>
+            {isOpen(rkey) &&
+              featureNames.map((f) => {
+                const fkey = `${rkey}/f:${f}`;
+                const root = node.features.get(f)!;
+                return (
+                  <div key={fkey} className="tree-indent">
+                    <div
+                      className={`tree-row feature ${
+                        selRepo === node.repo && selFeature === f && f !== ""
+                          ? "selected"
+                          : ""
+                      }`}
+                      onClick={() => onToggle(fkey)}
+                    >
+                      <span className="facet-arrow">
+                        {isOpen(fkey) ? "▾" : "▸"}
+                      </span>
+                      <span
+                        className="tree-label"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (f !== "") onPickFeature(node.repo, f);
+                          if (!isOpen(fkey)) onToggle(fkey);
+                        }}
+                      >
+                        {f === "" ? "(repo docs)" : f}
+                      </span>
+                    </div>
+                    {isOpen(fkey) && (
+                      <TreeDirView
+                        dir={root}
+                        keyPrefix={fkey}
+                        isOpen={isOpen}
+                        onToggle={onToggle}
+                        onPickFile={onPickFile}
+                        selPath={selPath}
+                      />
+                    )}
+                  </div>
+                );
+              })}
           </div>
-        ))}
+        );
+      })}
+      {repos.length === 0 && (
+        <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>
+          {q ? "nothing matches" : "no indexed files"}
+        </div>
+      )}
     </div>
+  );
+}
+
+function TreeDirView({
+  dir,
+  keyPrefix,
+  isOpen,
+  onToggle,
+  onPickFile,
+  selPath,
+}: {
+  dir: TreeDir;
+  keyPrefix: string;
+  isOpen: (key: string) => boolean;
+  onToggle: (key: string) => void;
+  onPickFile: (path: string) => void;
+  selPath: string;
+}) {
+  const dirNames = [...dir.dirs.keys()].sort();
+  const files = [...dir.files].sort((a, b) => a.rel.localeCompare(b.rel));
+  return (
+    <div className="tree-indent">
+      {dirNames.map((d) => {
+        const dkey = `${keyPrefix}/d:${d}`;
+        return (
+          <div key={dkey}>
+            <div className="tree-row dir" onClick={() => onToggle(dkey)}>
+              <span className="facet-arrow">{isOpen(dkey) ? "▾" : "▸"}</span>
+              <span className="tree-label">{d}/</span>
+            </div>
+            {isOpen(dkey) && (
+              <TreeDirView
+                dir={dir.dirs.get(d)!}
+                keyPrefix={dkey}
+                isOpen={isOpen}
+                onToggle={onToggle}
+                onPickFile={onPickFile}
+                selPath={selPath}
+              />
+            )}
+          </div>
+        );
+      })}
+      {files.map((f) => (
+        <div
+          key={f.path}
+          className={`tree-row file ${selPath === f.path ? "selected" : ""}`}
+          onClick={() => onPickFile(f.path)}
+          title={f.path}
+        >
+          <span className="tree-label">{f.rel.split("/").pop()}</span>
+          {f.type && <span className={`chip type-${f.type}`}>{f.type}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ----- file detail ----------------------------------------------------------
+
+// parseCSV: minimal RFC-4180 — quoted fields, embedded commas/newlines.
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cur = "";
+  let inQ = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inQ) {
+      if (c === '"') {
+        if (text[i + 1] === '"') {
+          cur += '"';
+          i++;
+        } else {
+          inQ = false;
+        }
+      } else {
+        cur += c;
+      }
+    } else if (c === '"') {
+      inQ = true;
+    } else if (c === ",") {
+      row.push(cur);
+      cur = "";
+    } else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cur);
+      cur = "";
+      if (row.some((v) => v !== "")) rows.push(row);
+      row = [];
+    } else {
+      cur += c;
+    }
+  }
+  if (cur !== "" || row.length) {
+    row.push(cur);
+    if (row.some((v) => v !== "")) rows.push(row);
+  }
+  return rows;
+}
+
+function FileDetail({
+  path,
+  row,
+  body,
+  onOpenSession,
+}: {
+  path: string;
+  row: main.BrowseRow | null;
+  body: string;
+  onOpenSession: (sessionID: string) => void;
+}) {
+  const name = path.split("/").pop() || path;
+  const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+  const csvRows = useMemo(
+    () => (ext === "csv" ? parseCSV(body).slice(0, 500) : null),
+    [ext, body],
+  );
+  return (
+    <>
+      <header className="detail-head">
+        <h1 style={{ marginBottom: 0 }}>{name}</h1>
+        <div className="meta">
+          {row?.type && <span className={`chip type-${row.type}`}>{row.type}</span>}
+          {row?.dead && <span className="chip dead">worktree gone</span>}
+          {row?.repo && <span>repo: {row.repo}</span>}
+          {row?.feature && <span>feature: {row.feature}</span>}
+          {row?.mtime ? <span>updated: {formatTime(new Date(row.mtime * 1000).toISOString())}</span> : null}
+          {row?.sessionId && (
+            <a
+              onClick={() => onOpenSession(row.sessionId)}
+              style={{ color: "var(--accent)", cursor: "pointer" }}
+              title={`open session ${row.sessionId}`}
+            >
+              session {row.sessionId.slice(0, 8)} ›
+            </a>
+          )}
+          <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{path}</span>
+          <CopyButton text={path} label="copy absolute path" />
+        </div>
+      </header>
+      {ext === "md" || ext === "mmd" ? (
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeHighlight as any]}
+        >
+          {body}
+        </ReactMarkdown>
+      ) : csvRows ? (
+        <div className="csv-wrap">
+          <table className="csv-table">
+            <thead>
+              <tr>
+                {(csvRows[0] || []).map((h, i) => (
+                  <th key={i}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {csvRows.slice(1).map((r, i) => (
+                <tr key={i}>
+                  {r.map((v, j) => (
+                    <td key={j}>{v}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <pre className="raw-body">{body}</pre>
+      )}
+    </>
   );
 }
 
@@ -1496,75 +2005,6 @@ function FacetHeader({
   );
 }
 
-function FeaturesByRepoGroup({
-  rows,
-  filterRepo,
-  selected,
-  onPick,
-  filter = "",
-  isCollapsed = false,
-  onToggleCollapse,
-}: {
-  rows: main.FeatureRow[];
-  filterRepo: string;
-  selected: string;
-  onPick: (repo: string, feature: string) => void;
-  filter?: string;
-  isCollapsed?: boolean;
-  onToggleCollapse?: () => void;
-}) {
-  const q = filter.toLowerCase();
-  const grouped = useMemo(() => {
-    const out: Record<string, main.FeatureRow[]> = {};
-    for (const r of rows) {
-      if (filterRepo && r.repo !== filterRepo) continue;
-      if (q && !r.feature.toLowerCase().includes(q) && !r.repo.toLowerCase().includes(q)) {
-        continue;
-      }
-      (out[r.repo] = out[r.repo] || []).push(r);
-    }
-    return out;
-  }, [rows, filterRepo, q]);
-  const repos = Object.keys(grouped).sort();
-  const total = repos.reduce((acc, r) => acc + grouped[r].length, 0);
-  if (total === 0 && !selected) return null;
-  return (
-    <div className="facet-group">
-      <FacetHeader
-        title="feature"
-        count={total}
-        isCollapsed={isCollapsed}
-        onToggleCollapse={onToggleCollapse}
-        activeCount={selected ? 1 : 0}
-      />
-      {!isCollapsed &&
-        repos.map((repo) => (
-          <div key={repo} className="repo-block">
-            {!filterRepo && <div className="repo-label">{repo}</div>}
-            {grouped[repo].map((r) => (
-              <div
-                key={`${r.repo}/${r.feature}`}
-                className={`facet-row ${
-                  selected === r.feature &&
-                  (!filterRepo || filterRepo === r.repo)
-                    ? "selected"
-                    : ""
-                }`}
-                onClick={() =>
-                  onPick(r.repo, selected === r.feature ? "" : r.feature)
-                }
-                title={r.worktree || ""}
-              >
-                <span>{r.feature}</span>
-                <span className="count">{r.count}</span>
-              </div>
-            ))}
-          </div>
-        ))}
-    </div>
-  );
-}
-
 function SingleFacetGroup({
   title,
   counts,
@@ -1613,42 +2053,59 @@ function SingleFacetGroup({
   );
 }
 
-function ArtifactRow({
-  row,
-  selected,
-  onClick,
+// BrowseList: compact rows for browse mode. Every group carries the shared
+// context in its header exactly once — dir path when a repo/feature is
+// picked, repo · feature bucket in the recent view — so rows are just
+// name + type + time.
+function BrowseList({
+  groups,
+  grouped,
+  selPath,
+  onPick,
 }: {
-  row: artifacts.Artifact;
-  selected: boolean;
-  onClick: () => void;
+  groups: { dir: string; files: main.BrowseRow[] }[];
+  grouped: boolean;
+  selPath: string;
+  onPick: (path: string) => void;
 }) {
+  if (groups.length === 0) {
+    return null;
+  }
   return (
-    <div
-      className={`result-row ${selected ? "selected" : ""}`}
-      onClick={onClick}
-    >
-      <div className="row-head">
-        <span className={`chip type-${row.type}`}>{row.type}</span>
-        <span className="row-title">
-          {row.feature || row.name || row.path.split("/").pop()}
-        </span>
-        {row.status && <span className="row-meta">{row.status}</span>}
-      </div>
-      <div className="row-path">{row.path}</div>
-      <div className="row-meta">
-        <strong>{row.repo}</strong>
-        {row.worktree && shortPath(row.worktree) !== row.repo && (
-          <> · <span title={row.worktree}>{shortPath(row.worktree)}</span></>
-        )}
-        {row.feature && <> · <span style={{ color: "var(--accent-2)" }}>{row.feature}</span></>}
-        {row.branch && row.branch !== "main" && <> · {row.branch}</>}
-        {" · "}
-        {formatTime(row.updated)}
-        {row.access_count ? ` · ${row.access_count} access` : ""}
-        {row.has_vec ? " · vec" : ""}
-      </div>
-    </div>
+    <>
+      {groups.map((g) => (
+        <div key={g.dir || "(recent)"}>
+          <div className="browse-group-head">{g.dir}</div>
+          {g.files.map((f) => (
+            <div
+              key={f.path}
+              className={`browse-row ${selPath === f.path ? "selected" : ""}`}
+              onClick={() => onPick(f.path)}
+              title={f.path}
+            >
+              {f.type && <span className={`chip type-${f.type}`}>{f.type}</span>}
+              <span className="browse-name">
+                {grouped ? f.rel.split("/").pop() : f.rel}
+              </span>
+              {f.dead && <span className="chip dead">gone</span>}
+              <span className="browse-meta">{formatMtime(f.mtime)}</span>
+            </div>
+          ))}
+        </div>
+      ))}
+    </>
   );
+}
+
+// formatMtime: today -> HH:MM, else date. Recent view is about "what just
+// happened", a bare date can't answer that.
+function formatMtime(mtime: number): string {
+  const d = new Date(mtime * 1000);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return d.toLocaleDateString();
 }
 
 function HybridRow({
@@ -1777,7 +2234,7 @@ function ToolUseDetail({
             onClick={onOpenSession}
             style={{
               padding: "2px 8px",
-              fontSize: 11,
+              fontSize: 13,
             }}
           >
             open session ›
@@ -1862,7 +2319,7 @@ function ActivityList({
                   <div className="row-meta">loading…</div>
                 )}
                 {expandedFiles.map((f) => (
-                  <div key={f.path} style={{ padding: "3px 0", fontSize: 12 }}>
+                  <div key={f.path} style={{ padding: "3px 0", fontSize: 13 }}>
                     <span className="row-meta" style={{ marginRight: 8 }}>
                       {ago(f.mtime)}
                     </span>
@@ -2012,7 +2469,7 @@ function Tile({
       >
         {value.toLocaleString()}
       </div>
-      <div style={{ fontSize: 10, color: "var(--fg-muted)" }}>{label}</div>
+      <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>{label}</div>
     </div>
   );
 }
@@ -2035,7 +2492,7 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
     <div style={{ padding: "8px 4px" }}>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 13,
           color: "var(--fg-muted)",
           marginBottom: 6,
           letterSpacing: "0.04em",
@@ -2053,7 +2510,7 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
             <div
               style={{
                 flex: 1,
-                fontSize: 11,
+                fontSize: 13,
                 color: "var(--fg-muted)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -2088,7 +2545,7 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
           alignItems: "center",
           gap: 4,
           marginTop: 8,
-          fontSize: 10,
+          fontSize: 12,
           color: "var(--fg-muted)",
         }}
       >
@@ -2379,6 +2836,8 @@ function SessionDetail({
   turns,
   filter,
   onFilterChange,
+  files,
+  onOpenFile,
   defaultExpanded,
   expandRev,
   order,
@@ -2390,6 +2849,8 @@ function SessionDetail({
   turns: SessionTurn[] | null;
   filter: string;
   onFilterChange: (s: string) => void;
+  files: main.BrowseRow[];
+  onOpenFile: (path: string) => void;
   defaultExpanded: boolean;
   expandRev: number;
   order: "asc" | "desc";
@@ -2423,6 +2884,28 @@ function SessionDetail({
           )}
         </div>
       </header>
+      {files.length > 0 && (
+        <div className="session-files">
+          <div className="session-files-title">
+            files written this session ({files.length})
+          </div>
+          {files.map((f) => (
+            <div
+              key={f.path}
+              className="session-file-row"
+              onClick={() => onOpenFile(f.path)}
+              title={f.path}
+            >
+              {f.type && <span className={`chip type-${f.type}`}>{f.type}</span>}
+              <span className="session-file-name">{f.rel}</span>
+              <span className="row-meta">
+                {f.repo}
+                {f.feature ? ` · ${f.feature}` : ""}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="transcript-toolbar">
         <input
           type="search"
@@ -2609,7 +3092,7 @@ function BlockView({
     );
   }
   return (
-    <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, opacity: 0.7 }}>
+    <pre style={{ whiteSpace: "pre-wrap", fontSize: 13, opacity: 0.7 }}>
       {JSON.stringify(block, null, 2)}
     </pre>
   );

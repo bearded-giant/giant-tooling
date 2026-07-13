@@ -25,6 +25,12 @@ func Body(live *sql.DB, a Artifact) (string, error) {
 	if abs == "" {
 		return "", fmt.Errorf("artifact has no path: %s", a.ID)
 	}
+	return BodyByPath(live, abs)
+}
+
+// BodyByPath is Body keyed directly on a live_docs.path — for files that never
+// classified as typed artifacts (WORKSPACE.md, ad-hoc outputs).
+func BodyByPath(live *sql.DB, abs string) (string, error) {
 	if raw, err := os.ReadFile(abs); err == nil {
 		return string(raw), nil
 	}
@@ -34,5 +40,5 @@ func Body(live *sql.DB, a Artifact) (string, error) {
 			return content, nil
 		}
 	}
-	return "", fmt.Errorf("no body for %s: not on disk (%s) and no live_docs row", a.ID, abs)
+	return "", fmt.Errorf("no body: not on disk (%s) and no live_docs row", abs)
 }
