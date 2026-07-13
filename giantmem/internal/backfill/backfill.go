@@ -79,8 +79,9 @@ func walkWorkspace(db *sql.DB, archiveBase, ws string, st *Stats) {
 			if p == ws {
 				return nil
 			}
-			// skip hidden + heavy dirs but stay inside .giantmem/
-			if name == ".git" || name == "node_modules" || name == "__pycache__" || name == ".venv" || name == "venv" {
+			// skip hidden + heavy dirs but stay inside .giantmem/ — dot-dirs
+			// like .mdlive hold tool mirrors, not docs
+			if strings.HasPrefix(name, ".") || name == "node_modules" || name == "__pycache__" || name == "venv" {
 				return fs.SkipDir
 			}
 			return nil

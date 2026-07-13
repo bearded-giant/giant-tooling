@@ -29,6 +29,18 @@ func Classify(rel string) (Classification, bool) {
 
 	last := parts[len(parts)-1]
 
+	// infra + hidden: machine indexes and dot-dirs (.mdlive mirrors) are not
+	// artifacts and stay out of browse
+	for _, p := range parts {
+		if strings.HasPrefix(p, ".") {
+			return Classification{}, false
+		}
+	}
+	switch last {
+	case "artifacts.json", "features.json", "meta.json", "_index.md", "_history.md":
+		return Classification{}, false
+	}
+
 	// .giantmem/specs/{domain}/spec.md  -> source-spec
 	if len(parts) >= 3 && parts[0] == "specs" && last == "spec.md" {
 		return Classification{Type: "source-spec", Domain: parts[1]}, true
@@ -92,13 +104,31 @@ func Classify(rel string) (Classification, bool) {
 	// catch-all: any other file inside a feature dir -> generic "file", so
 	// ad-hoc outputs (csv exports, nested research dirs) survive projection
 	// instead of vanishing. Name keeps the feature-relative path for ID
-	// uniqueness across nested dirs. meta.json is feature infra, not content.
+	// uniqueness across nested dirs.
 	if len(parts) >= 3 && parts[0] == "features" {
-		if len(parts) == 3 && last == "meta.json" {
-			return Classification{}, false
-		}
 		return Classification{Type: "file", Feature: parts[1], Name: strings.Join(parts[2:], "/")}, true
 	}
 
-	return Classification{}, false
+	// remaining well-known locations, so every real doc carries a type
+	if len(parts) == 1 {
+		switch last {
+		case "WORKSPACE.md", "workspace.md":
+			return Classification{Type: "workspace"}, true
+		case "notes.md":
+			return Classification{Type: "notes", Name: "notes"}, true
+		}
+	}
+	if parts[0] == "history" && len(parts) >= 2 {
+		return Classification{Type: "history", Name: strings.TrimSuffix(strings.Join(parts[1:], "/"), ".md")}, true
+	}
+	if parts[0] == "prompts" && len(parts) >= 2 {
+		return Classification{Type: "prompt", Name: strings.TrimSuffix(strings.Join(parts[1:], "/"), ".md")}, true
+	}
+	if parts[0] == "filebox" && len(parts) >= 2 {
+		return Classification{Type: "filebox", Name: strings.Join(parts[1:], "/")}, true
+	}
+
+	// global catch-all: real file in an unanticipated spot beats an untyped
+	// hole in the index
+	return Classification{Type: "file", Name: rel}, true
 }

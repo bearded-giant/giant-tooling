@@ -74,6 +74,50 @@ function rangeSinceUntil(r: DateRange): { since: string; until: string } {
   return { since: r.preset, until: "" };
 }
 
+// client-side ms bounds for browse mode (mtime filtering without a backend trip)
+function rangeToMs(r: DateRange): { from: number; to: number } {
+  if (r.preset === "all") return { from: 0, to: Infinity };
+  if (r.preset === "custom") {
+    const from = r.from ? Date.parse(r.from) : 0;
+    const to = r.to ? Date.parse(r.to) + 86400000 : Infinity;
+    return { from, to };
+  }
+  const m = /^(\d+)([mhd])$/.exec(r.preset);
+  if (!m) return { from: 0, to: Infinity };
+  const unit = m[2] === "m" ? 60000 : m[2] === "h" ? 3600000 : 86400000;
+  return { from: Date.now() - Number(m[1]) * unit, to: Infinity };
+}
+
+// sidebar filter grammar: free text (substring over rel/repo/feature/worktree)
+// plus ext:md style tokens
+type SidebarFilter = { text: string; ext: string };
+
+function parseSidebarFilter(q: string): SidebarFilter {
+  let ext = "";
+  const words: string[] = [];
+  for (const w of q.trim().toLowerCase().split(/\s+/)) {
+    if (!w) continue;
+    if (w.startsWith("ext:")) ext = w.slice(4).replace(/^\./, "");
+    else words.push(w);
+  }
+  return { text: words.join(" "), ext };
+}
+
+function rowMatchesFilter(r: main.BrowseRow, f: SidebarFilter): boolean {
+  if (f.ext) {
+    const name = r.rel.split("/").pop() || "";
+    const e = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+    if (e !== f.ext) return false;
+  }
+  if (
+    f.text &&
+    !`${r.rel} ${r.repo} ${r.feature} ${r.worktree}`.toLowerCase().includes(f.text)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 type Selection =
   | { kind: "artifact"; id: string }
   | { kind: "file"; path: string }
@@ -331,16 +375,37 @@ function App() {
       .catch((e) => setErr(String(e)));
   }, [expandedWorktree, reloadKey]);
 
-  // browse mode (no query): compact dir-grouped list from the tree data.
-  // repo/feature context lives in the group header once, not on every row —
-  // the old flat ListArtifacts wall repeated it 80 times.
+  // browse mode (no query): compact grouped list from the tree data. Shared
+  // context (repo · feature, or dir) lives in the group header once, not on
+  // every row — the old flat ListArtifacts wall repeated it 80 times. Sidebar
+  // filter (text + ext:md) and the topbar date range both apply here, so
+  // "md files touched in the last 15 min for repo X" is: pick repo, 15m
+  // preset, type ext:md.
+  const sbFilter = useMemo(() => parseSidebarFilter(sidebarFilter), [sidebarFilter]);
   const browseGroups = useMemo(() => {
-    let rows = browseRows;
+    const { from, to } = rangeToMs(dateRange);
+    let rows = browseRows.filter((r) => {
+      const ms = r.mtime * 1000;
+      if (ms < from || ms >= to) return false;
+      return rowMatchesFilter(r, sbFilter);
+    });
     if (selRepo) rows = rows.filter((r) => r.repo === selRepo);
     if (selFeature) rows = rows.filter((r) => r.feature === selFeature);
     if (!selRepo && !selFeature) {
-      const recent = [...rows].sort((a, b) => b.mtime - a.mtime).slice(0, 200);
-      return recent.length ? [{ dir: "", files: recent }] : [];
+      // recent across everything: bucket by repo · feature, freshest bucket
+      // first, newest file first inside, 300-row cap
+      const recent = [...rows].sort((a, b) => b.mtime - a.mtime).slice(0, 300);
+      const buckets = new Map<string, { dir: string; files: main.BrowseRow[] }>();
+      for (const r of recent) {
+        const key = `${r.repo} ${r.feature}`;
+        let b = buckets.get(key);
+        if (!b) {
+          b = { dir: r.feature ? `${r.repo} · ${r.feature}` : r.repo, files: [] };
+          buckets.set(key, b);
+        }
+        b.files.push(r);
+      }
+      return [...buckets.values()];
     }
     const byDir = new Map<string, main.BrowseRow[]>();
     for (const r of rows) {
@@ -359,7 +424,7 @@ function App() {
         dir,
         files: [...files].sort((a, b) => a.rel.localeCompare(b.rel)),
       }));
-  }, [browseRows, selRepo, selFeature]);
+  }, [browseRows, selRepo, selFeature, sbFilter, dateRange, reloadKey]);
   const browsePaths = useMemo(
     () => browseGroups.flatMap((g) => g.files.map((f) => f.path)),
     [browseGroups],
@@ -905,7 +970,7 @@ function App() {
             <div className="sidebar-filter">
               <input
                 type="search"
-                placeholder="filter tree… (path / repo / feature)"
+                placeholder="filter files… (text, ext:md)"
                 value={sidebarFilter}
                 onChange={(e) => setSidebarFilter(e.target.value)}
               />
@@ -1373,17 +1438,12 @@ function TreeSidebar({
   onPickFeature: (repo: string, feature: string) => void;
   onPickFile: (path: string) => void;
 }) {
-  const q = filter.trim().toLowerCase();
+  const f = useMemo(() => parseSidebarFilter(filter), [filter]);
+  const q = f.text || f.ext;
   const repos = useMemo(() => {
     const byRepo = new Map<string, RepoNode>();
     for (const r of rows) {
-      if (
-        q &&
-        !r.rel.toLowerCase().includes(q) &&
-        !r.repo.toLowerCase().includes(q) &&
-        !r.feature.toLowerCase().includes(q) &&
-        !r.worktree.toLowerCase().includes(q)
-      ) {
+      if (!rowMatchesFilter(r, f)) {
         continue;
       }
       let node = byRepo.get(r.repo);
@@ -1407,7 +1467,7 @@ function TreeSidebar({
       insertPath(root, rel.split("/"), r);
     }
     return [...byRepo.values()].sort((a, b) => a.repo.localeCompare(b.repo));
-  }, [rows, q]);
+  }, [rows, f]);
 
   // filtering auto-expands everything that survived; manual expand state
   // drives the unfiltered browse
@@ -1820,9 +1880,10 @@ function SingleFacetGroup({
   );
 }
 
-// BrowseList: compact rows for browse mode. Grouped = a repo/feature is
-// picked, so shared context lives in the dir header once. Ungrouped = recent
-// files across everything, so each row carries its repo/feature.
+// BrowseList: compact rows for browse mode. Every group carries the shared
+// context in its header exactly once — dir path when a repo/feature is
+// picked, repo · feature bucket in the recent view — so rows are just
+// name + type + time.
 function BrowseList({
   groups,
   grouped,
@@ -1839,12 +1900,9 @@ function BrowseList({
   }
   return (
     <>
-      {!grouped && (
-        <div className="browse-group-head">recently updated</div>
-      )}
       {groups.map((g) => (
         <div key={g.dir || "(recent)"}>
-          {grouped && <div className="browse-group-head">{g.dir}</div>}
+          <div className="browse-group-head">{g.dir}</div>
           {g.files.map((f) => (
             <div
               key={f.path}
@@ -1857,27 +1915,24 @@ function BrowseList({
                 {grouped ? f.rel.split("/").pop() : f.rel}
               </span>
               {f.dead && <span className="chip dead">gone</span>}
-              <span className="browse-meta">
-                {!grouped && (
-                  <>
-                    <strong>{f.repo}</strong>
-                    {f.feature ? (
-                      <span style={{ color: "var(--accent-2)" }}>
-                        {" "}
-                        · {f.feature}
-                      </span>
-                    ) : null}
-                    {" · "}
-                  </>
-                )}
-                {new Date(f.mtime * 1000).toLocaleDateString()}
-              </span>
+              <span className="browse-meta">{formatMtime(f.mtime)}</span>
             </div>
           ))}
         </div>
       ))}
     </>
   );
+}
+
+// formatMtime: today -> HH:MM, else date. Recent view is about "what just
+// happened", a bare date can't answer that.
+function formatMtime(mtime: number): string {
+  const d = new Date(mtime * 1000);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) {
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  return d.toLocaleDateString();
 }
 
 function HybridRow({

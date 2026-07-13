@@ -805,12 +805,14 @@ func (a *App) BrowseTree() ([]BrowseRow, error) {
 		if !ok {
 			continue
 		}
+		cls, ok := artifacts.Classify(rel)
+		if !ok {
+			continue // infra (.mdlive, artifacts.json, ...) stays out of browse
+		}
 		r.Rel = rel
-		if cls, ok := artifacts.Classify(rel); ok {
-			r.Type = cls.Type
-			if r.Feature == "" {
-				r.Feature = cls.Feature
-			}
+		r.Type = cls.Type
+		if r.Feature == "" {
+			r.Feature = cls.Feature
 		}
 		r.Dead = isDead(r.Worktree)
 		out = append(out, r)

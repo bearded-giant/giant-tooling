@@ -20,13 +20,23 @@ func TestClassify(t *testing.T) {
 		{"features/foo/jira-research/findings/ITLS-1540.md", "file", "foo", "jira-research/findings/ITLS-1540.md", true},
 		{"features/foo/jira-research/output.csv", "file", "foo", "jira-research/output.csv", true},
 		{"features/foo/export.csv", "file", "foo", "export.csv", true},
-		// feature infra stays excluded
+		// infra + hidden stay excluded
 		{"features/foo/meta.json", "", "", "", false},
 		{"features/features.json", "", "", "", false},
 		{"features/_index.md", "", "", "", false},
-		// non-feature paths unchanged
-		{"WORKSPACE.md", "", "", "", false},
+		{"artifacts.json", "", "", "", false},
+		{"specs/_history.md", "", "", "", false},
+		{".mdlive/tabs.json", "", "", "", false},
+		{".mdlive/history/features/foo/x.md", "", "", "", false},
+		// everything real carries a type
+		{"WORKSPACE.md", "workspace", "", "", true},
+		{"notes.md", "notes", "", "notes", true},
+		{"history/sessions.md", "history", "", "sessions", true},
+		{"history/sessions/20260713_133642_1eda8565.md", "history", "", "sessions/20260713_133642_1eda8565", true},
+		{"prompts/kickoff.md", "prompt", "", "kickoff", true},
+		{"filebox/dump.json", "filebox", "", "dump.json", true},
 		{"context/tree.md", "pattern", "", "tree", true},
+		{"context/data.csv", "file", "", "context/data.csv", true},
 	}
 	for _, c := range cases {
 		got, ok := Classify(c.rel)
