@@ -89,5 +89,16 @@ func Classify(rel string) (Classification, bool) {
 		return Classification{Type: "pattern", Name: strings.TrimSuffix(last, ".md")}, true
 	}
 
+	// catch-all: any other file inside a feature dir -> generic "file", so
+	// ad-hoc outputs (csv exports, nested research dirs) survive projection
+	// instead of vanishing. Name keeps the feature-relative path for ID
+	// uniqueness across nested dirs. meta.json is feature infra, not content.
+	if len(parts) >= 3 && parts[0] == "features" {
+		if len(parts) == 3 && last == "meta.json" {
+			return Classification{}, false
+		}
+		return Classification{Type: "file", Feature: parts[1], Name: strings.Join(parts[2:], "/")}, true
+	}
+
 	return Classification{}, false
 }

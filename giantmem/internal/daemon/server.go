@@ -284,12 +284,27 @@ func (s *Server) startReconciler(ctx context.Context) {
 		}
 
 		run("start")
-		// One-shot filesystem backfill: catches files touched outside the
-		// PostToolUse hook (vim, git pull, scripts). The reconciler runs again
-		// on its own when backfill upserts trip fsnotify on live.db.
-		go s.runBackfill(archiveBase)
+		// Filesystem backfill: catches files touched outside the PostToolUse
+		// hook (vim, scripts, bash-written csv). Periodic — startup-only left
+		// worktrees created after daemon start invisible until a restart. The
+		// reconciler runs again on its own when upserts trip fsnotify.
+		go s.backfillLoop(ctx, archiveBase, 10*time.Minute)
 		s.watchAndReconcile(ctx, run, embedder)
 	}()
+}
+
+func (s *Server) backfillLoop(ctx context.Context, archiveBase string, every time.Duration) {
+	s.runBackfill(archiveBase)
+	t := time.NewTicker(every)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.runBackfill(archiveBase)
+		}
+	}
 }
 
 func (s *Server) runBackfill(archiveBase string) {
