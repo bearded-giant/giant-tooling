@@ -293,6 +293,25 @@ function App() {
   const [heatmap, setHeatmap] = useState<main.HeatmapCell[]>([]);
   const [version, setVersion] = useState<string>("");
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [uiZoom, setUiZoom] = useState<number>(() => {
+    const n = Number(localStorage.getItem("gm.uiZoom"));
+    return Number.isFinite(n) && n >= 80 && n <= 150 ? n : 100;
+  });
+  useEffect(() => {
+    GetPref("uiZoom")
+      .then((v) => {
+        const n = Number(v);
+        if (Number.isFinite(n) && n >= 80 && n <= 150) setUiZoom(n);
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    localStorage.setItem("gm.uiZoom", String(uiZoom));
+    SetPref("uiZoom", String(uiZoom)).catch(() => {});
+    // css zoom scales the whole app; supported by WKWebView
+    (document.body.style as any).zoom = uiZoom === 100 ? "" : `${uiZoom}%`;
+  }, [uiZoom]);
   const searchRef = useRef<HTMLInputElement>(null);
   const activityFilterRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -856,7 +875,7 @@ function App() {
             </select>
             <label
               style={{
-                fontSize: 11,
+                fontSize: 13,
                 color: "var(--fg-muted)",
                 display: "flex",
                 alignItems: "center",
@@ -1048,7 +1067,7 @@ function App() {
           />
         )}
         {tab === "tools" && (
-          <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>
+          <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>
             <p style={{ marginTop: 0 }}>
               Searches each session's JSONL for <strong>tool_use</strong> blocks.
               Matches on input JSON and the paired tool_result body.
@@ -1335,6 +1354,14 @@ function App() {
         <button
           type="button"
           className="status-about"
+          onClick={() => setSettingsOpen(true)}
+          title="ui settings"
+        >
+          settings
+        </button>
+        <button
+          type="button"
+          className="status-about"
           onClick={() => setAboutOpen(true)}
           title="about giantmem"
         >
@@ -1349,6 +1376,81 @@ function App() {
       {aboutOpen && (
         <AboutModal version={version} onClose={() => setAboutOpen(false)} />
       )}
+      {settingsOpen && (
+        <SettingsModal
+          uiZoom={uiZoom}
+          onZoom={setUiZoom}
+          showHistory={showHistory}
+          onShowHistory={setShowHistory}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
+    </div>
+  );
+}
+
+const ZOOM_STEPS = [80, 90, 100, 110, 120, 130, 150];
+
+function SettingsModal({
+  uiZoom,
+  onZoom,
+  showHistory,
+  onShowHistory,
+  onClose,
+}: {
+  uiZoom: number;
+  onZoom: (n: number) => void;
+  showHistory: boolean;
+  onShowHistory: (v: boolean) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal settings-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Settings"
+      >
+        <button
+          type="button"
+          className="modal-close"
+          onClick={onClose}
+          aria-label="close"
+        >
+          ×
+        </button>
+        <h2 className="settings-title">Settings</h2>
+        <div className="settings-row">
+          <label>UI zoom</label>
+          <select
+            value={uiZoom}
+            onChange={(e) => onZoom(Number(e.target.value))}
+          >
+            {ZOOM_STEPS.map((z) => (
+              <option key={z} value={z}>
+                {z}%
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="settings-row">
+          <label>history docs in file list</label>
+          <input
+            type="checkbox"
+            checked={showHistory}
+            onChange={(e) => onShowHistory(e.target.checked)}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -1577,7 +1679,7 @@ function TreeSidebar({
         );
       })}
       {repos.length === 0 && (
-        <div style={{ color: "var(--fg-muted)", fontSize: 12 }}>
+        <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>
           {q ? "nothing matches" : "no indexed files"}
         </div>
       )}
@@ -2088,7 +2190,7 @@ function ToolUseDetail({
             onClick={onOpenSession}
             style={{
               padding: "2px 8px",
-              fontSize: 11,
+              fontSize: 13,
             }}
           >
             open session ›
@@ -2173,7 +2275,7 @@ function ActivityList({
                   <div className="row-meta">loading…</div>
                 )}
                 {expandedFiles.map((f) => (
-                  <div key={f.path} style={{ padding: "3px 0", fontSize: 12 }}>
+                  <div key={f.path} style={{ padding: "3px 0", fontSize: 13 }}>
                     <span className="row-meta" style={{ marginRight: 8 }}>
                       {ago(f.mtime)}
                     </span>
@@ -2323,7 +2425,7 @@ function Tile({
       >
         {value.toLocaleString()}
       </div>
-      <div style={{ fontSize: 10, color: "var(--fg-muted)" }}>{label}</div>
+      <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>{label}</div>
     </div>
   );
 }
@@ -2346,7 +2448,7 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
     <div style={{ padding: "8px 4px" }}>
       <div
         style={{
-          fontSize: 11,
+          fontSize: 13,
           color: "var(--fg-muted)",
           marginBottom: 6,
           letterSpacing: "0.04em",
@@ -2364,7 +2466,7 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
             <div
               style={{
                 flex: 1,
-                fontSize: 11,
+                fontSize: 13,
                 color: "var(--fg-muted)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -2399,7 +2501,7 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
           alignItems: "center",
           gap: 4,
           marginTop: 8,
-          fontSize: 10,
+          fontSize: 12,
           color: "var(--fg-muted)",
         }}
       >
@@ -2946,7 +3048,7 @@ function BlockView({
     );
   }
   return (
-    <pre style={{ whiteSpace: "pre-wrap", fontSize: 11, opacity: 0.7 }}>
+    <pre style={{ whiteSpace: "pre-wrap", fontSize: 13, opacity: 0.7 }}>
       {JSON.stringify(block, null, 2)}
     </pre>
   );
