@@ -414,13 +414,14 @@ func NearestNeighbors(db *sql.DB, vec []float32, limit int) ([]VecHit, error) {
 		limit = 20
 	}
 	jsonVec := vecToJSON(vec)
+	// vec0 KNN needs the k constraint in WHERE; a bare outer LIMIT is invisible
+	// to the KNN planner once a JOIN wraps the vec0 scan.
 	rows, err := db.Query(
 		`SELECT m.artifact_id, e.distance
          FROM artifact_embeddings e
          JOIN artifact_embedding_meta m ON m.rowid = e.rowid
-         WHERE e.embedding MATCH ?
-         ORDER BY e.distance
-         LIMIT ?`,
+         WHERE e.embedding MATCH ? AND k = ?
+         ORDER BY e.distance`,
 		jsonVec, limit,
 	)
 	if err != nil {
