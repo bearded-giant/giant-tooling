@@ -1042,3 +1042,91 @@
 .switch.on .switch-knob {
   transform: translateX(18px);
 }
+
+.ctx-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+}
+.ctx-menu {
+  position: fixed;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  min-width: 180px;
+  max-width: 300px;
+  padding: 4px;
+  z-index: 1101;
+}
+.ctx-title {
+  padding: 6px 10px 4px;
+  font-size: 11px;
+  color: var(--fg-muted);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ctx-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+}
+.ctx-item:hover {
+  background: var(--border);
+}
+.ctx-item.danger {
+  color: var(--danger);
+}
+
+.confirm-modal {
+  max-width: 420px;
+}
+.confirm-text {
+  margin: 10px 0 18px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--fg-muted);
+}
+.confirm-text strong {
+  color: inherit;
+}
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.confirm-actions button {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: inherit;
+  cursor: pointer;
+}
+.confirm-actions button:hover {
+  border-color: var(--accent);
+}
+.confirm-actions button.danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.confirm-actions button.danger:hover {
+  background: var(--danger);
+  color: var(--bg-2);
+}
+.key-hint {
+  opacity: 0.55;
+  font-size: 11px;
+  margin-left: 4px;
+}

@@ -328,6 +328,33 @@ export namespace main {
 
 }
 
+export namespace project {
+	
+	export class Deleted {
+	    liveDocs: number;
+	    artifacts: number;
+	    embeddings: number;
+	    accessRows: number;
+	    sessions: number;
+	    archiveDocs: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Deleted(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.liveDocs = source["liveDocs"];
+	        this.artifacts = source["artifacts"];
+	        this.embeddings = source["embeddings"];
+	        this.accessRows = source["accessRows"];
+	        this.sessions = source["sessions"];
+	        this.archiveDocs = source["archiveDocs"];
+	    }
+	}
+
+}
+
 export namespace search {
 	
 	export class Hit {

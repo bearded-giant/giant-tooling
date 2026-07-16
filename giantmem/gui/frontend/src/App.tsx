@@ -15,6 +15,7 @@ import "./App.css";
 import {
   ActivityCounts,
   BrowseTree,
+  DeleteProject,
   FacetCounts,
   GetArtifactBody,
   GetLiveBody,
@@ -283,6 +284,16 @@ function App() {
   const [err, setErr] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [repoMenu, setRepoMenu] = useState<{
+    repo: string;
+    x: number;
+    y: number;
+    purgeDefault: boolean;
+  } | null>(null);
+  const [deleteRepo, setDeleteRepo] = useState<{
+    repo: string;
+    purgeDefault: boolean;
+  } | null>(null);
   const [justRefreshed, setJustRefreshed] = useState(false);
   const [repoActivity, setRepoActivity] = useState<main.RepoActivity[]>([]);
   const [expandedWorktree, setExpandedWorktree] = useState<string | null>(null);
@@ -1049,6 +1060,9 @@ function App() {
                 }
               }}
               onPickFile={(path) => setSelection({ kind: "file", path })}
+              onRepoMenu={(repo, x, y) =>
+                setRepoMenu({ repo, x, y, purgeDefault: false })
+              }
             />
             {(!!selFeature || !!selRepo) && (
               <button className="facet-clear" onClick={clearFacets}>
@@ -1099,6 +1113,9 @@ function App() {
               filter={sidebarFilter}
               isCollapsed={collapsed.has("project")}
               onToggleCollapse={() => toggleCollapsed("project")}
+              onItemMenu={(v, x, y) =>
+                setRepoMenu({ repo: v, x, y, purgeDefault: true })
+              }
             />
             <SingleFacetGroup
               title="dir_type"
@@ -1205,6 +1222,9 @@ function App() {
             sparklines={sparklines}
             onToggle={(wt) =>
               setExpandedWorktree((cur) => (cur === wt ? null : wt))
+            }
+            onRepoMenu={(repo, x, y) =>
+              setRepoMenu({ repo, x, y, purgeDefault: false })
             }
           />
         )}
@@ -1385,6 +1405,139 @@ function App() {
           onClose={() => setSettingsOpen(false)}
         />
       )}
+      {repoMenu && (
+        <RepoContextMenu
+          menu={repoMenu}
+          onClose={() => setRepoMenu(null)}
+          onDelete={() => {
+            setDeleteRepo({
+              repo: repoMenu.repo,
+              purgeDefault: repoMenu.purgeDefault,
+            });
+            setRepoMenu(null);
+          }}
+        />
+      )}
+      {deleteRepo && (
+        <ConfirmDeleteModal
+          repo={deleteRepo.repo}
+          fileCount={browseRows.filter((r) => r.repo === deleteRepo.repo).length}
+          sessionCount={sessionFacets?.byProject?.[deleteRepo.repo] || 0}
+          purgeDefault={deleteRepo.purgeDefault}
+          onCancel={() => setDeleteRepo(null)}
+          onConfirm={(purge) => {
+            DeleteProject(deleteRepo.repo, purge)
+              .then(() => {
+                if (selRepo === deleteRepo.repo) {
+                  setSelRepo("");
+                  setSelFeature("");
+                }
+                if (selSessionProject === deleteRepo.repo) {
+                  setSelSessionProject("");
+                }
+                setDeleteRepo(null);
+                refreshAll();
+              })
+              .catch((e) => {
+                setDeleteRepo(null);
+                setErr(String(e));
+              });
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function RepoContextMenu({
+  menu,
+  onClose,
+  onDelete,
+}: {
+  menu: { repo: string; x: number; y: number };
+  onClose: () => void;
+  onDelete: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  // keep the menu on-screen when the click lands near the bottom edge
+  const top = Math.min(menu.y, window.innerHeight - 80);
+  return (
+    <div className="ctx-backdrop" onClick={onClose} onContextMenu={(e) => { e.preventDefault(); onClose(); }}>
+      <div className="ctx-menu" style={{ left: menu.x, top }} onClick={(e) => e.stopPropagation()}>
+        <div className="ctx-title" title={menu.repo}>{menu.repo}</div>
+        <button type="button" className="ctx-item danger" onClick={onDelete}>
+          Delete from index…
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmDeleteModal({
+  repo,
+  fileCount,
+  sessionCount,
+  purgeDefault,
+  onCancel,
+  onConfirm,
+}: {
+  repo: string;
+  fileCount: number;
+  sessionCount: number;
+  purgeDefault: boolean;
+  onCancel: () => void;
+  onConfirm: (purgeArchive: boolean) => void;
+}) {
+  const [purge, setPurge] = useState(purgeDefault);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const k = e.key.toLowerCase();
+      if (k === "y") onConfirm(purge);
+      if (k === "n" || e.key === "Escape") onCancel();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onConfirm, onCancel, purge]);
+  return (
+    <div className="modal-backdrop" onClick={onCancel}>
+      <div
+        className="modal confirm-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Confirm delete"
+      >
+        <h2 className="settings-title">Delete project?</h2>
+        <p className="confirm-text">
+          Remove <strong>{repo}</strong> ({fileCount} indexed{" "}
+          {fileCount === 1 ? "file" : "files"}) from the live index.
+        </p>
+        <div className="settings-row confirm-purge">
+          <div className="settings-info">
+            <div className="settings-label">Also delete archived history</div>
+            <div className="settings-desc">
+              {sessionCount} archived session{" "}
+              {sessionCount === 1 ? "doc" : "docs"} — this is what the sessions
+              tab lists. Off keeps them searchable.
+            </div>
+          </div>
+          <Switch checked={purge} onChange={setPurge} />
+        </div>
+        <div className="confirm-actions">
+          <button type="button" onClick={onCancel}>
+            Cancel <span className="key-hint">n</span>
+          </button>
+          <button type="button" className="danger" onClick={() => onConfirm(purge)}>
+            Delete <span className="key-hint">y</span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1599,6 +1752,7 @@ function TreeSidebar({
   onPickRepo,
   onPickFeature,
   onPickFile,
+  onRepoMenu,
 }: {
   rows: main.BrowseRow[];
   filter: string;
@@ -1610,6 +1764,7 @@ function TreeSidebar({
   onPickRepo: (repo: string) => void;
   onPickFeature: (repo: string, feature: string) => void;
   onPickFile: (path: string) => void;
+  onRepoMenu: (repo: string, x: number, y: number) => void;
 }) {
   const f = useMemo(() => parseSidebarFilter(filter), [filter]);
   const q = f.text || f.ext;
@@ -1662,6 +1817,10 @@ function TreeSidebar({
             <div
               className={`tree-row repo ${selRepo === node.repo && !selFeature ? "selected" : ""}`}
               onClick={() => onToggle(rkey)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onRepoMenu(node.repo, e.clientX, e.clientY);
+              }}
             >
               <span className="facet-arrow">{isOpen(rkey) ? "▾" : "▸"}</span>
               <span
@@ -2014,6 +2173,7 @@ function SingleFacetGroup({
   filter = "",
   isCollapsed = false,
   onToggleCollapse,
+  onItemMenu,
 }: {
   title: string;
   counts: Record<string, number>;
@@ -2023,6 +2183,7 @@ function SingleFacetGroup({
   filter?: string;
   isCollapsed?: boolean;
   onToggleCollapse?: () => void;
+  onItemMenu?: (v: string, x: number, y: number) => void;
 }) {
   const q = filter.toLowerCase();
   const sorted = Object.entries(counts)
@@ -2044,6 +2205,14 @@ function SingleFacetGroup({
             key={v}
             className={`facet-row ${selected === v ? "selected" : ""}`}
             onClick={() => onPick(selected === v ? "" : v)}
+            onContextMenu={
+              onItemMenu
+                ? (e) => {
+                    e.preventDefault();
+                    onItemMenu(v, e.clientX, e.clientY);
+                  }
+                : undefined
+            }
           >
             <span>{v}</span>
             <span className="count">{n}</span>
@@ -2267,12 +2436,14 @@ function ActivityList({
   expandedFiles,
   sparklines,
   onToggle,
+  onRepoMenu,
 }: {
   repos: main.RepoActivity[];
   expandedWorktree: string | null;
   expandedFiles: main.FileActivity[];
   sparklines: Record<string, main.SparklinePoint[]>;
   onToggle: (worktree: string) => void;
+  onRepoMenu: (repo: string, x: number, y: number) => void;
 }) {
   if (!repos.length) {
     return (
@@ -2290,6 +2461,10 @@ function ActivityList({
           <div key={r.worktreePath} className="result-row">
             <div
               onClick={() => onToggle(r.worktreePath)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                onRepoMenu(r.project, e.clientX, e.clientY);
+              }}
               style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 10 }}
             >
               <div style={{ flex: 1, minWidth: 0 }}>

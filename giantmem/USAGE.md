@@ -120,6 +120,21 @@ Filesystem ops happen in Go. The FTS5 ingest is kicked off in the background aft
 | `giantmem archive dedup <project> [--dry-run]` | move older duplicate files (same relative path) into `<project>/_review/` for batch deletion |
 | `giantmem archive stale --days N --root PATH...` | scan roots (default `~/dev`) for live `.giantmem/` dirs whose newest md is older than N days |
 
+## Project management
+
+List and remove projects from the live index. GUI equivalent: right-click a project anywhere one is listed — tree sidebar, sessions-tab project facet, activity list — → Delete. The confirm modal has an "also delete archived history" toggle (defaults on from the sessions tab, since that list is archive-backed; off elsewhere).
+
+Sessions-tab facet names are canonical (`cc-wt-stage`), often with no live-index rows; deleting those needs the archive purge to have any effect.
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem project list` | every live-index project: doc/artifact/archive counts, gone flag (worktrees missing on disk), worktree path |
+| `giantmem project list --gone` | only projects whose worktrees no longer exist |
+| `giantmem project list --json` | JSON output |
+| `giantmem project delete <name>` | remove from live index (live_docs + fts, artifacts, embeddings, access rows, active_sessions) with y/N prompt; archives.db untouched |
+| `giantmem project delete <name> --yes` | skip the prompt |
+| `giantmem project delete <name> --purge-archive` | also drop the project's archives.db documents |
+
 ## Worktree helpers
 
 `giantmem worktree` covers the bare-with-worktrees layout (`~/dev/foo-wt/.bare` + `~/dev/foo-wt/main`).

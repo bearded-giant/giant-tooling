@@ -16,6 +16,7 @@ import (
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/daemon"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 )
 
@@ -818,6 +819,17 @@ func (a *App) BrowseTree() ([]BrowseRow, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// DeleteProject removes a project from the live index (live_docs, artifacts,
+// embeddings, sessions). With purgeArchive it also drops the project's
+// archives.db documents — the sessions tab lists projects from those, so a
+// sessions-side delete needs the purge to actually disappear.
+func (a *App) DeleteProject(name string, purgeArchive bool) (project.Deleted, error) {
+	if a.live == nil {
+		return project.Deleted{}, fmt.Errorf("live db not open")
+	}
+	return project.Delete(a.live, a.archive, name, purgeArchive)
 }
 
 // GetLiveBody returns any live_docs file's body — disk first, DB fallback.
