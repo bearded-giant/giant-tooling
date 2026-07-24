@@ -116,7 +116,10 @@ def fm_remove(text, key):
 def edit_file(path, fn):
     if not os.path.exists(path):
         return False
-    open(path, "w").write(fn(open(path).read()))
+    # read BEFORE opening for write — open(path, "w") truncates immediately,
+    # so inlining the read as the write() argument wipes the file
+    text = open(path).read()
+    open(path, "w").write(fn(text))
     return True
 
 
