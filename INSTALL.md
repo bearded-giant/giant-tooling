@@ -33,8 +33,8 @@ export PATH="$HOME/.local/bin:$PATH"
 2. **cli** — `make -C giantmem install` → `~/.local/bin/giantmem`.
 3. **gui** — `make -C giantmem/gui install` → `/Applications/Giantmem.app`.
 4. **daemon-install** — `giantmem daemon install` → registers `~/Library/LaunchAgents/...giantmemd.plist`, starts the daemon. Daemon runs the artifacts-projection reconciler + serves the `embed` RPC + does a startup filesystem backfill.
-5. **session-sweep** — installs `~/Library/LaunchAgents/com.giantmem-session-sweep.plist` (5-min `giantmem ingest --sessions-only`). Path-rewritten from the bundled template so it works for any user.
-6. **first-run** — `giantmem index backfill` (fills `live.db` from every `.giantmem/` under `$GIANTMEM_DEV_ROOTS`) plus `giantmem ingest --sessions-only` (one-shot session sweep).
+5. **session-sweep** — installs `~/Library/LaunchAgents/com.giantmem-session-sweep.plist` (5-min `giantmem db ingest --sessions-only`). Path-rewritten from the bundled template so it works for any user.
+6. **first-run** — `giantmem db index backfill` (fills `live.db` from every `.giantmem/` under `$GIANTMEM_DEV_ROOTS`) plus `giantmem db ingest --sessions-only` (one-shot session sweep).
 
 ## Writer hooks (separate)
 
@@ -43,7 +43,7 @@ The hooks live in [claude-code-config](https://github.com/bearded-giant/claude-c
 | Hook | Trigger | Effect |
 |---|---|---|
 | `live_index.py` | PostToolUse (Write/Edit/MultiEdit on `.md`) | writes row to `live.db.live_docs` |
-| `session_end_ingest.py` | SessionEnd | runs `giantmem ingest --sessions-only` for that session |
+| `session_end_ingest.py` | SessionEnd | runs `giantmem db ingest --sessions-only` for that session |
 
 Setup:
 

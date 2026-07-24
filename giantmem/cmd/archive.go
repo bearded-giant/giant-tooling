@@ -12,7 +12,7 @@ import (
 
 var archiveCmd = &cobra.Command{
 	Use:   "archive",
-	Short: "Archive .giantmem directories: move, list, open, dedup, scan stale",
+	Short: "Browse archived .giantmem snapshots: list, open, dedup, scan stale",
 }
 
 var (
@@ -31,8 +31,9 @@ var (
 )
 
 var archiveRunCmd = &cobra.Command{
-	Use:   "run [src]",
-	Short: "Archive every status=complete feature (or --all to wipe .giantmem/)",
+	Use:        "run [src]",
+	Deprecated: "use `giantmem feature archive` (per-feature) or `giantmem workspace archive` (full wipe)",
+	Short:      "Archive every status=complete feature (or --all to wipe .giantmem/)",
 	Long: `Default mode: iterate features.json and archive every status=complete
 feature — verifies its files are mirrored in live.db, removes its dir (live_docs
 rows kept), sets status=archived in features.json.
@@ -61,9 +62,10 @@ Aborts if any file is not captured in live.db.
 }
 
 var archiveFeatureCmd = &cobra.Command{
-	Use:   "feature <name>",
-	Short: "Archive a single feature (verify in live.db, rm dir, set status=archived)",
-	Args:  cobra.ExactArgs(1),
+	Use:        "feature <name>",
+	Deprecated: "use `giantmem feature archive <name>`",
+	Short:      "Archive a single feature (verify in live.db, rm dir, set status=archived)",
+	Args:       cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		r, err := archive.ArchiveFeature("", args[0], arFeatureForce, arFeatureDryRun)
 		if err != nil {

@@ -4,12 +4,12 @@ How to search across the giantmem indexes. One CLI verb (`giantmem`) covers four
 
 | Corpus | DB | What's in it | How it gets there |
 |---|---|---|---|
-| **archive** | `~/giantmem_archive/archives.db` | Archived `.giantmem/` markdown, Claude JSONL transcripts | `giantmem archive run` (workspace), session-end hook (sessions), explicit `giantmem ingest` |
-| **live** | `~/giantmem_archive/live.db` | Current `.giantmem/` content across every workspace | `live_index.py` PostToolUse hook, `giantmem index live` (full rescan) |
-| **artifacts** | `<workspace>/artifacts.json` | Typed artifact index (proposal/delta-spec/tasks/...) | `giantmem artifact reindex` (or `giantmem watch start` for auto) |
+| **archive** | `~/giantmem_archive/archives.db` | Archived `.giantmem/` markdown, Claude JSONL transcripts | session-end hook + 5-min sweep (sessions), explicit `giantmem db ingest`; workspace-snapshot ingest is legacy |
+| **live** | `~/giantmem_archive/live.db` | Current `.giantmem/` content across every workspace | `live_index.py` PostToolUse hook, `giantmem db index live` (full rescan) |
+| **artifacts** | `<workspace>/artifacts.json` | Typed artifact index (proposal/delta-spec/tasks/...) | `giantmem artifact reindex` (or `giantmem db watch start` for auto) |
 | **access log** | `live.db.artifact_access` | Per-call list/show/find rows. Feeds hybrid ranking. | every `artifact list|show|search` and MCP `find_artifact` call |
 
-Indexing is mostly automatic. Hooks handle live + sessions. `archive run` indexes archived snapshots. Re-run `giantmem ingest` only for full rebuilds.
+Indexing is mostly automatic. Hooks handle live + sessions. Re-run `giantmem db ingest` only for full rebuilds.
 
 ## `giantmem find` — content FTS5
 
@@ -61,11 +61,11 @@ giantmem artifact reindex                           # rebuild artifacts.json
 
 ## `giantmem artifact search` — hybrid (FTS + vector + recency + access)
 
-Opt-in semantic search. Requires `giantmem embed --backfill` to populate `artifact_embeddings`. Default backend = `stub` (deterministic, NOT semantic); switch to `python` or `ollama` via `GIANTMEM_EMBED_BACKEND`.
+Opt-in semantic search. Requires `giantmem db embed --backfill` to populate `artifact_embeddings`. Default backend = `stub` (deterministic, NOT semantic); switch to `python` or `ollama` via `GIANTMEM_EMBED_BACKEND`.
 
 ```bash
-giantmem embed --backfill --backend stub            # one-time, fast, NOT semantic
-GIANTMEM_EMBED_BACKEND=python giantmem embed --backfill
+giantmem db embed --backfill --backend stub            # one-time, fast, NOT semantic
+GIANTMEM_EMBED_BACKEND=python giantmem db embed --backfill
 giantmem artifact search "scope yaml registry"
 giantmem artifact search "auth flow" -t proposal --limit 5
 giantmem artifact search "lifecycle" --json
@@ -85,20 +85,20 @@ Full backend / model details in [scoped-memory.md](scoped-memory.md).
 ## Ingest
 
 ```bash
-giantmem ingest                                     # all enabled sources from ~/.config/giantmem/sources.toml
-giantmem ingest -s workspace-md
-giantmem ingest -s claude-jsonl
-giantmem index init                                 # bootstrap dbs
-giantmem index live                                 # full rescan of live.db
-giantmem index sessions                             # backfill sessions
+giantmem db ingest                                  # all enabled sources from ~/.config/giantmem/sources.toml
+giantmem db ingest -s workspace-md
+giantmem db ingest -s claude-jsonl
+giantmem db index init                              # bootstrap dbs
+giantmem db index live                              # full rescan of live.db
+giantmem db index sessions                          # backfill sessions
 ```
 
 ## Stats + access
 
 ```bash
 giantmem stats                                      # counts by project / source / dir_type
-giantmem access top --limit 10                      # most-accessed artifacts last 30d
-giantmem access prune --older-than 180d             # trim artifact_access
+giantmem db access top --limit 10                      # most-accessed artifacts last 30d
+giantmem db access prune --older-than 180d             # trim artifact_access
 ```
 
 ## fzf integration (`gma`)
@@ -143,8 +143,8 @@ Punctuation queries (`hub-and-spoke`) are auto-quoted by the CLI / MCP layer.
 ## Auto-reindex
 
 ```bash
-giantmem watch start                                # fork fsnotify daemon
-giantmem watch status
+giantmem db watch start                             # fork fsnotify daemon
+giantmem db watch status
 ```
 
 Watches `$GIANTMEM_DEV_ROOTS` (or `~/dev`). 2s debounce per workspace. Edits to `.giantmem/**` trigger `giantmem artifact reindex` against the owning worktree. Auto-reindex writes do NOT log to `artifact_access`.
@@ -158,11 +158,11 @@ session-end hook (workspace/workspace_session_end.py)
 PostToolUse hook (workspace/scripts/live_index.py)
   └── upserts .giantmem/** edits → live.db
 
-giantmem watch (fsnotify)
+giantmem db watch (fsnotify)
   └── debounce 2s per workspace → giantmem artifact reindex → artifacts.json
 
-giantmem archive run
-  └── mv .giantmem → archive tree, ingest, re-init
+giantmem feature archive / giantmem workspace archive
+  └── verify live.db capture → rm dir (rows kept) → re-init
 
 giantmem find
   └── reads live.db + archives.db, BM25 + temporal decay, merged ranking

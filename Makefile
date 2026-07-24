@@ -41,7 +41,7 @@ bootstrap: check-prereqs cli gui daemon-install session-sweep first-run
 	@echo
 	@echo "Next: install writer hooks from claude-code-config (separate repo)."
 	@echo "Without them, live.db won't capture Claude PostToolUse writes — only"
-	@echo "out-of-band edits caught by 'giantmem index backfill' / daemon sweeps."
+	@echo "out-of-band edits caught by 'giantmem db index backfill' / daemon sweeps."
 
 check-prereqs:
 	@command -v go      >/dev/null || { echo "missing: go (https://go.dev/dl/)"; exit 1; }
@@ -86,5 +86,5 @@ first-run:
 	@if [ ! -x "$$HOME/.local/bin/giantmem" ]; then \
 		echo "giantmem CLI not installed yet — run 'make cli' first"; exit 1; \
 	fi
-	$$HOME/.local/bin/giantmem index backfill
-	$$HOME/.local/bin/giantmem ingest --sessions-only
+	$$HOME/.local/bin/giantmem db index backfill
+	$$HOME/.local/bin/giantmem db ingest --sessions-only

@@ -24,18 +24,18 @@ giantmem artifact stale --days 0                       # tier policy (A=never, B
 giantmem artifact reindex
 giantmem artifact orphans
 
-giantmem access top --limit N                          # most-accessed last 30d
-giantmem access prune --older-than <dur>               # 180d / 6h / 1d12h syntax
+giantmem db access top --limit N                          # most-accessed last 30d
+giantmem db access prune --older-than <dur>               # 180d / 6h / 1d12h syntax
 
-giantmem embed --backfill [--reset] [--scope X] [--repo Y] [--backend stub|python|ollama] [--limit N]
+giantmem db embed --backfill [--reset] [--scope X] [--repo Y] [--backend stub|python|ollama] [--limit N]
 giantmem artifact search <query> [--scope X] [--lifecycle Y] [-t TYPE] [--limit N]
 
 giantmem suggest-domain [text]                         # TF-IDF over source-spec corpus; reads stdin
 giantmem entity list|show <path-or-basename> [--repo current|all|<name>]
 
-giantmem watch start|stop|status                       # fork/manage fsnotify daemon
-giantmem watch run                                     # foreground (internal; used by start)
-giantmem watch install                                 # macOS launchd LaunchAgent
+giantmem db watch start|stop|status                       # fork/manage fsnotify daemon
+giantmem db watch run                                     # foreground (internal; used by start)
+giantmem db watch install                                 # macOS launchd LaunchAgent
 ```
 
 All artifact subcommands accept `--scope` + `--lifecycle` filters now. `--days 0` on `stale` switches from a fixed cutoff to per-type retention tier policy.
@@ -95,9 +95,9 @@ Default behavior unchanged: `giantmem find` and `giantmem artifact list` stay FT
 
 ## Watcher daemon
 
-`giantmem watch start` forks an fsnotify watcher across `$GIANTMEM_DEV_ROOTS` (or `~/dev`). Per-workspace debounce 2s; coalesced edits trigger one `giantmem artifact reindex` against the owning worktree. Default excludes: `node_modules`, `.venv`, `.git`, `dist`, `build`, `.next`, `.turbo`, `target`, `vendor`. PID at `~/.cache/giantmem/giantmem-watch.pid`, log at `…/giantmem-watch.log`. Stale pidfile detected and cleaned on next `start`. SIGTERM cleans up cleanly. Auto-reindex writes do NOT log to `artifact_access`.
+`giantmem db watch start` forks an fsnotify watcher across `$GIANTMEM_DEV_ROOTS` (or `~/dev`). Per-workspace debounce 2s; coalesced edits trigger one `giantmem artifact reindex` against the owning worktree. Default excludes: `node_modules`, `.venv`, `.git`, `dist`, `build`, `.next`, `.turbo`, `target`, `vendor`. PID at `~/.cache/giantmem/giantmem-watch.pid`, log at `…/giantmem-watch.log`. Stale pidfile detected and cleaned on next `start`. SIGTERM cleans up cleanly. Auto-reindex writes do NOT log to `artifact_access`.
 
-`giantmem watch install` writes `~/Library/LaunchAgents/com.giantmem.watch.plist` and launchctl-loads it (macOS only).
+`giantmem db watch install` writes `~/Library/LaunchAgents/com.giantmem.watch.plist` and launchctl-loads it (macOS only).
 
 ## Scripts (`workspace/scripts/`)
 
@@ -129,8 +129,8 @@ cd ~/dev/giant-tooling/giantmem && make install
 giantmem scope init                                          # seed registry
 giantmem scope add-repo personal dotfiles giant-tooling      # add repos
 python3 ~/dev/giant-tooling/workspace/scripts/backfill_lifecycle.py --all-repos
-giantmem watch start                                         # auto-reindex
-GIANTMEM_EMBED_BACKEND=python giantmem embed --backfill      # real semantic (opt-in)
+giantmem db watch start                                      # auto-reindex
+GIANTMEM_EMBED_BACKEND=python giantmem db embed --backfill   # real semantic (opt-in)
 ```
 
 ## Cross-ref

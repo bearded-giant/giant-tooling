@@ -21,6 +21,7 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
+	setupCommandTree()
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
@@ -40,6 +41,6 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 }
 
-func archiveDBPath() string  { return filepath.Join(flagArchiveBase, "archives.db") }
-func liveDBPath() string     { return filepath.Join(flagArchiveBase, "live.db") }
+func archiveDBPath() string   { return filepath.Join(flagArchiveBase, "archives.db") }
+func liveDBPath() string      { return filepath.Join(flagArchiveBase, "live.db") }
 func archiveBasePath() string { return flagArchiveBase }

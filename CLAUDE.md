@@ -47,12 +47,12 @@ Single source of truth is `~/giantmem_archive/live.db` (SQLite). Two tables matt
 - `live_docs` — every file under any `.giantmem/`. Written by three paths:
   1. PostToolUse hook (`~/dev/claude-code-config/hooks/live_index.py`) on Claude Write/Edit/MultiEdit
   2. Daemon startup backfill via `internal/backfill` (catches out-of-band edits — vim, git, scripts)
-  3. `giantmem index backfill` CLI (manual)
+  3. `giantmem db index backfill` CLI (manual)
 - `artifacts` — typed projection derived from `live_docs` by the daemon reconciler (fsnotify on `live.db`, debounced 1s).
 
 Claude session JSONLs live in `~/giantmem_archive/archives.db.documents` (source_type='session'), populated by `~/.claude/hooks/session_end_ingest.py` plus a 5-min launchd sweep (`giantmem/launchd/com.bryan.giantmem-session-sweep.plist`).
 
-The legacy snapshot-archive flow — `giantmem archive run` moves `.giantmem/` to `~/giantmem_archive/{project}/{timestamp}/` — is now a **cold filesystem backup only**. It does NOT feed any DB; ingest of those snapshots is deprecated. `archives.db` source_type='workspace' rows are no longer produced.
+Archiving is a live.db-verified delete, not a snapshot: `giantmem feature archive` (per-feature) and `giantmem workspace archive` (full wipe + reinit) verify every file is captured in `live.db` before removing the dir — rows are kept and stay searchable. No filesystem copy is made and no DB ingest happens. Pre-existing snapshot dirs under `~/giantmem_archive/{project}/{timestamp}/` are browsable via `giantmem archive list|open|dedup`; `archives.db` source_type='workspace' rows are no longer produced. `giantmem archive run`/`archive feature` remain as deprecated aliases.
 
 `giantmem-archive.sh` + `giantmem-search.py` are pre-Go-rewrite scripts and remain only for historical reads against existing snapshot directories.
 
