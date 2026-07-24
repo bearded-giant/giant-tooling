@@ -51,7 +51,40 @@ func workspaceSubcmd(name, fn, short string) *cobra.Command {
 	}
 }
 
+func deprecatedWorkspaceSubcmd(name, fn, short, dep string) *cobra.Command {
+	c := workspaceSubcmd(name, fn, short)
+	c.Deprecated = dep
+	return c
+}
+
+var (
+	wsArchiveDryRun   bool
+	wsArchiveNoReinit bool
+)
+
+var workspaceArchiveCmd = &cobra.Command{
+	Use:   "archive [src]",
+	Short: "Archive the entire .giantmem/: verify all files in live.db, wipe, reinit fresh",
+	Long: `Wipe the entire .giantmem/ at src (default ./.giantmem) after verifying
+every file is in live.db, then reinit a fresh workspace in place. live.db is
+the durable archive (rows kept; protected by the db-backup cron). No FS
+snapshot. Aborts if any file is not captured in live.db.
+
+Per-feature archiving: giantmem feature archive [name].`,
+	Args: cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		src := ""
+		if len(args) > 0 {
+			src = args[0]
+		}
+		return archive.RunAll(src, archiveBasePath(), wsArchiveDryRun, !wsArchiveNoReinit)
+	},
+}
+
 func init() {
+	workspaceArchiveCmd.Flags().BoolVar(&wsArchiveDryRun, "dry-run", false, "show what would happen")
+	workspaceArchiveCmd.Flags().BoolVar(&wsArchiveNoReinit, "no-reinit", false, "skip workspace_init after wipe")
+
 	workspaceCmd.AddCommand(
 		workspaceSubcmd("status", "workspace_status", "Show workspace status"),
 		workspaceSubcmd("init", "workspace_init", "Initialize .giantmem in [dir] [name]"),
@@ -61,13 +94,14 @@ func init() {
 		workspaceSubcmd("discover", "workspace_discover", "Add a discovery note"),
 		workspaceSubcmd("complete", "workspace_complete", "Mark workspace complete"),
 		workspaceSubcmd("sync", "workspace_sync", "Refresh git log"),
-		workspaceSubcmd("features", "workspace_features", "Show feature status table"),
-		workspaceSubcmd("new-feature", "workspace_new_feature", "Create a feature (proposal/tasks/facts/notes)"),
-		workspaceSubcmd("start-feature", "workspace_start_feature", "Promote a pending feature to in_progress"),
-		workspaceSubcmd("pause-feature", "workspace_pause_feature", "Pause the active (or named) feature"),
-		workspaceSubcmd("reopen-feature", "workspace_reopen_feature", "Reopen a paused/completed feature"),
-		workspaceSubcmd("complete-feature", "workspace_complete_feature", "Mark the active (or named) feature complete"),
+		deprecatedWorkspaceSubcmd("features", "workspace_features", "Show feature status table", "use `giantmem feature list`"),
+		deprecatedWorkspaceSubcmd("new-feature", "workspace_new_feature", "Create a feature (proposal/tasks/facts/notes)", "use `giantmem feature new`"),
+		deprecatedWorkspaceSubcmd("start-feature", "workspace_start_feature", "Promote a pending feature to in_progress", "use `giantmem feature start`"),
+		deprecatedWorkspaceSubcmd("pause-feature", "workspace_pause_feature", "Pause the active (or named) feature", "use `giantmem feature pause`"),
+		deprecatedWorkspaceSubcmd("reopen-feature", "workspace_reopen_feature", "Reopen a paused/completed feature", "use `giantmem feature reopen`"),
+		deprecatedWorkspaceSubcmd("complete-feature", "workspace_complete_feature", "Mark the active (or named) feature complete", "use `giantmem feature complete`"),
 		workspaceSubcmd("gitlog", "workspace_gitlog", "Update git-log.md"),
+		workspaceArchiveCmd,
 	)
 	rootCmd.AddCommand(workspaceCmd)
 }

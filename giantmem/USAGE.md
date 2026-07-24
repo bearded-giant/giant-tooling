@@ -15,7 +15,7 @@ Binary: `~/.local/bin/giantmem`. Source: `~/dev/giant-tooling/giantmem/`.
 
 ## Discoverability
 
-`giantmem --help` lists subcommands. Every subcommand supports `-h`. `giantmem session --help`, `giantmem index --help`, `giantmem find --help`. No need to memorize anything past `giantmem`.
+`giantmem --help` lists subcommands, grouped: Core Workflow / Search & Recall / Infrastructure / Plumbing. Every subcommand supports `-h`. `giantmem session --help`, `giantmem feature --help`, `giantmem db --help`. No need to memorize anything past `giantmem`.
 
 ## Search (the main event)
 
@@ -105,15 +105,26 @@ Built-in defaults: `*/features/_index.md`. Use `append_ignore_docs` to add witho
 |---------|---------------|
 | `giantmem stats` | counts grouped by project / source_type / dir_type, plus a total |
 
-## Archive management
+## Archiving (reset / cleanup)
 
-Filesystem ops happen in Go. The FTS5 ingest is kicked off in the background after a move so `giantmem find` picks up the new rows automatically.
+Archiving verbs live on the nouns they act on: `feature archive` and `workspace archive`. Neither takes a filesystem snapshot — files are verified as captured in `live.db` (the durable archive) before the dir is removed. Rows stay searchable forever.
 
 | Command | What it does |
 |---------|--------------|
-| `giantmem archive run` | mv current `./.giantmem` to `~/giantmem_archive/<project>/<ts>/`, update `latest` symlink, ingest into FTS, re-init a fresh `.giantmem` |
-| `giantmem archive run --no-reinit` | same, but skip workspace re-init (used by `giantmem worktree remove`) |
-| `giantmem archive run --project foo --dry-run` | preview what would happen, no fs changes |
+| `giantmem feature archive` | archive every status=complete feature: verify files in live.db, rm feature dir, set status=archived |
+| `giantmem feature archive <name> [--force]` | archive one feature by name; `--force` allows status != complete |
+| `giantmem feature archive --dry-run` | preview |
+| `giantmem workspace archive [src]` | wipe the entire `.giantmem/` after verifying live.db capture, re-init fresh workspace |
+| `giantmem workspace archive --no-reinit` | same, skip re-init (used by `giantmem worktree remove`) |
+
+`giantmem archive run` / `giantmem archive feature` still work as deprecated aliases.
+
+## Archive browsing (cold snapshots)
+
+The `archive` group is a read-only browser of pre-existing snapshot dirs under `~/giantmem_archive/`.
+
+| Command | What it does |
+|---------|--------------|
 | `giantmem archive list` | list archived projects with archive counts |
 | `giantmem archive list <project>` | list timestamps for a project, marking `latest` |
 | `giantmem archive open <project> [ts]` | open archive in Finder; defaults to `latest` |
@@ -160,66 +171,82 @@ This is the autoarchive entry point: deleting a worktree no longer leaves `.gian
 | `giantmem workspace discover "..."` | add a discovery note |
 | `giantmem workspace complete` | mark workspace complete |
 | `giantmem workspace sync` | refresh git log |
-| `giantmem workspace features` | show feature status table |
-| `giantmem workspace new-feature <name> [flags]` | create a feature (proposal/tasks/facts/notes); wraps `feature.py new`, same as `/new-feature` |
-| `giantmem workspace start-feature [name] [flags]` | promote a pending feature to in_progress |
-| `giantmem workspace pause-feature [name] [flags]` | pause the active (or named) feature |
-| `giantmem workspace reopen-feature [name] [flags]` | reopen a paused/completed feature |
-| `giantmem workspace complete-feature [name] [flags]` | mark the active (or named) feature complete (merges delta-specs) |
+| `giantmem workspace archive [src] [--dry-run] [--no-reinit]` | wipe entire `.giantmem/` after live.db verify, re-init (see Archiving) |
 | `giantmem workspace gitlog` | update `git-log.md` |
 | `giantmem workspace init [dir] [name]` | initialize `.giantmem/` |
 
-The five `*-feature` verbs are thin wrappers over `feature.py` — the same tool Claude's `/new-feature`, `/start-feature`, `/pause-feature`, `/reopen-feature`, `/complete-feature` commands call. They exist so you can flip a feature's state from the shell without going through the LLM. `start`/`pause`/`reopen`/`complete` take an optional name; omit it and they act on the active (in_progress) feature. All of them flip status across `features.json`, `meta.json`, `proposal.md` frontmatter, and `_index.md`.
+The old `workspace features` / `workspace *-feature` verbs are deprecated aliases for the `feature` group below.
+
+## Feature lifecycle
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem feature list [--status X]` | feature table from `features.json`, in_progress first |
+| `giantmem feature new <name> [flags]` | create a feature (proposal/tasks/facts/notes); wraps `feature.py new`, same as `/new-feature` |
+| `giantmem feature start [name] [flags]` | promote a pending feature to in_progress |
+| `giantmem feature pause [name] [flags]` | pause the active (or named) feature |
+| `giantmem feature reopen <name> [flags]` | reopen a paused/completed feature |
+| `giantmem feature complete [name] [flags]` | mark the active (or named) feature complete (merges delta-specs) |
+| `giantmem feature archive [name]` | archive completed feature(s) — see Archiving above |
+
+The five lifecycle verbs are thin wrappers over `feature.py` — the same tool Claude's `/new-feature`, `/start-feature`, `/pause-feature`, `/reopen-feature`, `/complete-feature` commands call. They exist so you can flip a feature's state from the shell without going through the LLM. `start`/`pause`/`reopen`/`complete` take an optional name; omit it and they act on the active (in_progress) feature. All of them flip status across `features.json`, `meta.json`, `proposal.md` frontmatter, and `_index.md`.
 
 Flag examples:
 
 ```bash
 # create
-giantmem workspace new-feature oauth-ttl
-giantmem workspace new-feature oauth-ttl --branch=feat/oauth --base=stage
-giantmem workspace new-feature oauth-ttl --builds-on=session-store       # dependency link
-giantmem workspace new-feature oauth-ttl --discovery="token expiry bug"  # seeds a pending stub
-giantmem workspace new-feature oauth-ttl --skip-checkout                 # don't touch git (already on branch)
-giantmem workspace new-feature oauth-ttl --paired                        # only for the cc-wt <-> frontend-wt map
+giantmem feature new oauth-ttl
+giantmem feature new oauth-ttl --branch=feat/oauth --base=stage
+giantmem feature new oauth-ttl --builds-on=session-store       # dependency link
+giantmem feature new oauth-ttl --discovery="token expiry bug"  # seeds a pending stub
+giantmem feature new oauth-ttl --skip-checkout                 # don't touch git (already on branch)
+giantmem feature new oauth-ttl --paired                        # only for the cc-wt <-> frontend-wt map
 
 # start a pending feature
-giantmem workspace start-feature oauth-ttl --base=main --branch=feat/oauth
-giantmem workspace start-feature oauth-ttl --skip-checkout
+giantmem feature start oauth-ttl --base=main --branch=feat/oauth
+giantmem feature start oauth-ttl --skip-checkout
 
 # pause (--note = resumption note, --paused-state = snapshot; both default to placeholders)
-giantmem workspace pause-feature                                         # infer active
-giantmem workspace pause-feature oauth-ttl --note="waiting on API key rotation"
+giantmem feature pause                                         # infer active
+giantmem feature pause oauth-ttl --note="waiting on API key rotation"
 
 # reopen
-giantmem workspace reopen-feature oauth-ttl --skip-checkout
+giantmem feature reopen oauth-ttl --skip-checkout
 
 # complete (merges delta-specs into source-specs by default)
-giantmem workspace complete-feature                                      # infer active
-giantmem workspace complete-feature oauth-ttl --quick                    # skip delta-spec merge
-giantmem workspace complete-feature oauth-ttl --no-merge                 # same, keep specs unmerged
-giantmem workspace complete-feature oauth-ttl --reason="shipped in v3.2" # merge-commit reason
+giantmem feature complete                                      # infer active
+giantmem feature complete oauth-ttl --quick                    # skip delta-spec merge
+giantmem feature complete oauth-ttl --no-merge                 # same, keep specs unmerged
+giantmem feature complete oauth-ttl --reason="shipped in v3.2" # merge-commit reason
+
+# archive completed work
+giantmem feature archive                                       # all complete features
+giantmem feature archive oauth-ttl --dry-run
 ```
 
 `--branch`/`--base` default sensibly: base resolves origin/HEAD then develop → stage → main → master, and branch defaults to the current HEAD (or the feature name when HEAD is the base). `--skip-checkout` matters most from the worktree-create prompt, where you're already on the branch; from a plain repo shell, omit it and the tool does the checkout for you.
 
-## Index management
+## Index management (`giantmem db`)
 
-You should rarely need this; the live indexing hook handles ongoing writes and the archive ingest is automatic on `giantmem archive run`. Use these for one-off fixups.
+You should rarely need this; the live indexing hook handles ongoing writes and the daemon backfills at startup. Plumbing lives under `giantmem db` (old top-level paths still work as hidden aliases). Use these for one-off fixups.
 
 | Command | What it does |
 |---------|--------------|
-| `giantmem index init` | ensure both DB schemas (idempotent; safe to re-run) |
-| `giantmem index migrate --dry-run` | preview project consolidations (`foo` → `foo-wt`) |
-| `giantmem index migrate` | apply consolidation |
-| `giantmem index sessions` | backfill `cwd` on session rows from JSONL files |
-| `giantmem index live` | rescan `~/dev` for `.giantmem/**/*.md` and rebuild live.db |
-| `giantmem index live <root>...` | rescan only the given roots |
-| `giantmem ingest` | full re-index of archives.db across all enabled sources |
-| `giantmem ingest -p foo` | re-index a single project |
-| `giantmem ingest -s claude-jsonl` | run only the named source (repeatable / comma-separated) |
-| `giantmem ingest --sessions-only` | shortcut for `-s claude-jsonl` |
-| `giantmem ingest --workspaces-only` | shortcut for `-s workspace-md,domain-json` |
-| `giantmem ingest --force` | force full session re-ingest, ignoring mtime |
+| `giantmem db index init` | ensure both DB schemas (idempotent; safe to re-run) |
+| `giantmem db index migrate --dry-run` | preview project consolidations (`foo` → `foo-wt`) |
+| `giantmem db index migrate` | apply consolidation |
+| `giantmem db index sessions` | backfill `cwd` on session rows from JSONL files |
+| `giantmem db index backfill` | crawl `.giantmem/` trees on disk, upsert into live.db |
+| `giantmem db index live` | rescan `~/dev` for `.giantmem/**/*.md` and rebuild live.db |
+| `giantmem db index live <root>...` | rescan only the given roots |
+| `giantmem db ingest` | full re-index of archives.db across all enabled sources |
+| `giantmem db ingest -p foo` | re-index a single project |
+| `giantmem db ingest -s claude-jsonl` | run only the named source (repeatable / comma-separated) |
+| `giantmem db ingest --sessions-only` | shortcut for `-s claude-jsonl` |
+| `giantmem db ingest --workspaces-only` | shortcut for `-s workspace-md,domain-json` |
+| `giantmem db ingest --force` | force full session re-ingest, ignoring mtime |
+
+`db` also holds the rest of the plumbing: `db embed`, `db backup`, `db access`, `db tail`, `db watch` — same flags as their old top-level forms.
 
 Sources are configured at `~/.config/giantmem/sources.toml`. Without that file the three builtins (`workspace-md`, `claude-jsonl`, `domain-json`) are used. Add an `[[source]]` block with `kind = "external"`, `ingest_cmd = "..."`, and a `mapping` table to plug in any subprocess that emits JSONL on stdout — see `PLAN-2.md` §12.
 
@@ -244,11 +271,11 @@ Find auto-routes through the daemon when its socket is alive. Pass `--no-daemon`
 
 | Command | What it does |
 |---------|--------------|
-| `giantmem backup init [remote-url]` | initialize `~/giantmem_archive_backup` (clones a remote, or creates an empty repo). `--force` removes existing dir |
-| `giantmem backup push` | copy `archives.db` (and `live.db` if present) into the backup repo, commit, push (skips push if no remote) |
-| `giantmem backup push --no-push --message "..."` | commit only, with custom message |
-| `giantmem backup status` | show last commit, dirty state, configured remotes |
-| `giantmem backup --dir <path>` | use a different backup directory |
+| `giantmem db backup init [remote-url]` | initialize `~/giantmem_archive_backup` (clones a remote, or creates an empty repo). `--force` removes existing dir |
+| `giantmem db backup push` | copy `archives.db` (and `live.db` if present) into the backup repo, commit, push (skips push if no remote) |
+| `giantmem db backup push --no-push --message "..."` | commit only, with custom message |
+| `giantmem db backup status` | show last commit, dirty state, configured remotes |
+| `giantmem db backup --dir <path>` | use a different backup directory |
 
 Pair with `/schedule` to snapshot weekly.
 
@@ -358,11 +385,11 @@ Composes with `--tool` via AND — line must satisfy both filters. Useful for na
 
 | Command | What it does |
 |---------|--------------|
-| `giantmem tail` | stream new live workspace writes as the hook indexes them |
-| `giantmem tail -p chat-orch` | filter by project (LIKE) |
-| `giantmem tail -f better-search` | filter by active feature |
-| `giantmem tail --since 10m` | start from 10 minutes ago instead of "now" |
-| `giantmem tail --interval 500ms` | poll faster |
+| `giantmem db tail` | stream new live workspace writes as the hook indexes them |
+| `giantmem db tail -p chat-orch` | filter by project (LIKE) |
+| `giantmem db tail -f better-search` | filter by active feature |
+| `giantmem db tail --since 10m` | start from 10 minutes ago instead of "now" |
+| `giantmem db tail --interval 500ms` | poll faster |
 
 ## Quick capture
 
@@ -569,7 +596,7 @@ Match priority: exact basename, project, branch, then substring of `project/bran
 
 Outside `.giantmem/`, the hook returns immediately (a few ms). Files larger than 5 MB are truncated.
 
-After installing or updating the hook, restart Claude Code so it re-reads `settings.json`. To catch up on docs already on disk, run `giantmem index live ~/dev` once.
+After installing or updating the hook, restart Claude Code so it re-reads `settings.json`. To catch up on docs already on disk, run `giantmem db index live ~/dev` once.
 
 ## Project naming rules
 
@@ -581,7 +608,7 @@ After installing or updating the hook, restart Claude Code so it re-reads `setti
 | Regular repo `~/dev/foo` AND `~/giantmem_archive/foo-wt/` exists | `foo-wt` (consolidated) |
 | Bare-with-worktrees `~/dev/foo-wt/main` | `foo-wt` |
 
-`giantmem index migrate` rewrites old `documents.project` values from `foo` to `foo-wt` whenever both buckets exist. Pre-existing `dev/ai/chat-orchestrator` session rows still match `giantmem session list -p chat-orchestrator` because `-p` is a `LIKE` filter.
+`giantmem db index migrate` rewrites old `documents.project` values from `foo` to `foo-wt` whenever both buckets exist. Pre-existing `dev/ai/chat-orchestrator` session rows still match `giantmem session list -p chat-orchestrator` because `-p` is a `LIKE` filter.
 
 ## Storage layout
 
@@ -593,7 +620,7 @@ After installing or updating the hook, restart Claude Code so it re-reads `setti
 ```
 
 `archives.db` is meant to be backupable (push to a private repo, sync to cloud).
-`live.db` is rebuilt on demand from disk via `giantmem index live`, so losing it is recoverable.
+`live.db` is rebuilt on demand from disk via `giantmem db index live`, so losing it is recoverable.
 
 ## Common workflows
 
@@ -620,7 +647,7 @@ After installing or updating the hook, restart Claude Code so it re-reads `setti
 
 5. "I just wrote some docs. Make sure they're searchable."
    ```
-   giantmem index live $(pwd)
+   giantmem db index live $(pwd)
    ```
 
 6. "Search transcripts for a specific debugging incident."
@@ -642,9 +669,9 @@ The hook isn't firing on writes. Restart Claude Code so it re-reads `~/.claude/s
 echo '{"tool_name":"Write","tool_input":{"file_path":"<abspath>"},"cwd":"<repo>"}' | python3 ~/.claude/hooks/live_index.py
 ```
 
-Find returns nothing. Check the right DB exists: `ls -la ~/giantmem_archive/{archives,live}.db`. Run `giantmem stats` to confirm rows. For live rows specifically: `sqlite3 ~/giantmem_archive/live.db "SELECT COUNT(*) FROM live_docs"`. If empty, run `giantmem index live ~/dev`.
+Find returns nothing. Check the right DB exists: `ls -la ~/giantmem_archive/{archives,live}.db`. Run `giantmem stats` to confirm rows. For live rows specifically: `sqlite3 ~/giantmem_archive/live.db "SELECT COUNT(*) FROM live_docs"`. If empty, run `giantmem db index live ~/dev`.
 
 `giantmem session resume` says cwd is missing. The recorded cwd was deleted (likely a bare-repo migration). The CLI tries `<cwd>-wt/main` and `<cwd>-wt/master` automatically; if neither exists, fix the path manually or update the row's `cwd`.
 
-`giantmem index migrate` lists nothing. No project pairs need consolidating. Sanity check: `sqlite3 ~/giantmem_archive/archives.db "SELECT DISTINCT project FROM documents ORDER BY project"`.
+`giantmem db index migrate` lists nothing. No project pairs need consolidating. Sanity check: `sqlite3 ~/giantmem_archive/archives.db "SELECT DISTINCT project FROM documents ORDER BY project"`.
 

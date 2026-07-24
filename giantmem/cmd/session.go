@@ -114,9 +114,10 @@ var sessListCmd = &cobra.Command{
 }
 
 var sessFindCmd = &cobra.Command{
-	Use:   "find <query>",
-	Short: "FTS5 search of session transcripts",
-	Args:  cobra.MinimumNArgs(1),
+	Use:     "find <query>",
+	Aliases: []string{"search"},
+	Short:   "FTS5 search of session transcripts",
+	Args:    cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		query := strings.Join(args, " ")
 		a, err := db.Open(archiveDBPath())
@@ -274,9 +275,9 @@ var sessResumeCmd = &cobra.Command{
 
 // resolveCwd applies fallbacks when the recorded cwd no longer exists.
 //
-// 1. try <cwd>-wt/main, <cwd>-wt/master (legacy bare-with-worktrees layout)
-// 2. fall back to giantmem-cd matcher: feed the cwd basename and pick a unique
-//    worktree (no fzf, --no-fzf single-match only)
+//  1. try <cwd>-wt/main, <cwd>-wt/master (legacy bare-with-worktrees layout)
+//  2. fall back to giantmem-cd matcher: feed the cwd basename and pick a unique
+//     worktree (no fzf, --no-fzf single-match only)
 func resolveCwd(cwd string) string {
 	if dirExists(cwd) {
 		return cwd
