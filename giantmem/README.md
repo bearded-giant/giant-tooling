@@ -93,7 +93,8 @@ giantmem session find "hub and spoke"       # FTS over session transcripts
 giantmem session resume <id-prefix>         # cd cwd, exec claude --resume <uuid>
 
 giantmem feature list                       # feature table, in_progress first
-giantmem feature archive                    # archive every complete feature (live.db-verified)
+giantmem feature abandon share-links        # drop a feature, no spec merge, auto-archive
+giantmem feature archive                    # archive every complete/abandoned feature (live.db-verified)
 giantmem workspace archive                  # wipe .giantmem after live.db verify, re-init
 giantmem archive list [project]             # browse cold snapshot dirs
 giantmem archive stale --days 30            # find dormant workspaces

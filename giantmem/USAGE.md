@@ -111,8 +111,8 @@ Archiving verbs live on the nouns they act on: `feature archive` and `workspace 
 
 | Command | What it does |
 |---------|--------------|
-| `giantmem feature archive` | archive every status=complete feature: verify files in live.db, rm feature dir, set status=archived |
-| `giantmem feature archive <name> [--force]` | archive one feature by name; `--force` allows status != complete |
+| `giantmem feature archive` | archive every status=complete or status=abandoned feature: verify files in live.db, rm feature dir, set status=archived |
+| `giantmem feature archive <name> [--force]` | archive one feature by name; `--force` allows any other status |
 | `giantmem feature archive --dry-run` | preview |
 | `giantmem workspace archive [src]` | wipe the entire `.giantmem/` after verifying live.db capture, re-init fresh workspace |
 | `giantmem workspace archive --no-reinit` | same, skip re-init (used by `giantmem worktree remove`) |
@@ -187,9 +187,14 @@ The old `workspace features` / `workspace *-feature` verbs are deprecated aliase
 | `giantmem feature pause [name] [flags]` | pause the active (or named) feature |
 | `giantmem feature reopen <name> [flags]` | reopen a paused/completed feature |
 | `giantmem feature complete [name] [flags]` | mark the active (or named) feature complete (merges delta-specs) |
-| `giantmem feature archive [name]` | archive completed feature(s) — see Archiving above |
+| `giantmem feature abandon [name] [flags]` | drop a feature you're not going to build: status `abandoned`, no spec merge, then archives it |
+| `giantmem feature archive [name]` | archive complete/abandoned feature(s) — see Archiving above |
 
-The five lifecycle verbs are thin wrappers over `feature.py` — the same tool Claude's `/new-feature`, `/start-feature`, `/pause-feature`, `/reopen-feature`, `/complete-feature` commands call. They exist so you can flip a feature's state from the shell without going through the LLM. `start`/`pause`/`reopen`/`complete` take an optional name; omit it and they act on the active (in_progress) feature. All of them flip status across `features.json`, `meta.json`, `proposal.md` frontmatter, and `_index.md`.
+`complete` works from any status except `archived` — a half-drafted `pending` feature can be closed out without walking it through `start` first.
+
+`abandon` is the escape hatch for a feature that got framed and then dropped. It stamps `status: abandoned` + `lifecycle: deprecated` on the proposal, appends an `## Abandoned` section with `--reason`, skips the delta-spec merge entirely (nothing gets promoted into a source-spec), and then chains into `giantmem feature archive` so the dir goes away while every doc stays searchable in `live.db` (CLI, MCP, GUI). Pass `--no-archive` to keep the dir on disk.
+
+The six lifecycle verbs are thin wrappers over `feature.py` — the same tool Claude's `/new-feature`, `/start-feature`, `/pause-feature`, `/reopen-feature`, `/complete-feature` commands call. They exist so you can flip a feature's state from the shell without going through the LLM. `start`/`pause`/`reopen`/`complete`/`abandon` take an optional name; omit it and they act on the active (in_progress) feature. All of them flip status across `features.json`, `meta.json`, `proposal.md` frontmatter, and `_index.md`.
 
 Flag examples:
 
@@ -220,7 +225,7 @@ giantmem feature complete oauth-ttl --no-merge                 # same, keep spec
 giantmem feature complete oauth-ttl --reason="shipped in v3.2" # merge-commit reason
 
 # archive completed work
-giantmem feature archive                                       # all complete features
+giantmem feature archive                                       # all complete/abandoned features
 giantmem feature archive oauth-ttl --dry-run
 ```
 

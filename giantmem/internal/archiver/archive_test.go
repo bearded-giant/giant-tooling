@@ -93,6 +93,38 @@ func TestArchiveFeature_VerifiesKeepsRowsDeletesDir(t *testing.T) {
 	}
 }
 
+func TestArchiveFeature_AbandonedArchivesWithoutForce(t *testing.T) {
+	liveBase(t)
+	repo := filepath.Join(t.TempDir(), "repo")
+	ws := filepath.Join(repo, ".giantmem")
+	featDir := filepath.Join(ws, "features", "dropped")
+	write(t, filepath.Join(featDir, "proposal.md"), "# dropped")
+	write(t, filepath.Join(ws, "features", "features.json"), `{"dropped":{"status":"abandoned"}}`)
+
+	res, err := ArchiveFeature(repo, "dropped", false, false)
+	if err != nil {
+		t.Fatalf("archive: %v (res=%+v)", err, res)
+	}
+	if res.Action != "archived" {
+		t.Fatalf("action = %q, want archived (%s)", res.Action, res.Reason)
+	}
+	if _, err := os.Stat(featDir); !os.IsNotExist(err) {
+		t.Errorf("feature dir still exists, want removed")
+	}
+
+	// pending stays gated behind --force
+	pend := filepath.Join(ws, "features", "later")
+	write(t, filepath.Join(pend, "proposal.md"), "# later")
+	write(t, filepath.Join(ws, "features", "features.json"), `{"later":{"status":"pending"}}`)
+	res, err = ArchiveFeature(repo, "later", false, false)
+	if err != nil {
+		t.Fatalf("archive pending: %v", err)
+	}
+	if res.Action != "skipped" {
+		t.Errorf("pending action = %q, want skipped", res.Action)
+	}
+}
+
 func TestArchiveFeature_AbortsWhenUncaptured(t *testing.T) {
 	liveBase(t)
 	repo := filepath.Join(t.TempDir(), "repo")

@@ -168,8 +168,9 @@ def move_index_row(idx_path, name, status, builds_on="", beta="", cp_branch=""):
     lines = open(idx_path).read().splitlines()
     lines = [ln for ln in lines if f"[{name}]({name}/)" not in ln]  # drop old row anywhere
     section = SECTION_FOR.get(status)
-    if not section:
-        return False
+    if not section:  # terminal status (abandoned/archived): row just goes away
+        open(idx_path, "w").write("\n".join(lines) + "\n")
+        return True
     try:
         si = next(i for i, ln in enumerate(lines) if ln.strip() == section)
     except StopIteration:
@@ -475,7 +476,7 @@ def cmd_new(a, cwd):
           "open_questions": "none (placeholder only)", "dir": fdir})
 
 
-def _resolve_feature(a, fd, want_statuses=None, infer_active=False):
+def _resolve_feature(a, fd, want_statuses=None, infer_active=False, deny_statuses=None):
     fjson, _ = load_features(fd)
     name = getattr(a, "feature", None)
     if not name and infer_active:
@@ -493,6 +494,8 @@ def _resolve_feature(a, fd, want_statuses=None, infer_active=False):
     if not os.path.isdir(fdir):
         fail(f"feature '{name}' not found at {fdir}")
     cur = fjson.get(name, {}).get("status")
+    if deny_statuses and cur in deny_statuses:
+        fail(f"feature '{name}' is '{cur}' — nothing to do")
     if want_statuses and cur not in want_statuses:
         fail(f"feature '{name}' is '{cur}', expected one of {want_statuses}")
     return name, fdir, fjson, cur
@@ -592,7 +595,7 @@ def cmd_reopen(a, cwd):
 
 def cmd_complete(a, cwd):
     fd = feats_dir(cwd)
-    name, fdir, fjson, _ = _resolve_feature(a, fd, want_statuses={"in_progress", "paused"}, infer_active=True)
+    name, fdir, fjson, prev = _resolve_feature(a, fd, infer_active=True, deny_statuses={"archived"})
     today = date.today().isoformat()
     pp = proposal_path(fdir)
     edit_file(pp, lambda t: fm_set(fm_set(t, "status", "done"), "completed", today))
@@ -617,10 +620,40 @@ def cmd_complete(a, cwd):
     reindex, _ = reindex_and_pin(cwd, name)
     fe = entry.get("frontend") or {}
     paired = fe.get("worktree") if fe.get("enabled") else None
-    emit({"verb": "complete", "feature": name, "status": "complete", "quick": a.quick,
+    emit({"verb": "complete", "feature": name, "from": prev, "status": "complete", "quick": a.quick,
           "merge": merge, "index_updated": idx, "reindex": reindex,
           "paired_counterpart": paired and f"{fe.get('branch')} at {paired} — needs separate MR",
           "note": "facts cleanup + acceptance-criteria marking + domain refresh left to model if needed"})
+
+
+def cmd_abandon(a, cwd):
+    fd = feats_dir(cwd)
+    name, fdir, fjson, prev = _resolve_feature(a, fd, deny_statuses={"archived", "abandoned"})
+    today = date.today().isoformat()
+    reason = a.reason or "<!-- fill: why dropped -->"
+    pp = proposal_path(fdir)
+    edit_file(pp, lambda t: append_section(
+        fm_set(fm_set(fm_set(t, "status", "abandoned"), "abandoned", today),
+               "lifecycle", "deprecated"),
+        "## Abandoned", f"{today} — {reason}"))
+    _save_feature_status(fd, fjson, name, status="abandoned", abandoned=today, last_session=today)
+    entry = fjson.get(name, {})
+    idx = move_index_row(os.path.join(fd, "_index.md"), name, "abandoned",
+                         entry.get("builds_on", ""), entry.get("beta_flag", ""))
+    reindex, _ = reindex_and_pin(cwd, name)
+    arch = "skipped (--no-archive)"
+    if not a.no_archive:
+        if run(["which", "giantmem"]).returncode != 0:
+            arch = "skipped (giantmem not on PATH)"
+        else:
+            r = run(["giantmem", "feature", "archive", name], cwd=cwd)
+            out = (r.stdout.strip() or r.stderr.strip()).splitlines()
+            arch = out[-1] if out else ("archived" if r.returncode == 0 else "archive failed")
+    emit({"verb": "abandon", "feature": name, "from": prev, "status": "abandoned",
+          "reason": a.reason or "stub", "index_updated": idx, "reindex": reindex,
+          "archive": arch, "merge": "skipped (abandoned — no spec merge)",
+          "note": "artifacts untouched; live_docs rows stay searchable in sqlite + GUI",
+          "undo": f"/reopen-feature {name} (dir is gone — content lives in live.db)"})
 
 
 def cmd_migrate(a, cwd):
@@ -807,6 +840,12 @@ def build_parser():
     c.add_argument("--no-merge", action="store_true")
     c.add_argument("--reason", default="")
     c.set_defaults(fn=cmd_complete)
+
+    ab = sub.add_parser("abandon")
+    ab.add_argument("feature", nargs="?")
+    ab.add_argument("--reason", default="", help="why dropped (else placeholder)")
+    ab.add_argument("--no-archive", action="store_true", help="mark abandoned but keep the dir")
+    ab.set_defaults(fn=cmd_abandon)
 
     sub.add_parser("migrate").set_defaults(fn=cmd_migrate)
 

@@ -107,7 +107,7 @@ func ArchiveFeature(workspaceDir, name string, force, dryRun bool) (FeatureResul
 	statusBefore, _ := meta["status"].(string)
 	res.Status = statusBefore
 
-	if !strings.EqualFold(statusBefore, "complete") && !force {
+	if !archivable(statusBefore) && !force {
 		res.Action = "skipped"
 		res.Reason = fmt.Sprintf("status=%s (use --force)", statusBefore)
 		return res, nil
@@ -154,8 +154,12 @@ func ArchiveFeature(workspaceDir, name string, force, dryRun bool) (FeatureResul
 	return res, nil
 }
 
-// ArchiveCompleted archives every status=complete feature (or all
-// non-archived when force=true).
+func archivable(status string) bool {
+	return strings.EqualFold(status, "complete") || strings.EqualFold(status, "abandoned")
+}
+
+// ArchiveCompleted archives every status=complete or status=abandoned feature
+// (or all non-archived when force=true).
 func ArchiveCompleted(workspaceDir string, force, dryRun bool) ([]FeatureResult, error) {
 	ws, err := resolveWorkspace(workspaceDir)
 	if err != nil {
@@ -173,7 +177,7 @@ func ArchiveCompleted(workspaceDir string, force, dryRun bool) ([]FeatureResult,
 		if strings.EqualFold(status, "archived") {
 			continue
 		}
-		if !force && !strings.EqualFold(status, "complete") {
+		if !force && !archivable(status) {
 			continue
 		}
 		names = append(names, name)

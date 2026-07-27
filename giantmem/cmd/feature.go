@@ -15,7 +15,7 @@ import (
 
 var featureCmd = &cobra.Command{
 	Use:   "feature",
-	Short: "Feature lifecycle: new, start, pause, complete, reopen, list, archive",
+	Short: "Feature lifecycle: new, start, pause, complete, abandon, reopen, list, archive",
 }
 
 var (
@@ -104,7 +104,8 @@ var featureListCmd = &cobra.Command{
 		if err := json.Unmarshal(raw, &feats); err != nil {
 			return fmt.Errorf("parse %s: %w", path, err)
 		}
-		order := map[string]int{"in_progress": 0, "pending": 1, "paused": 2, "complete": 3, "archived": 4}
+		order := map[string]int{"in_progress": 0, "pending": 1, "ready": 1, "paused": 2,
+			"complete": 3, "abandoned": 4, "archived": 5}
 		var rows []featureMeta
 		for name, f := range feats {
 			if f.Name == "" {
@@ -137,13 +138,13 @@ var featureListCmd = &cobra.Command{
 
 var featureArchiveCmd = &cobra.Command{
 	Use:   "archive [name]",
-	Short: "Archive a feature: verify in live.db, rm dir, set status=archived (no name = every complete feature)",
-	Long: `Archive one feature by name, or — with no name — every status=complete
-feature in features.json. Each feature's files are verified as mirrored in
-live.db before its dir is removed (live_docs rows kept). Status flips to
-archived. live.db is the durable archive; no filesystem snapshot is taken.
+	Short: "Archive a feature: verify in live.db, rm dir, set status=archived (no name = every complete/abandoned feature)",
+	Long: `Archive one feature by name, or — with no name — every status=complete or
+status=abandoned feature in features.json. Each feature's files are verified as
+mirrored in live.db before its dir is removed (live_docs rows kept). Status flips
+to archived. live.db is the durable archive; no filesystem snapshot is taken.
 
---force: include/allow features whose status != complete.`,
+--force: include/allow features in any other status.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if len(args) == 1 {
@@ -162,7 +163,7 @@ archived. live.db is the durable archive; no filesystem snapshot is taken.
 }
 
 func init() {
-	featureArchiveCmd.Flags().BoolVar(&ftArchiveForce, "force", false, "allow archiving when status != complete")
+	featureArchiveCmd.Flags().BoolVar(&ftArchiveForce, "force", false, "allow archiving from any status")
 	featureArchiveCmd.Flags().BoolVar(&ftArchiveDryRun, "dry-run", false, "show what would happen")
 	featureArchiveCmd.ValidArgsFunction = completeFeatures
 
@@ -173,6 +174,7 @@ func init() {
 		featurePySubcmd("start [name]", "start", "Promote a pending feature to in_progress"),
 		featurePySubcmd("pause [name]", "pause", "Pause the active (or named) feature"),
 		featurePySubcmd("complete [name]", "complete", "Mark the active (or named) feature complete"),
+		featurePySubcmd("abandon [name]", "abandon", "Drop a feature: mark abandoned, no spec merge, then archive"),
 		featurePySubcmd("reopen <name>", "reopen", "Reopen a paused/completed feature"),
 		featureListCmd,
 		featureArchiveCmd,
