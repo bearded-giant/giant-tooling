@@ -10,24 +10,26 @@ import (
 // the absolute path of the parent worktree (one level up from .giantmem),
 // so consumers can build absolute paths without re-discovering workspaces.
 type Artifact struct {
-	ID          string `json:"id"`
-	Type        string `json:"type"`
-	Feature     string `json:"feature,omitempty"`
-	Domain      string `json:"domain,omitempty"`
-	Name        string `json:"name,omitempty"`
-	Status      string `json:"status"`
-	Path        string `json:"path"`
-	Repo        string `json:"repo"`
-	Branch      string `json:"branch"`
-	Worktree    string `json:"worktree,omitempty"`
-	Size        int64  `json:"size"`
-	Updated     string `json:"updated"`
-	Created     string `json:"created,omitempty"`
-	HasFront    bool   `json:"has_frontmatter"`
-	Scope       string `json:"scope,omitempty"`
-	Lifecycle   string `json:"lifecycle,omitempty"`
-	AccessCount int    `json:"access_count,omitempty"`
-	HasVec      bool   `json:"has_vec,omitempty"`
+	ID           string `json:"id"`
+	Type         string `json:"type"`
+	Feature      string `json:"feature,omitempty"`
+	Domain       string `json:"domain,omitempty"`
+	Name         string `json:"name,omitempty"`
+	Status       string `json:"status"`
+	Path         string `json:"path"`
+	Repo         string `json:"repo"`
+	Branch       string `json:"branch"`
+	Worktree     string `json:"worktree,omitempty"`
+	Size         int64  `json:"size"`
+	Updated      string `json:"updated"`
+	Created      string `json:"created,omitempty"`
+	HasFront     bool   `json:"has_frontmatter"`
+	Scope        string `json:"scope,omitempty"`
+	Lifecycle    string `json:"lifecycle,omitempty"`
+	Notion       string `json:"notion,omitempty"`
+	NotionSynced string `json:"notion_synced,omitempty"`
+	AccessCount  int    `json:"access_count,omitempty"`
+	HasVec       bool   `json:"has_vec,omitempty"`
 }
 
 // Index is the on-disk live view of one workspace's artifacts.
@@ -44,8 +46,9 @@ type Index struct {
 const IndexVersion = 1
 
 // BuildID returns the stable artifact ID. Format:
-//   feat:{feature}:{type}[:{disc}]   (feature-scoped)
-//   repo:{type}[:{name}]             (repo-level)
+//
+//	feat:{feature}:{type}[:{disc}]   (feature-scoped)
+//	repo:{type}[:{name}]             (repo-level)
 func BuildID(a Artifact) string {
 	parts := []string{}
 	if a.Feature != "" {

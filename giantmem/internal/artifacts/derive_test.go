@@ -289,3 +289,43 @@ func countArtifacts(t *testing.T, d *sql.DB) int {
 	}
 	return n
 }
+
+func TestDeriveFromLiveDoc_NotionKeys(t *testing.T) {
+	content := "---\ntype: research\nnotion: https://www.notion.so/abc123\nnotion_synced: 2026-09-10T12:00:00Z\n---\nbody"
+	a, ok := DeriveFromLiveDoc("features/foo/research/x.md", content, "repo", "main", "/r")
+	if !ok {
+		t.Fatal("expected classify ok")
+	}
+	if a.Notion != "https://www.notion.so/abc123" || a.NotionSynced != "2026-09-10T12:00:00Z" {
+		t.Errorf("notion keys not applied: %q %q", a.Notion, a.NotionSynced)
+	}
+	b, _ := DeriveFromLiveDoc("features/foo/proposal.md", "---\nstatus: ready\n---\nx", "repo", "main", "/r")
+	if b.Notion != "" || b.NotionSynced != "" {
+		t.Errorf("expected empty notion keys, got %q %q", b.Notion, b.NotionSynced)
+	}
+}
+
+func TestReconcileTable_NotionKeysRoundTrip(t *testing.T) {
+	d := newLiveDB(t)
+	insertLiveDoc(t, d, "/r/.giantmem/features/foo/research/x.md", "myrepo", "/r",
+		"---\ntype: research\nnotion: https://www.notion.so/abc123\nnotion_synced: 2026-09-10T12:00:00Z\n---\nbody", 1717200000)
+	insertLiveDoc(t, d, "/r/.giantmem/features/foo/proposal.md", "myrepo", "/r",
+		"---\nstatus: ready\n---\nbody", 1717200000)
+	if _, err := ReconcileTable(d, t.TempDir()); err != nil {
+		t.Fatalf("reconcile: %v", err)
+	}
+	rows, err := ListArtifacts(d, ListFilter{}, "", 0)
+	if err != nil {
+		t.Fatalf("list: %v", err)
+	}
+	got := map[string]Artifact{}
+	for _, a := range rows {
+		got[a.Type] = a
+	}
+	if r := got["research"]; r.Notion != "https://www.notion.so/abc123" || r.NotionSynced != "2026-09-10T12:00:00Z" {
+		t.Errorf("research row notion = %q / %q, want url + ts", r.Notion, r.NotionSynced)
+	}
+	if pr := got["proposal"]; pr.Notion != "" || pr.NotionSynced != "" {
+		t.Errorf("proposal row notion should be empty, got %q / %q", pr.Notion, pr.NotionSynced)
+	}
+}

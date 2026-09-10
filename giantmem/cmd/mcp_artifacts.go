@@ -30,19 +30,21 @@ type findArtifactArgs struct {
 }
 
 type artifactHit struct {
-	ID          string `json:"id"`
-	Type        string `json:"type"`
-	Feature     string `json:"feature,omitempty"`
-	Domain      string `json:"domain,omitempty"`
-	Status      string `json:"status"`
-	Path        string `json:"path"`
-	Repo        string `json:"repo"`
-	Branch      string `json:"branch,omitempty"`
-	Scope       string `json:"scope,omitempty"`
-	Lifecycle   string `json:"lifecycle,omitempty"`
-	AccessCount int    `json:"access_count,omitempty"`
-	Updated     string `json:"updated,omitempty"`
-	Snippet     string `json:"snippet,omitempty"`
+	ID           string `json:"id"`
+	Type         string `json:"type"`
+	Feature      string `json:"feature,omitempty"`
+	Domain       string `json:"domain,omitempty"`
+	Status       string `json:"status"`
+	Path         string `json:"path"`
+	Repo         string `json:"repo"`
+	Branch       string `json:"branch,omitempty"`
+	Scope        string `json:"scope,omitempty"`
+	Lifecycle    string `json:"lifecycle,omitempty"`
+	Notion       string `json:"notion,omitempty"`
+	NotionSynced string `json:"notion_synced,omitempty"`
+	AccessCount  int    `json:"access_count,omitempty"`
+	Updated      string `json:"updated,omitempty"`
+	Snippet      string `json:"snippet,omitempty"`
 }
 
 func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArtifactArgs) (*mcp.CallToolResult, error) {
@@ -232,19 +234,21 @@ func mcpLogArtifactAccess(hits []artifactHit, query string) {
 
 func mcpArtifactHit(a artifacts.Artifact, snippet string) artifactHit {
 	return artifactHit{
-		ID:          a.ID,
-		Type:        a.Type,
-		Feature:     a.Feature,
-		Domain:      a.Domain,
-		Status:      a.Status,
-		Path:        a.Path,
-		Repo:        a.Repo,
-		Branch:      a.Branch,
-		Scope:       a.Scope,
-		Lifecycle:   a.Lifecycle,
-		AccessCount: a.AccessCount,
-		Updated:     a.Updated,
-		Snippet:     snippet,
+		ID:           a.ID,
+		Type:         a.Type,
+		Feature:      a.Feature,
+		Domain:       a.Domain,
+		Status:       a.Status,
+		Path:         a.Path,
+		Repo:         a.Repo,
+		Branch:       a.Branch,
+		Scope:        a.Scope,
+		Lifecycle:    a.Lifecycle,
+		Notion:       a.Notion,
+		NotionSynced: a.NotionSynced,
+		AccessCount:  a.AccessCount,
+		Updated:      a.Updated,
+		Snippet:      snippet,
 	}
 }
 

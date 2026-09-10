@@ -267,6 +267,21 @@ var liveMigrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: 6,
+		Name:    "artifacts: notion mirror columns",
+		Apply: func(tx *sql.Tx) error {
+			for _, s := range []string{
+				`ALTER TABLE artifacts ADD COLUMN notion TEXT`,
+				`ALTER TABLE artifacts ADD COLUMN notion_synced TEXT`,
+			} {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // embeddingDimFromEnv returns the vec0 dimension as a string, honoring

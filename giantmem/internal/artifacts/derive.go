@@ -249,15 +249,17 @@ func upsertArtifact(live *sql.DB, a Artifact, now string) (sql.Result, error) {
 	return live.Exec(
 		`INSERT INTO artifacts
            (id, type, feature, domain, name, status, lifecycle, scope, repo,
-            branch, path, worktree, size, created, updated, has_front, indexed_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            branch, path, worktree, size, created, updated, has_front, indexed_at,
+            notion, notion_synced)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
             type=excluded.type, feature=excluded.feature, domain=excluded.domain,
             name=excluded.name, status=excluded.status, lifecycle=excluded.lifecycle,
             scope=excluded.scope, repo=excluded.repo, branch=excluded.branch,
             path=excluded.path, worktree=excluded.worktree, size=excluded.size,
             created=excluded.created, updated=excluded.updated,
-            has_front=excluded.has_front, indexed_at=excluded.indexed_at
+            has_front=excluded.has_front, indexed_at=excluded.indexed_at,
+            notion=excluded.notion, notion_synced=excluded.notion_synced
          WHERE type IS NOT excluded.type OR feature IS NOT excluded.feature
             OR domain IS NOT excluded.domain OR name IS NOT excluded.name
             OR status IS NOT excluded.status OR lifecycle IS NOT excluded.lifecycle
@@ -265,9 +267,11 @@ func upsertArtifact(live *sql.DB, a Artifact, now string) (sql.Result, error) {
             OR branch IS NOT excluded.branch OR path IS NOT excluded.path
             OR worktree IS NOT excluded.worktree OR size IS NOT excluded.size
             OR created IS NOT excluded.created OR updated IS NOT excluded.updated
-            OR has_front IS NOT excluded.has_front`,
+            OR has_front IS NOT excluded.has_front
+            OR notion IS NOT excluded.notion OR notion_synced IS NOT excluded.notion_synced`,
 		a.ID, a.Type, a.Feature, a.Domain, a.Name, a.Status, a.Lifecycle, a.Scope,
 		a.Repo, a.Branch, a.Path, a.Worktree, a.Size, a.Created, updated, hasFront, now,
+		a.Notion, a.NotionSynced,
 	)
 }
 

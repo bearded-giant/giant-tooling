@@ -190,6 +190,12 @@ func applyFrontmatterMap(a *Artifact, fm map[string]string) {
 	if v, ok := fm["lifecycle"]; ok && validLifecycle(v) {
 		a.Lifecycle = v
 	}
+	if v, ok := fm["notion"]; ok && v != "" {
+		a.Notion = v
+	}
+	if v, ok := fm["notion_synced"]; ok && v != "" {
+		a.NotionSynced = v
+	}
 }
 
 func applyJSONFrontmatter(a *Artifact, path string) {
@@ -223,6 +229,12 @@ func applyJSONFrontmatterBytes(a *Artifact, raw []byte) {
 	}
 	if v, ok := data["lifecycle"].(string); ok && validLifecycle(v) {
 		a.Lifecycle = v
+	}
+	if v, ok := data["notion"].(string); ok && v != "" {
+		a.Notion = v
+	}
+	if v, ok := data["notion_synced"].(string); ok && v != "" {
+		a.NotionSynced = v
 	}
 }
 

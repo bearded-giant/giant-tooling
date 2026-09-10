@@ -485,7 +485,11 @@ func runArtifactShow(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	logShowAccess(match.ID)
-	fmt.Printf("# %s\n# path: %s\n# status: %s\n\n", match.ID, abs, match.Status)
+	fmt.Printf("# %s\n# path: %s\n# status: %s\n", match.ID, abs, match.Status)
+	if match.Notion != "" {
+		fmt.Printf("# notion: %s\n", match.Notion)
+	}
+	fmt.Println()
 	os.Stdout.Write(raw)
 	return nil
 }
