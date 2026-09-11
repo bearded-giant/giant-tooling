@@ -284,6 +284,43 @@ Find auto-routes through the daemon when its socket is alive. Pass `--no-daemon`
 
 Pair with `/schedule` to snapshot weekly.
 
+## Prune
+
+`live.db` grows with every ingested doc, and a couple of throwaway worktrees can dominate it. Pruning lifts the rows you no longer want out of the live index into a standalone gpg-encrypted sqlite archive that lands next to your db backups (`GIANTMEM_BACKUP_DEST`), then deletes them.
+
+The GUI is the friendly front door: hit `prune` in the status bar, pick an age span and the repos you want gone off proportional size bars, dry-run it, then confirm. Same thing from the shell:
+
+| Command | What it does |
+|---------|--------------|
+| `scripts/giantmem-db-prune.sh --stats` | size by repo and month, so you can see where the bytes actually are |
+| `scripts/giantmem-db-prune.sh --repo monster-history-wt` | dry run: what would be archived |
+| `scripts/giantmem-db-prune.sh --repo monster-history-wt --yes` | export, encrypt, publish, delete, then VACUUM |
+| `scripts/giantmem-db-prune.sh --older-than 90d --yes` | age-only prune across every repo |
+| `--older-than 30d --repo frost-wt` | both filters, ANDed |
+| `--no-vacuum` | skip the rewrite; freed pages get reused by new docs instead |
+| `scripts/giantmem-db-prune.sh --vacuum-only` | no selection, no deletes: checkpoint the WAL and reclaim free pages |
+
+VACUUM needs an exclusive lock, and giantmemd holds live.db open for its whole life, so a reclaim from inside a normal session usually loses the race and gets skipped (the prune itself still succeeds — the skip is a warning, not a failure). The GUI's `Reclaim space` button bounces the daemon for you; from the shell, stop the writers first:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.bryan.giantmem-*.plist
+pkill -x Giantmem; giantmem daemon stop
+scripts/giantmem-db-prune.sh --vacuum-only
+```
+
+### Why the index grows
+
+Two forces. First, size ceilings on what gets indexed: markdown gets 1MB, everything else 64KB, because tool output under `.giantmem/` (json/graphql/tsv dumps, filebox mirrors) carries most of the bytes and almost none of the meaning. Raise either with `GIANTMEM_MAX_DOC_BYTES` / `GIANTMEM_MAX_DATA_BYTES`.
+
+Second, nothing deletes rows whose files vanished, and that's on purpose — `giantmem archive --all` wipes a `.giantmem/` dir only after confirming its files are in live.db, so those orphan rows are the archive of wiped workspaces. Prune is the only correct reaper: it writes the encrypted copy first, then deletes. Expect most of a mature index to be orphans; check with `--stats` before deciding what to keep.
+
+Nothing mutates without `--yes`. Rows go only after the ciphertext exists and passes `integrity_check`, and each run writes its own timestamped archive, so restores stay granular:
+
+```bash
+gpg --decrypt live-prune-<stamp>.db.gpg > restore.db
+sqlite3 live.db "ATTACH 'restore.db' AS r; INSERT OR IGNORE INTO live_docs SELECT * FROM r.live_docs;"
+```
+
 ## Session export / diff
 
 | Command | What it does |

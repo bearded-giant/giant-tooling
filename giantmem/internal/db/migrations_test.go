@@ -39,8 +39,8 @@ func TestMigrateLive_FreshDBReachesHeadWithFullSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema version: %v", err)
 	}
-	if v != 6 {
-		t.Fatalf("user_version = %d, want 6", v)
+	if v != 7 {
+		t.Fatalf("user_version = %d, want 7", v)
 	}
 
 	for _, name := range []string{
@@ -92,8 +92,8 @@ func TestMigrateLive_V5AdditiveAndIdempotent(t *testing.T) {
 		t.Fatalf("idempotent re-migrate: %v", err)
 	}
 	v, _ := SchemaVersion(d2)
-	if v != 6 {
-		t.Fatalf("user_version after re-migrate = %d, want 6", v)
+	if v != 7 {
+		t.Fatalf("user_version after re-migrate = %d, want 7", v)
 	}
 	var docN int
 	if err := d2.QueryRow(`SELECT COUNT(*) FROM live_docs`).Scan(&docN); err != nil {

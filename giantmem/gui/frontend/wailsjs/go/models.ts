@@ -17,6 +17,8 @@ export namespace artifacts {
 	    has_frontmatter: boolean;
 	    scope?: string;
 	    lifecycle?: string;
+	    notion?: string;
+	    notion_synced?: string;
 	    access_count?: number;
 	    has_vec?: boolean;
 	
@@ -42,6 +44,8 @@ export namespace artifacts {
 	        this.has_frontmatter = source["has_frontmatter"];
 	        this.scope = source["scope"];
 	        this.lifecycle = source["lifecycle"];
+	        this.notion = source["notion"];
+	        this.notion_synced = source["notion_synced"];
 	        this.access_count = source["access_count"];
 	        this.has_vec = source["has_vec"];
 	    }
@@ -121,6 +125,20 @@ export namespace main {
 	        this.mtime = source["mtime"];
 	        this.sessionId = source["sessionId"];
 	        this.dead = source["dead"];
+	    }
+	}
+	export class DBSizes {
+	    main: number;
+	    wal: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DBSizes(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.main = source["main"];
+	        this.wal = source["wal"];
 	    }
 	}
 	export class FacetCountsResult {
@@ -350,6 +368,85 @@ export namespace project {
 	        this.accessRows = source["accessRows"];
 	        this.sessions = source["sessions"];
 	        this.archiveDocs = source["archiveDocs"];
+	    }
+	}
+
+}
+
+export namespace prune {
+	
+	export class Band {
+	    days: number;
+	    docs: number;
+	    bytes: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Band(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.days = source["days"];
+	        this.docs = source["docs"];
+	        this.bytes = source["bytes"];
+	    }
+	}
+	export class Bucket {
+	    repo: string;
+	    bands: Band[];
+	    oldest: number;
+	    newest: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Bucket(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.repo = source["repo"];
+	        this.bands = this.convertValues(source["bands"], Band);
+	        this.oldest = source["oldest"];
+	        this.newest = source["newest"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	export class Options {
+	    repos: string[];
+	    olderThan: string;
+	    vacuum: boolean;
+	    db: string;
+	    vacuumOnly: boolean;
+	    stopDaemon: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new Options(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.repos = source["repos"];
+	        this.olderThan = source["olderThan"];
+	        this.vacuum = source["vacuum"];
+	        this.db = source["db"];
+	        this.vacuumOnly = source["vacuumOnly"];
+	        this.stopDaemon = source["stopDaemon"];
 	    }
 	}
 

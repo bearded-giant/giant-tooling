@@ -36,6 +36,7 @@ import {
   Version,
 } from "../wailsjs/go/main/App";
 import { artifacts, main, search } from "../wailsjs/go/models";
+import PruneModal from "./PruneModal";
 
 type Tab = "artifacts" | "sessions" | "tools" | "activity";
 
@@ -305,6 +306,7 @@ function App() {
   const [version, setVersion] = useState<string>("");
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [pruneOpen, setPruneOpen] = useState(false);
   const [uiZoom, setUiZoom] = useState<number>(() => {
     const n = Number(localStorage.getItem("gm.uiZoom"));
     return Number.isFinite(n) && n >= 80 && n <= 150 ? n : 100;
@@ -341,6 +343,8 @@ function App() {
   useEffect(() => {
     let lastMtime = 0;
     const tick = async () => {
+      // prune closes live.db mid-run; polling it then just paints errors
+      if (pruneOpen) return;
       try {
         const m = await LiveMtime();
         if (lastMtime === 0) {
@@ -355,7 +359,7 @@ function App() {
     };
     const id = window.setInterval(tick, 5000);
     return () => window.clearInterval(id);
-  }, [refreshAll]);
+  }, [refreshAll, pruneOpen]);
 
   useEffect(() => {
     FacetCounts()
@@ -1374,6 +1378,14 @@ function App() {
         <button
           type="button"
           className="status-about"
+          onClick={() => setPruneOpen(true)}
+          title="archive old docs out of live.db"
+        >
+          prune
+        </button>
+        <button
+          type="button"
+          className="status-about"
           onClick={() => setSettingsOpen(true)}
           title="ui settings"
         >
@@ -1404,6 +1416,9 @@ function App() {
           onShowHistory={setShowHistory}
           onClose={() => setSettingsOpen(false)}
         />
+      )}
+      {pruneOpen && (
+        <PruneModal onClose={() => setPruneOpen(false)} onPruned={refreshAll} />
       )}
       {repoMenu && (
         <RepoContextMenu

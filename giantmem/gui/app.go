@@ -17,7 +17,9 @@ import (
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/daemon"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/prune"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 type App struct {
@@ -832,6 +834,61 @@ func (a *App) DeleteProject(name string, purgeArchive bool) (project.Deleted, er
 	return project.Delete(a.live, a.archive, name, purgeArchive)
 }
 
+// PruneBuckets reports what the prune planner would see: per-repo doc counts
+// per age band, with estimated bytes. Cheap enough to call on modal open.
+func (a *App) PruneBuckets() ([]prune.Bucket, error) {
+	if a.live == nil {
+		return nil, fmt.Errorf("live db not open")
+	}
+	return prune.Buckets(a.live)
+}
+
+// DBSizes splits a db's on-disk footprint from its WAL. They must stay separate
+// in the UI: VACUUM writes the whole new db through the WAL, so a fresh vacuum
+// briefly doubles the total and summing the two reads as growth.
+type DBSizes struct {
+	Main int64 `json:"main"`
+	Wal  int64 `json:"wal"`
+}
+
+func (a *App) DBSizes(name string) DBSizes {
+	base := archiveBase()
+	var out DBSizes
+	if st, err := os.Stat(filepath.Join(base, name)); err == nil {
+		out.Main = st.Size()
+	}
+	if st, err := os.Stat(filepath.Join(base, name+"-wal")); err == nil {
+		out.Wal = st.Size()
+	}
+	return out
+}
+
+// PruneRun archives the selected repos/age span out of live.db and deletes the
+// rows. dryRun stops before any export. Progress lines arrive on the frontend
+// as "prune:line" events; the db handles are reopened after because the script
+// rewrites the file under us (VACUUM).
+func (a *App) PruneRun(opts prune.Options, dryRun bool) error {
+	if a.live == nil {
+		return fmt.Errorf("live db not open")
+	}
+	emit := func(line string) {
+		runtime.EventsEmit(a.ctx, "prune:line", line)
+	}
+	if !dryRun {
+		a.live.Close()
+		a.live = nil
+	}
+	err := prune.Run(archiveBase(), opts, dryRun, emit)
+	if a.live == nil {
+		if live, oerr := db.Open(filepath.Join(archiveBase(), "live.db")); oerr == nil {
+			a.live = live
+		} else if err == nil {
+			err = fmt.Errorf("prune finished but reopening live.db failed: %w", oerr)
+		}
+	}
+	return err
+}
+
 // GetLiveBody returns any live_docs file's body — disk first, DB fallback.
 // Works for files that never classified as typed artifacts.
 func (a *App) GetLiveBody(path string) (string, error) {
@@ -973,9 +1030,9 @@ func (a *App) RecentFiles(worktreePath string, limit int) ([]FileActivity, error
 // (local), and count of active (status=in_progress) features. Used by the
 // activity tab sidebar — one round-trip, four numbers.
 type ActivityCounts struct {
-	LiveDocs      int `json:"liveDocs"`
-	Sessions      int `json:"sessions"`
-	WritesToday   int `json:"writesToday"`
+	LiveDocs       int `json:"liveDocs"`
+	Sessions       int `json:"sessions"`
+	WritesToday    int `json:"writesToday"`
 	ActiveFeatures int `json:"activeFeatures"`
 }
 

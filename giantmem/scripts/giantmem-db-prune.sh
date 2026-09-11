@@ -1,0 +1,1 @@
+../internal/prune/prune.sh

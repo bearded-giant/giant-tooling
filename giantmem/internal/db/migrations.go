@@ -282,6 +282,17 @@ var liveMigrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: 7,
+		Name:    "live_docs: prune index (canonical_project, mtime)",
+		Apply: func(tx *sql.Tx) error {
+			// composite so the prune planner's per-repo age-band counts are
+			// index-only: grouping by canonical_project alone forces a row
+			// lookup per doc, and touching content at all costs ~30s on a 13G db.
+			_, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_live_prune ON live_docs(canonical_project, mtime)`)
+			return err
+		},
+	},
 }
 
 // embeddingDimFromEnv returns the vec0 dimension as a string, honoring

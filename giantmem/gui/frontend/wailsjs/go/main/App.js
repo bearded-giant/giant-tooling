@@ -10,6 +10,10 @@ export function BrowseTree() {
   return window['go']['main']['App']['BrowseTree']();
 }
 
+export function DBSizes(arg1) {
+  return window['go']['main']['App']['DBSizes'](arg1);
+}
+
 export function DeleteProject(arg1, arg2) {
   return window['go']['main']['App']['DeleteProject'](arg1, arg2);
 }
@@ -56,6 +60,14 @@ export function ProjectHeatmap(arg1, arg2) {
 
 export function ProjectSparkline(arg1, arg2) {
   return window['go']['main']['App']['ProjectSparkline'](arg1, arg2);
+}
+
+export function PruneBuckets() {
+  return window['go']['main']['App']['PruneBuckets']();
+}
+
+export function PruneRun(arg1, arg2) {
+  return window['go']['main']['App']['PruneRun'](arg1, arg2);
 }
 
 export function ReadFile(arg1) {

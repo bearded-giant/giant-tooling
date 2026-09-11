@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
@@ -189,5 +190,70 @@ func TestRunOnWorkspace_DerivesFeatureAndDirType(t *testing.T) {
 	}
 	if dirType != "features" {
 		t.Errorf("dir_type = %q, want features", dirType)
+	}
+}
+
+func TestSizeLimit_MarkdownGetsMoreRoomThanDumps(t *testing.T) {
+	if got := sizeLimit("/x/.giantmem/context/notes.md"); got != 1<<20 {
+		t.Errorf("md limit = %d, want %d", got, 1<<20)
+	}
+	if got := sizeLimit("/x/.giantmem/features/f/dump.json"); got != 64<<10 {
+		t.Errorf("data limit = %d, want %d", got, 64<<10)
+	}
+	t.Setenv("GIANTMEM_MAX_DATA_BYTES", "4096")
+	if got := sizeLimit("/x/.giantmem/features/f/dump.graphql"); got != 4096 {
+		t.Errorf("env override ignored: got %d", got)
+	}
+	t.Setenv("GIANTMEM_MAX_DATA_BYTES", "nope")
+	if got := sizeLimit("/x/y.tsv"); got != 64<<10 {
+		t.Errorf("bad env value should fall back, got %d", got)
+	}
+}
+
+func TestUpsertFile_SkipsOversizedDumpKeepsDoc(t *testing.T) {
+	dir := t.TempDir()
+	live, err := db.Open(filepath.Join(dir, "live.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer live.Close()
+
+	ws := filepath.Join(dir, "repo", ".giantmem", "features", "f")
+	if err := os.MkdirAll(ws, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	big := filepath.Join(ws, "dump.json")
+	if err := os.WriteFile(big, make([]byte, 200<<10), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	doc := filepath.Join(ws, "notes.md")
+	if err := os.WriteFile(doc, []byte("# real doc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var st Stats
+	entries, err := os.ReadDir(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		upsertFile(live, filepath.Join(ws, e.Name()), e, "repo", filepath.Dir(filepath.Dir(ws)), "f", "features", "", "now", &st)
+	}
+	if st.TooLarge != 1 {
+		t.Errorf("TooLarge = %d, want 1 (the 200K json)", st.TooLarge)
+	}
+	var paths string
+	rows, _ := live.Query(`SELECT path FROM live_docs`)
+	defer rows.Close()
+	for rows.Next() {
+		var p string
+		rows.Scan(&p)
+		paths += p + " "
+	}
+	if !strings.Contains(paths, "notes.md") {
+		t.Errorf("markdown doc should be indexed, got: %q", paths)
+	}
+	if strings.Contains(paths, "dump.json") {
+		t.Errorf("oversized dump should be skipped, got: %q", paths)
 	}
 }

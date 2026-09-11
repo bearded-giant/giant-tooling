@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -21,7 +22,31 @@ import (
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 )
 
-const maxFileSize = 5_000_000
+// Size ceilings for what lands in live_docs. Markdown is the memory format and
+// gets room; everything else under .giantmem/ is overwhelmingly tool output
+// (json/graphql/tsv dumps, filebox mirrors) whose bytes dwarf the docs — 4.0GB
+// of one 4.9GB index sat above 64K with 55 .md files among 11,587 rows.
+// Override per-machine with GIANTMEM_MAX_DOC_BYTES / GIANTMEM_MAX_DATA_BYTES.
+const (
+	maxDocSize  = 1 << 20
+	maxDataSize = 64 << 10
+)
+
+func sizeLimit(path string) int64 {
+	if strings.HasSuffix(path, ".md") {
+		return envBytes("GIANTMEM_MAX_DOC_BYTES", maxDocSize)
+	}
+	return envBytes("GIANTMEM_MAX_DATA_BYTES", maxDataSize)
+}
+
+func envBytes(key string, fallback int64) int64 {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+			return n
+		}
+	}
+	return fallback
+}
 
 // extraRootsMarker opts a repo into indexing files OUTSIDE its .giantmem/. Its
 // presence at <worktree>/.giantmem/.index-roots is the per-repo gate — without
@@ -186,7 +211,7 @@ func upsertFile(db *sql.DB, p string, d fs.DirEntry, proj, worktreePath, feature
 		st.Empty++
 		return
 	}
-	if fi.Size() > maxFileSize {
+	if fi.Size() > sizeLimit(p) {
 		st.TooLarge++
 		return
 	}

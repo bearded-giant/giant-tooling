@@ -4,10 +4,13 @@ import {main} from '../models';
 import {project} from '../models';
 import {artifacts} from '../models';
 import {search} from '../models';
+import {prune} from '../models';
 
 export function ActivityCounts():Promise<main.ActivityCounts>;
 
 export function BrowseTree():Promise<Array<main.BrowseRow>>;
+
+export function DBSizes(arg1:string):Promise<main.DBSizes>;
 
 export function DeleteProject(arg1:string,arg2:boolean):Promise<project.Deleted>;
 
@@ -32,6 +35,10 @@ export function LiveMtime():Promise<number>;
 export function ProjectHeatmap(arg1:number,arg2:number):Promise<Array<main.HeatmapCell>>;
 
 export function ProjectSparkline(arg1:string,arg2:number):Promise<Array<main.SparklinePoint>>;
+
+export function PruneBuckets():Promise<Array<prune.Bucket>>;
+
+export function PruneRun(arg1:prune.Options,arg2:boolean):Promise<void>;
 
 export function ReadFile(arg1:string):Promise<string>;
 
