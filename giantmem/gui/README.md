@@ -12,11 +12,11 @@ Read-only for v1. Writes (lifecycle changes, in-place editing) are deferred.
 
 ## Prerequisites
 
-You'll need Go 1.21+, Node 18+, and the Wails CLI. The version of Wails that works for this project is **v2.12.0 or newer** — v2.9.1 has a parser bug that trips on the cross-module `replace` directive under Go 1.26.
+You'll need Go 1.21+, Node 18+, and the Wails CLI. Use **v2.15.0 or newer** and keep the CLI matched to the version in `gui/go.mod`. Older ones break in ways that look like your machine's fault: v2.9.1 has a parser bug on the cross-module `replace` directive under Go 1.26, and v2.12.0 cannot read Go 1.27 export data (`internal error: package "bufio" without types`) or link `UniformTypeIdentifiers` against the macOS 26 SDK.
 
 ```bash
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
-wails version   # expect v2.12.0+
+wails version   # expect v2.15.0+
 ```
 
 You also need the giantmem stack running normally — `live.db` and `archives.db` need to exist at `$GIANTMEM_ARCHIVE_BASE/` (default `~/giantmem_archive/`). Hybrid search calls the daemon's `embed` RPC for query vectors, so for best results have `giantmemd` up.
