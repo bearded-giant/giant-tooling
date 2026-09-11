@@ -60,6 +60,22 @@ __wt_branch_status() {
 }
 
 # ---------------------------------------------------------------------------
+# tmux - rename current window after worktree create
+# ---------------------------------------------------------------------------
+
+__wt_tmux_rename() {
+    local prefix="$1" branch="$2"
+    [ -n "$TMUX" ] || return 0
+    local base=$(__wt_config "$prefix" BASE)
+    local repo=$(basename "$base")
+    repo="${repo%-wt}"
+    local default="$repo $branch wt"
+    local name
+    read -rp "tmux window name [$default]: " name
+    tmux rename-window "${name:-$default}"
+}
+
+# ---------------------------------------------------------------------------
 # setup - post-creation worktree initialization driven by config
 # ---------------------------------------------------------------------------
 
@@ -472,6 +488,7 @@ __wt_main() {
 
                 __wt_setup "$prefix" "$1"
                 cd "$base/$1"
+                __wt_tmux_rename "$prefix" "$1"
                 echo "-> $1 (ready)"
             else
                 echo "Error: $error_msg"
@@ -760,6 +777,7 @@ __wt_add() {
 
         __wt_setup "$prefix" "$1"
         cd "$base/$1"
+        __wt_tmux_rename "$prefix" "$1"
         echo "-> $1 (created)"
     else
         echo "Error: $error_msg"

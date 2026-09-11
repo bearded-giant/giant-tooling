@@ -102,7 +102,7 @@ After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions ex
 
 | Command | What |
 |---------|------|
-| `{prefix} <branch>` | switch to worktree, or create if missing (add `--push`/`-p` to push the new branch to origin; default is local-only) |
+| `{prefix} <branch>` | switch to worktree, or create if missing (add `--push`/`-p` to push the new branch to origin; default is local-only). Inside tmux, create also prompts to rename the current window, default `{repo} {branch} wt` |
 | `{prefix}l` | list worktrees |
 | `{prefix}b` | list branches |
 | `{prefix}s` | status across worktrees |
