@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/health"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
 	"github.com/spf13/cobra"
 )
@@ -149,7 +150,7 @@ func describeHooks(home string) []hookInfo {
 		{Event: "SessionEnd", Script: "session_end_ingest.py"},
 	}
 	for i := range hookFiles {
-		hookFiles[i].Wired = strings.Contains(body, hookFiles[i].Script)
+		hookFiles[i].Wired = health.HookWired(body, hookFiles[i].Script)
 		hookFiles[i].OnDisk = fileExists(filepath.Join(home, ".claude", "hooks", hookFiles[i].Script))
 	}
 	return hookFiles

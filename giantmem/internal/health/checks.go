@@ -55,7 +55,15 @@ func Run(opt Options) []Finding {
 
 // settings.json checks --------------------------------------------------------
 
-var settingsHookRe = regexp.MustCompile(`live_index\.py`)
+// dispatch.py runs hooks by bare module name, so the .py path may never appear in settings.json
+func HookWired(body, script string) bool {
+	if strings.Contains(body, script) {
+		return true
+	}
+	module := strings.TrimSuffix(script, ".py")
+	return regexp.MustCompile(`dispatch\.py[^"]*\b` + regexp.QuoteMeta(module) + `\b`).MatchString(body)
+}
+
 var settingsMCPRe = regexp.MustCompile(`giantmem`)
 
 func checkSettings(opt Options) []Finding {
@@ -72,13 +80,13 @@ func checkSettings(opt Options) []Finding {
 		})
 		return out
 	}
-	if !settingsHookRe.Match(raw) {
+	if !HookWired(string(raw), "live_index.py") {
 		out = append(out, Finding{
 			Severity: SevError,
 			Category: "hook",
 			Message:  "PostToolUse hook for live_index.py not wired into settings.json",
 			Path:     settingsPath,
-			Hint:     "add the PostToolUse entry that calls ~/.claude/hooks/live_index.py",
+			Hint:     "add live_index to the PostToolUse dispatch.py entry in settings.json, or wire ~/.claude/hooks/live_index.py directly",
 		})
 	}
 	var parsed struct {
@@ -185,7 +193,7 @@ func checkLatestSymlinks(opt Options) []Finding {
 				Category: "symlink",
 				Message:  fmt.Sprintf("latest -> %s does not exist", target),
 				Path:     p,
-				Hint:     "rerun giantmem archive run, or manually rebind the symlink",
+				Hint:     "manually rebind the symlink; giantmem no longer writes archive snapshots",
 			})
 		}
 		return nil
@@ -219,7 +227,7 @@ func checkOrphanGiantmem(opt Options) []Finding {
 					Category: "orphan",
 					Message:  ".giantmem/ exists but no .git in any ancestor (worktree removed?)",
 					Path:     p,
-					Hint:     "run: giantmem archive run --project <name> " + p + "  to capture before deleting (or add `# orphan-ok` to .giantmem-ignore)",
+					Hint:     "run: giantmem workspace archive --no-reinit " + p + "  to verify capture and remove (or add `# orphan-ok` to .giantmem-ignore)",
 				})
 			}
 			return fs.SkipDir
@@ -344,7 +352,7 @@ func checkStaleWorkspaces(opt Options) []Finding {
 					Category: "stale",
 					Message:  fmt.Sprintf("workspace inactive for %d days", days),
 					Path:     p,
-					Hint:     "consider giantmem archive run from its parent dir (or add `# stale-ok` to .giantmem-ignore)",
+					Hint:     "consider giantmem workspace archive from its parent dir (or add `# stale-ok` to .giantmem-ignore)",
 				})
 			}
 			return fs.SkipDir

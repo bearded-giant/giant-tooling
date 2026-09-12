@@ -54,14 +54,14 @@ func fixOne(f Finding, opt FixOptions) FixResult {
 			Note: "manual fix: edit ~/.claude/settings.json mcpServers.giantmem-search.command to giantmem"}
 	case "hook":
 		return FixResult{Category: f.Category, Path: f.Path, Skipped: true,
-			Note: "manual fix: add PostToolUse entry calling ~/.claude/hooks/live_index.py"}
+			Note: "manual fix: add live_index to the PostToolUse dispatch.py entry in ~/.claude/settings.json"}
 	case "db":
 		return FixResult{Category: f.Category, Path: f.Path, Skipped: true,
 			Note: "DB integrity errors require manual recovery; see hint"}
 	case "orphan":
 		if !opt.Auto {
 			return FixResult{Category: f.Category, Path: f.Path, Skipped: true,
-				Note: "use --auto to archive automatically, or run giantmem archive run --project <name> " + f.Path}
+				Note: "use --auto to archive automatically, or run giantmem workspace archive --no-reinit " + f.Path}
 		}
 		return fixOrphan(f, opt)
 	case "stale":
@@ -150,8 +150,7 @@ func fixOrphan(f Finding, opt FixOptions) FixResult {
 	if opt.DryRun {
 		return FixResult{Category: f.Category, Path: f.Path, Note: "would archive " + f.Path}
 	}
-	parent := filepath.Dir(f.Path)
-	cmd := exec.Command("giantmem", "archive", "run", "--no-reinit", "--project", filepath.Base(parent), f.Path)
+	cmd := exec.Command("giantmem", "workspace", "archive", "--no-reinit", f.Path)
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
