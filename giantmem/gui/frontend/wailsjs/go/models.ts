@@ -353,7 +353,6 @@ export namespace project {
 	    artifacts: number;
 	    embeddings: number;
 	    accessRows: number;
-	    sessions: number;
 	    archiveDocs: number;
 	
 	    static createFrom(source: any = {}) {
@@ -366,7 +365,6 @@ export namespace project {
 	        this.artifacts = source["artifacts"];
 	        this.embeddings = source["embeddings"];
 	        this.accessRows = source["accessRows"];
-	        this.sessions = source["sessions"];
 	        this.archiveDocs = source["archiveDocs"];
 	    }
 	}

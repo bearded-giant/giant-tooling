@@ -352,6 +352,14 @@ var liveMigrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: 10,
+		Name:    "drop dead active_sessions",
+		Apply: func(tx *sql.Tx) error {
+			_, err := tx.Exec(`DROP TABLE IF EXISTS active_sessions`)
+			return err
+		},
+	},
 }
 
 // embeddingDimFromEnv returns the vec0 dimension as a string, honoring

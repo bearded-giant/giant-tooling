@@ -142,7 +142,7 @@ Sessions-tab facet names are canonical (`cc-wt-stage`), often with no live-index
 | `giantmem project list` | every live-index project: doc/artifact/archive counts, gone flag (worktrees missing on disk), worktree path |
 | `giantmem project list --gone` | only projects whose worktrees no longer exist |
 | `giantmem project list --json` | JSON output |
-| `giantmem project delete <name>` | remove from live index (live_docs + fts, artifacts, embeddings, access rows, active_sessions) with y/N prompt; archives.db untouched |
+| `giantmem project delete <name>` | remove from live index (live_docs + fts, artifacts, embeddings, access rows) with y/N prompt; archives.db untouched |
 | `giantmem project delete <name> --yes` | skip the prompt |
 | `giantmem project delete <name> --purge-archive` | also drop the project's archives.db documents |
 
@@ -657,7 +657,7 @@ After installing or updating the hook, restart Claude Code so it re-reads `setti
 ```
 ~/giantmem_archive/
   archives.db    # immutable historical: archived workspace docs, sessions, domains
-  live.db        # hot, gitignored: live_docs (.giantmem/**/*.md), active_sessions
+  live.db        # hot, gitignored: live_docs (.giantmem/**/*.md), artifacts
   {project}/{timestamp}/...   # archived .giantmem trees
 ```
 

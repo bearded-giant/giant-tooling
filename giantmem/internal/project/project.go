@@ -21,7 +21,6 @@ type Deleted struct {
 	Artifacts   int `json:"artifacts"`
 	Embeddings  int `json:"embeddings"`
 	AccessRows  int `json:"accessRows"`
-	Sessions    int `json:"sessions"`
 	ArchiveDocs int `json:"archiveDocs"`
 }
 
@@ -92,7 +91,7 @@ func List(live, archive *sql.DB) ([]IndexInfo, error) {
 }
 
 // Delete removes a project from the live index: live_docs (fts via trigger),
-// active_sessions, artifacts and their embeddings/access rows. With
+// artifacts and their embeddings/access rows. With
 // purgeArchive it also drops the project's archives.db documents. archive may
 // be nil unless purgeArchive is set.
 func Delete(live, archive *sql.DB, name string, purgeArchive bool) (Deleted, error) {
@@ -167,11 +166,6 @@ func Delete(live, archive *sql.DB, name string, purgeArchive bool) (Deleted, err
 		return d, err
 	} else {
 		d.LiveDocs = n
-	}
-	if n, err := execCount(tx, `DELETE FROM active_sessions WHERE project = ?`, name); err != nil {
-		return d, err
-	} else {
-		d.Sessions = n
 	}
 	if err := tx.Commit(); err != nil {
 		return d, err

@@ -181,28 +181,6 @@ func TestReconcileTable_UpsertIdempotentDeleteCanonical(t *testing.T) {
 	}
 }
 
-func TestReconcileTable_BranchFromActiveSessions(t *testing.T) {
-	d := newLiveDB(t)
-	base := t.TempDir()
-	if _, err := d.Exec(
-		`INSERT INTO active_sessions(id, worktree_path, branch, last_seen) VALUES (?,?,?,?)`,
-		"s1", "/r", "feature-x", "2026-06-01T10:00:00Z"); err != nil {
-		t.Fatal(err)
-	}
-	insertLiveDoc(t, d, "/r/.giantmem/features/foo/proposal.md", "myrepo", "/r", "body", 1717200000)
-
-	if _, err := ReconcileTable(d, base); err != nil {
-		t.Fatalf("reconcile: %v", err)
-	}
-	var branch string
-	if err := d.QueryRow(`SELECT branch FROM artifacts WHERE id=?`, "myrepo/feat:foo:proposal").Scan(&branch); err != nil {
-		t.Fatal(err)
-	}
-	if branch != "feature-x" {
-		t.Errorf("branch = %q, want feature-x (from active_sessions)", branch)
-	}
-}
-
 func TestReconcileTable_CrossRepoNoCollision(t *testing.T) {
 	d := newLiveDB(t)
 	base := t.TempDir()

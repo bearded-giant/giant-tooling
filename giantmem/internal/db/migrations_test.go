@@ -39,13 +39,13 @@ func TestMigrateLive_FreshDBReachesHeadWithFullSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema version: %v", err)
 	}
-	if v != 9 {
-		t.Fatalf("user_version = %d, want 9", v)
+	if v != 10 {
+		t.Fatalf("user_version = %d, want 10", v)
 	}
 
 	for _, name := range []string{
 		"live_docs", "live_docs_fts", "live_docs_ai", "live_docs_ad", "live_docs_au",
-		"active_sessions", "scopes", "artifact_access",
+		"scopes", "artifact_access",
 		"artifact_embedding_meta", "artifacts",
 	} {
 		if !tableExists(t, path, name) {
@@ -92,8 +92,8 @@ func TestMigrateLive_V5AdditiveAndIdempotent(t *testing.T) {
 		t.Fatalf("idempotent re-migrate: %v", err)
 	}
 	v, _ := SchemaVersion(d2)
-	if v != 9 {
-		t.Fatalf("user_version after re-migrate = %d, want 9", v)
+	if v != 10 {
+		t.Fatalf("user_version after re-migrate = %d, want 10", v)
 	}
 	var docN int
 	if err := d2.QueryRow(`SELECT COUNT(*) FROM live_docs`).Scan(&docN); err != nil {

@@ -914,14 +914,6 @@ func (a *App) SessionPathByID(id string) (string, error) {
 			return p, nil
 		}
 	}
-	if a.live != nil {
-		var p string
-		err := a.live.QueryRow(
-			`SELECT COALESCE(jsonl_path,'') FROM active_sessions WHERE id=?`, id).Scan(&p)
-		if err == nil && p != "" {
-			return p, nil
-		}
-	}
 	return "", fmt.Errorf("no transcript for session %s", id)
 }
 

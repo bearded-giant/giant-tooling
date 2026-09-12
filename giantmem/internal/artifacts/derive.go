@@ -109,10 +109,6 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 		return st, nil
 	}
 
-	branchByWorktree, err := sessionBranches(live)
-	if err != nil {
-		return st, err
-	}
 
 	rows, err := live.Query(
 		`SELECT path, content, project, worktree_path, COALESCE(canonical_project,''), mtime
@@ -141,7 +137,7 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 			continue
 		}
 		st.Scanned++
-		a, ok := DeriveFromLiveDoc(rel, content, proj, branchByWorktree[worktree], worktree)
+		a, ok := DeriveFromLiveDoc(rel, content, proj, "", worktree)
 		if !ok {
 			continue
 		}
@@ -211,33 +207,6 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 	}
 	st.Removed = removed
 	return st, nil
-}
-
-// sessionBranches maps worktree_path -> branch from active_sessions, preferring
-// the most-recently-seen session. Pure SQL, no git/FS — live_docs itself has no
-// branch column, so this is how the projection learns branch.
-func sessionBranches(live *sql.DB) (map[string]string, error) {
-	out := map[string]string{}
-	rows, err := live.Query(
-		`SELECT worktree_path, branch, COALESCE(last_seen,'') FROM active_sessions
-         WHERE COALESCE(worktree_path,'') != '' AND COALESCE(branch,'') != ''`)
-	if err != nil {
-		// active_sessions always exists post-v1; treat any error as "no branches".
-		return out, nil
-	}
-	defer rows.Close()
-	seen := map[string]string{}
-	for rows.Next() {
-		var wt, branch, lastSeen string
-		if err := rows.Scan(&wt, &branch, &lastSeen); err != nil {
-			return out, err
-		}
-		if prev, ok := seen[wt]; !ok || lastSeen > prev {
-			seen[wt] = lastSeen
-			out[wt] = branch
-		}
-	}
-	return out, rows.Err()
 }
 
 func upsertArtifact(live *sql.DB, a Artifact, now string) (sql.Result, error) {
