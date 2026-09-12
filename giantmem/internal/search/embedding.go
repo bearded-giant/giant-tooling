@@ -143,7 +143,11 @@ func (e *pythonEmbedder) ensureStarted() error {
 	if _, err := os.Stat(scriptPath); err != nil {
 		return fmt.Errorf("embed.py missing at %s", scriptPath)
 	}
-	cmd := exec.Command("python3", scriptPath,
+	python := os.Getenv("GIANTMEM_EMBED_PYTHON")
+	if python == "" {
+		python = "python3"
+	}
+	cmd := exec.Command(python, scriptPath,
 		"--model", e.model,
 		"--dim", strconv.Itoa(e.dim),
 	)

@@ -76,6 +76,12 @@ var daemonStartCmd = &cobra.Command{
 			fmt.Println("daemon already running")
 			return nil
 		}
+		if launchdInstalled() {
+			if err := launchdStart(); err != nil {
+				return err
+			}
+			return waitDaemonUp("started giantmemd via launchd", 5*time.Second)
+		}
 		self, err := os.Executable()
 		if err != nil {
 			return err
@@ -114,6 +120,16 @@ var daemonStopCmd = &cobra.Command{
 	Use:   "stop",
 	Short: "Stop a running giantmemd",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if launchdInstalled() {
+			if !daemon.SocketAlive(daemon.DefaultSocketPath(), 250*time.Millisecond) {
+				fmt.Println("daemon not running")
+				return nil
+			}
+			if err := launchdStop(); err != nil {
+				return err
+			}
+			return waitDaemonDown("stopped giantmemd via launchd", 5*time.Second)
+		}
 		pid, err := daemonPID()
 		if err != nil {
 			fmt.Println("daemon not running")
@@ -143,9 +159,39 @@ var daemonRestartCmd = &cobra.Command{
 	Use:   "restart",
 	Short: "Stop and start giantmemd",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if launchdInstalled() {
+			if err := launchdRestart(); err != nil {
+				return err
+			}
+			return waitDaemonUp("restarted giantmemd via launchd", 5*time.Second)
+		}
 		_ = daemonStopCmd.RunE(cmd, args)
 		return daemonStartCmd.RunE(cmd, args)
 	},
+}
+
+func waitDaemonUp(msg string, within time.Duration) error {
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		if daemon.SocketAlive(daemon.DefaultSocketPath(), 100*time.Millisecond) {
+			fmt.Println(msg)
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("daemon did not become reachable within %s", within)
+}
+
+func waitDaemonDown(msg string, within time.Duration) error {
+	deadline := time.Now().Add(within)
+	for time.Now().Before(deadline) {
+		if !daemon.SocketAlive(daemon.DefaultSocketPath(), 100*time.Millisecond) {
+			fmt.Println(msg)
+			return nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return fmt.Errorf("daemon did not exit within %s", within)
 }
 
 var daemonStatusCmd = &cobra.Command{

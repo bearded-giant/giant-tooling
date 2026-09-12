@@ -114,6 +114,7 @@ GIANTMEM_EMBED_BACKEND={stub,python,ollama}
 GIANTMEM_EMBED_MODEL              default BAAI/bge-base-en-v1.5
 GIANTMEM_EMBED_DIM                default 768
 GIANTMEM_EMBED_SCRIPT             path to embed.py
+GIANTMEM_EMBED_PYTHON             interpreter for embed.py (default python3 on PATH)
 GIANTMEM_HYBRID_FTS_WEIGHT        default 0.5
 GIANTMEM_HYBRID_VEC_WEIGHT        default 0.25
 GIANTMEM_HYBRID_RECENCY_WEIGHT    default 0.15

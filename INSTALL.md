@@ -32,7 +32,7 @@ export PATH="$HOME/.local/bin:$PATH"
 1. **check-prereqs** — verifies the four tools above.
 2. **cli** — `make -C giantmem install` → `~/.local/bin/giantmem`.
 3. **gui** — `make -C giantmem/gui install` → `/Applications/Giantmem.app`.
-4. **daemon-install** — `giantmem daemon install` → registers `~/Library/LaunchAgents/...giantmemd.plist`, starts the daemon. Daemon runs the artifacts-projection reconciler + serves the `embed` RPC + does a startup filesystem backfill.
+4. **daemon-install** — `giantmem daemon install` → registers `~/Library/LaunchAgents/com.giantmem.daemon.plist`, starts the daemon. Daemon runs the artifacts-projection reconciler + serves the `embed` RPC + does a startup filesystem backfill. Once installed, `giantmem daemon start|stop|restart` drive launchd (`kickstart` / `bootout`) instead of spawning their own process. Export `GIANTMEM_EMBED_PYTHON=/path/to/python3` first if the `sentence-transformers` env is not the `python3` on the plist PATH.
 5. **session-sweep** — installs `~/Library/LaunchAgents/com.giantmem-session-sweep.plist` (5-min `giantmem db ingest --sessions-only`). Path-rewritten from the bundled template so it works for any user.
 6. **first-run** — `giantmem db index backfill` (fills `live.db` from every `.giantmem/` under `$GIANTMEM_DEV_ROOTS`) plus `giantmem db ingest --sessions-only` (one-shot session sweep).
 
@@ -60,6 +60,7 @@ stow -t ~/.claude -d . claude   # or whatever the repo's stow target is
 | `GIANTMEM_ARCHIVE_BASE` | `~/giantmem_archive` | location of `live.db` + `archives.db` |
 | `GIANTMEM_DEV_ROOTS` | `~/dev` | colon-sep list of repo roots scanned by `index backfill` |
 | `GIANTMEM_EMBED_BACKEND` | unset (no embeddings) | `python` / `ollama` for hybrid-search vectors |
+| `GIANTMEM_EMBED_PYTHON` | `python3` on PATH | interpreter that runs `embed.py`; set it when running `giantmem daemon install` to pin the env that has `sentence-transformers` |
 | `GIANTMEM_NO_DAEMON` | unset | force CLI to bypass `giantmemd` and open DBs directly |
 
 ## Verify
