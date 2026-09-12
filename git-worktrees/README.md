@@ -44,7 +44,7 @@ Because a worktree usually maps one-to-one to a feature, creating one prompts `C
 
 | File | Purpose |
 |------|---------|
-| `worktree-core.sh` | Shared library. Defines `wt_init`, `wt_adopt`, `wt_register`, plus all `__wt_*` helpers used by per-project prefixes. |
+| `worktree-core.sh` | Shared library. Defines `wt_init`, `wt_adopt`, `wt_register`, `wt_rename_prefix`, plus all `__wt_*` helpers used by per-project prefixes. |
 | `wt-{name}.sh` | Per-project config (one file per project). Sets env vars (base dir, stack, default branches, etc.) and calls `wt_register {prefix}` to bind shell functions. Source it from your shell rc, or auto-load via your dotfiles. |
 
 ## Layout
@@ -121,10 +121,22 @@ Workspace aliases (when `WS_BASE` set in config): `{ws}`, `{ws}tree`, `{ws}sync`
 
 `wt_projects` lists all registered prefixes with their base dirs and archive names.
 
+### Renaming a prefix
+
+Picked a prefix you regret? `wt_rename_prefix <old> <new>` rewrites the `wt-{name}.sh` config that registers `<old>`: the prefix comment, the `FOO_*` vars, the `wt_register` line, and the workspace alias when it was the derived default (a hand-picked alias is left alone). It refuses if `<new>` is already registered by another config. The config file keeps its name, since that tracks the project, not the prefix.
+
+It looks for configs in `$WT_CONFIG_DIR`, then beside `worktree-core.sh`, then `~/dotfiles/shell/scripts/worktrees`. Set `WT_CONFIG_DIR` if yours live somewhere else. Shells you already have open keep the old functions until you restart them.
+
+Same thing from the CLI, which is handy when nothing is sourced yet:
+
+```
+giantmem worktree rename-prefix remcp mcpwt
+```
+
 ## Install
 
 1. Clone this repo (or pin its path via `$GIANT_TOOLING_DIR`).
-2. Source `git-worktrees/worktree-core.sh` from your shell rc. After this `wt_init`, `wt_adopt`, and `wt_projects` are available globally.
+2. Source `git-worktrees/worktree-core.sh` from your shell rc. After this `wt_init`, `wt_adopt`, `wt_projects`, and `wt_rename_prefix` are available globally.
 3. Source any `wt-{name}.sh` configs you have, or set up auto-loading from a dir of your choice.
 
 Configs source `worktree-core.sh` via `${BASH_SOURCE[0]%/*}/worktree-core.sh`, so keep them beside core.sh or symlink core.sh into your config dir. The symlink trick lets you keep configs in private dotfiles while pulling core from this repo: `ln -s /path/to/giant-tooling/git-worktrees/worktree-core.sh ~/dotfiles/worktrees/worktree-core.sh`. When the wizard runs through that symlink, `${BASH_SOURCE[0]}` resolves to the symlink path, so new configs land in the dotfiles dir, not in this repo.

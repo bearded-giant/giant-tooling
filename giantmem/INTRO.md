@@ -51,7 +51,7 @@ The wizard writes a `wt-{name}.sh` config beside `worktree-core.sh`. Source it i
 {prefix}r <branch>     # remove worktree (auto-archives .giantmem)
 ```
 
-Pick `{prefix}` once and live with it. Three keystrokes is the daily driver. `giantmem worktree ...` is for setup, reporting, and cross-cutting ops.
+Three keystrokes is the daily driver, so pick `{prefix}` with some care. If you pick badly, `giantmem worktree rename-prefix <old> <new>` rewrites the config for you. `giantmem worktree ...` is for setup, reporting, and cross-cutting ops.
 
 ## Day in the life
 

@@ -1451,6 +1451,115 @@ wt_projects() {
 }
 
 # ---------------------------------------------------------------------------
+# wt_rename_prefix - change a project's shell prefix in its wt-*.sh config
+# ---------------------------------------------------------------------------
+#
+# Usage: wt_rename_prefix <old-prefix> <new-prefix>
+#
+# Config dir search order: $WT_CONFIG_DIR, this file's dir, ~/dotfiles/shell/scripts/worktrees
+
+__wt_config_dirs() {
+    local self_dir
+    self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    printf '%s\n' "${WT_CONFIG_DIR:-}" "$self_dir" "$HOME/dotfiles/shell/scripts/worktrees"
+}
+
+__wt_find_config() {
+    local prefix="$1" d f
+    while read -r d; do
+        [ -n "$d" ] && [ -d "$d" ] || continue
+        for f in "$d"/wt-*.sh; do
+            [ -f "$f" ] || continue
+            if grep -qE "^[[:space:]]*wt_register[[:space:]]+${prefix}[[:space:]]*$" "$f"; then
+                echo "$f"
+                return 0
+            fi
+        done
+    done < <(__wt_config_dirs)
+    return 1
+}
+
+__wt_ws_default() {
+    local p="$1" d="${1%wt}ws"
+    [ "$d" = "ws" ] && d="${p}ws"
+    echo "$d"
+}
+
+wt_rename_prefix() {
+    local old="$1" new="$2"
+
+    if [ -z "$old" ] || [ -z "$new" ]; then
+        echo "Usage: wt_rename_prefix <old-prefix> <new-prefix>" >&2
+        return 1
+    fi
+    if ! [[ "$new" =~ ^[a-z][a-z0-9_]*$ ]]; then
+        echo "Invalid prefix '$new' - lowercase letter first, then letters/digits/underscore" >&2
+        return 1
+    fi
+    if [ "$old" = "$new" ]; then
+        echo "Prefix already '$new' - nothing to do"
+        return 0
+    fi
+
+    local config
+    if ! config="$(__wt_find_config "$old")"; then
+        echo "No wt-*.sh config registers prefix '$old'" >&2
+        echo "Searched: $(__wt_config_dirs | tr '\n' ' ')" >&2
+        echo "Set WT_CONFIG_DIR to the dir holding your configs." >&2
+        return 1
+    fi
+
+    local clash
+    if clash="$(__wt_find_config "$new")"; then
+        echo "Prefix '$new' already registered by $clash" >&2
+        return 1
+    fi
+
+    local uc_old="${old^^}" uc_new="${new^^}"
+    local ws_old ws_new
+    ws_old="$(sed -n "s/^${uc_old}_WS_BASE=\"\(.*\)\"\$/\1/p" "$config")"
+    ws_new="$ws_old"
+    # only regenerate the workspace alias when it was the derived default, not a hand-picked one
+    if [ -n "$ws_old" ] && [ "$ws_old" = "$(__wt_ws_default "$old")" ]; then
+        ws_new="$(__wt_ws_default "$new")"
+    fi
+
+    local -a sed_args=(
+        -e "s/^${uc_old}_/${uc_new}_/"
+        -e "s/(prefix: ${old})/(prefix: ${new})/"
+        -e "s/^wt_register ${old}\$/wt_register ${new}/"
+    )
+    if [ "$ws_new" != "$ws_old" ]; then
+        sed_args+=(-e "s/^${uc_new}_WS_BASE=.*/${uc_new}_WS_BASE=\"${ws_new}\"/")
+    fi
+
+    local tmp="${config}.wtrename.$$"
+    if ! sed "${sed_args[@]}" "$config" > "$tmp"; then
+        rm -f "$tmp"
+        echo "sed failed, config unchanged" >&2
+        return 1
+    fi
+    if ! grep -qE "^wt_register ${new}\$" "$tmp"; then
+        rm -f "$tmp"
+        echo "rewrite did not produce 'wt_register ${new}', config unchanged" >&2
+        return 1
+    fi
+    # cat-over rather than mv to keep the original mode and inode
+    cat "$tmp" > "$config"
+    rm -f "$tmp"
+
+    echo "Renamed prefix: $old -> $new"
+    echo "  config: $config"
+    [ "$ws_new" != "$ws_old" ] && echo "  workspace alias: $ws_old -> $ws_new"
+
+    source "$config"
+
+    echo ""
+    echo "New commands: $new, ${new}l, ${new}a, ${new}r, ${new}_init"
+    echo "Old ${old}* functions still exist in already-open shells - restart them."
+}
+
+# ---------------------------------------------------------------------------
 # wt_adopt - convert existing repo into bare + worktree layout in place
 # ---------------------------------------------------------------------------
 #

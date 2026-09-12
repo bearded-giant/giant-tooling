@@ -203,21 +203,37 @@ var worktreeInitCmd = &cobra.Command{
 	Use:                "init",
 	Short:              "Wizard for a fresh worktree project",
 	DisableFlagParsing: true,
-	RunE: func(cmd *cobra.Command, args []string) error { return runWorktreeFunc("wt_init", args) },
+	RunE:               func(cmd *cobra.Command, args []string) error { return runWorktreeFunc("wt_init", args) },
 }
 
 var worktreeAdoptCmd = &cobra.Command{
 	Use:                "adopt [path]",
 	Short:              "Convert an existing repo to bare-with-worktrees layout",
 	DisableFlagParsing: true,
-	RunE: func(cmd *cobra.Command, args []string) error { return runWorktreeFunc("wt_adopt", args) },
+	RunE:               func(cmd *cobra.Command, args []string) error { return runWorktreeFunc("wt_adopt", args) },
+}
+
+var worktreeRenamePrefixCmd = &cobra.Command{
+	Use:   "rename-prefix <old> <new>",
+	Short: "Rename a project's shell prefix in its wt-*.sh config",
+	Long: `Rewrites the wt-*.sh config that registers <old>: the prefix comment, the
+FOO_* config vars, the wt_register line, and the derived workspace alias (a
+hand-picked alias is left alone).
+
+Finds the config in $WT_CONFIG_DIR, then beside worktree-core.sh, then
+~/dotfiles/shell/scripts/worktrees. Refuses if <new> is already registered.
+Already-open shells keep the old functions until restarted.`,
+	Args: cobra.ExactArgs(2),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runWorktreeFunc("wt_rename_prefix", args)
+	},
 }
 
 var worktreeProjectsCmd = &cobra.Command{
 	Use:                "projects",
 	Short:              "List all registered worktree projects",
 	DisableFlagParsing: true,
-	RunE: func(cmd *cobra.Command, args []string) error { return runWorktreeFunc("wt_projects", args) },
+	RunE:               func(cmd *cobra.Command, args []string) error { return runWorktreeFunc("wt_projects", args) },
 }
 
 var worktreeStatusCmd = &cobra.Command{
@@ -384,6 +400,7 @@ func init() {
 	worktreeCmd.AddCommand(worktreeInitCmd)
 	worktreeCmd.AddCommand(worktreeAdoptCmd)
 	worktreeCmd.AddCommand(worktreeProjectsCmd)
+	worktreeCmd.AddCommand(worktreeRenamePrefixCmd)
 	worktreeCmd.AddCommand(worktreeStatusCmd)
 	worktreeCmd.AddCommand(worktreeBranchesCmd)
 	worktreeCmd.AddCommand(worktreePruneCmd)
