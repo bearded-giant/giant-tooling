@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/backfill"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/projection"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
@@ -99,8 +100,10 @@ var artifactOrphansCmd = &cobra.Command{
 }
 
 var (
-	artifactStaleDays int
-	artifactStaleAll  bool
+	artifactStaleDays     int
+	artifactStaleApply    bool
+	artifactStaleIdleDays int
+	artifactStaleAll      bool
 )
 
 var artifactStaleCmd = &cobra.Command{
@@ -145,6 +148,8 @@ func init() {
 	artifactStaleCmd.Flags().BoolVar(&artifactStaleAll, "all-repos", false, "scan every discovered workspace, not just current")
 	artifactStaleCmd.Flags().StringVar(&artifactScope, "scope", "", "filter by scope id")
 	artifactStaleCmd.Flags().StringSliceVar(&artifactLifecycle, "lifecycle", nil, "filter by lifecycle")
+	artifactStaleCmd.Flags().BoolVar(&artifactStaleApply, "apply", false, "flip listed candidate artifacts with no access in --idle-days to lifecycle: deprecated (rewrites only the lifecycle line, keeps mtime)")
+	artifactStaleCmd.Flags().IntVar(&artifactStaleIdleDays, "idle-days", 180, "with --apply: only flip artifacts with zero artifact_access rows in this window")
 
 	artifactSearchCmd.Flags().StringVar(&artifactSearchBackend, "backend", "", "embedder backend (stub|python|ollama; default $GIANTMEM_EMBED_BACKEND)")
 	artifactSearchCmd.Flags().IntVar(&artifactSearchLimit, "limit", 10, "max results")
@@ -176,6 +181,29 @@ func resolveWorkspace() (string, *artifacts.Index, error) {
 		return ws, nil, err
 	}
 	return ws, idx, nil
+}
+
+// cliListFilter maps the artifact command flags onto the SQL filter. Scope is
+// left out on purpose: registry membership needs the Go-side check.
+func cliListFilter() artifacts.ListFilter {
+	f := artifacts.ListFilter{
+		Type:      artifactType,
+		Status:    artifactStatus,
+		Lifecycle: artifactLifecycle,
+		Feature:   artifactFeature,
+		Domain:    artifactDomain,
+		Branch:    artifactBranch,
+	}
+	if artifactRepo != "" && artifactRepo != "all" && artifactRepo != "current" {
+		f.Repo = artifactRepo
+	}
+	if artifactSinceDate != "" {
+		f.Since, _ = time.Parse("2006-01-02", artifactSinceDate)
+	}
+	if artifactUntilDate != "" {
+		f.Until, _ = time.Parse("2006-01-02", artifactUntilDate)
+	}
+	return f
 }
 
 func filterArtifacts(rows []artifacts.Artifact) []artifacts.Artifact {
@@ -370,14 +398,9 @@ func runArtifactListAll() error {
 }
 
 // runArtifactListFromTable serves `artifact list` from the SQL projection.
-// Filtering reuses filterArtifacts so scope/lifecycle/repo semantics stay
-// identical to the filesystem path; only the data source changes.
+// Coarse filters go into SQL via cliListFilter; filterArtifacts runs after so
+// scope-registry semantics stay identical to the filesystem path.
 func runArtifactListFromTable(live *sql.DB) error {
-	all, err := artifacts.ListArtifacts(live, artifacts.ListFilter{}, "", 0)
-	if err != nil {
-		return err
-	}
-
 	// Default (no --repo, or --repo current) scopes to the current repo, matching
 	// the filesystem path that only scanned the current workspace.
 	if artifactRepo == "" || artifactRepo == "current" {
@@ -390,6 +413,11 @@ func runArtifactListFromTable(live *sql.DB) error {
 		saved := artifactRepo
 		artifactRepo = currentRepo
 		defer func() { artifactRepo = saved }()
+	}
+
+	all, err := artifacts.ListArtifacts(live, cliListFilter(), "", 0)
+	if err != nil {
+		return err
 	}
 
 	rows := filterArtifacts(all)
@@ -681,6 +709,59 @@ func runArtifactStale(cmd *cobra.Command, args []string) error {
 		fmt.Printf("%-12s %-8s %-14s %-22s %-16s %s\n",
 			s.a.Type, s.a.Status, s.note, s.a.Feature+"/"+s.a.Domain+s.a.Name, s.a.Updated, s.a.ID)
 	}
+	live, err := db.Open(liveDBPath())
+	if err != nil {
+		return err
+	}
+	defer live.Close()
+	accessed, err := artifacts.AccessCounts(live, now.AddDate(0, 0, -artifactStaleIdleDays))
+	if err != nil {
+		return err
+	}
+	eligible := make([]artifacts.Artifact, 0)
+	for _, s := range stale {
+		if s.a.Lifecycle == artifacts.LifecycleCandidate && accessed[s.a.ID] == 0 && s.a.Worktree != "" {
+			eligible = append(eligible, s.a)
+		}
+	}
+	if !artifactStaleApply {
+		fmt.Printf("# auto-deprecate eligible: %d candidate(s) with no access in %dd (run with --apply)\n",
+			len(eligible), artifactStaleIdleDays)
+		return nil
+	}
+
+	touched := map[string]struct{}{}
+	flipped, skipped := 0, 0
+	for _, a := range eligible {
+		path := filepath.Join(a.Worktree, ".giantmem", a.Path)
+		changed, err := artifacts.SetLifecycle(path, artifacts.LifecycleDeprecated)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  skip %s: %v\n", a.ID, err)
+			skipped++
+			continue
+		}
+		if !changed {
+			// no frontmatter or no lifecycle line: the backfill scripts own adding one
+			skipped++
+			continue
+		}
+		flipped++
+		touched[filepath.Join(a.Worktree, ".giantmem")] = struct{}{}
+		fmt.Printf("deprecated %s\n", a.ID)
+	}
+	for ws := range touched {
+		// mtime was preserved, so the cached artifacts.json would still say candidate
+		if idx, err := artifacts.Scan(ws); err == nil {
+			if err := artifacts.Save(ws, idx); err != nil {
+				fmt.Fprintf(os.Stderr, "  index %s: %v\n", ws, err)
+			}
+		}
+		if _, err := backfill.RunOnWorkspace(live, archiveBasePath(), ws); err != nil {
+			fmt.Fprintf(os.Stderr, "  reindex %s: %v\n", ws, err)
+		}
+	}
+	fmt.Printf("# auto-deprecate: flipped=%d skipped=%d (candidate, stale, no access in %dd)\n",
+		flipped, skipped, artifactStaleIdleDays)
 	return nil
 }
 
@@ -694,7 +775,7 @@ func runArtifactSearch(cmd *cobra.Command, args []string) error {
 
 	// Source the corpus from the projection table (same as MCP) so CLI search
 	// reflects the live memory store, not a one-off filesystem crawl.
-	rows, err := mcpSourceArtifacts(artifactRepo)
+	rows, err := mcpSourceArtifacts(artifactRepo, cliListFilter(), 0)
 	if err != nil {
 		return err
 	}

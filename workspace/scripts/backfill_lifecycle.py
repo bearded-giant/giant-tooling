@@ -5,10 +5,11 @@ Backfill `lifecycle:` frontmatter into existing .giantmem/ artifacts.
 Usage:
     backfill_lifecycle.py [workspace_dir] [--dry-run] [--all-repos]
 
-Rules:
-  - Files under research/ or context/discoveries.md -> lifecycle: candidate
+Rules (mirror internal/artifacts/lifecycle.go defaultLifecycle):
+  - research/, history/, context/*.md except patterns.md, *-notes.md -> candidate
   - All other artifact-shaped files -> lifecycle: durable
   - Files that already declare lifecycle are left untouched (idempotent).
+  - mtime is preserved: a metadata stamp is not an edit.
 
 Stdlib only — matches the rest of giant-tooling/workspace/scripts/.
 """
@@ -25,12 +26,20 @@ ARTIFACT_EXTS = (".md", ".json", ".yaml", ".yml")
 
 def default_lifecycle(rel: Path) -> str:
     p = str(rel).replace(os.sep, "/").lower()
-    if p.endswith("context/discoveries.md"):
-        return "candidate"
     parts = p.split("/")
-    if "research" in parts:
+    if "research" in parts or "history" in parts:
+        return "candidate"
+    if len(parts) >= 2 and parts[-2] == "context" and parts[-1] != "patterns.md":
+        return "candidate"
+    if parts[-1] == "notes.md" or parts[-1].endswith("-notes.md"):
         return "candidate"
     return "durable"
+
+
+def write_preserving_mtime(path: Path, text: str) -> None:
+    st = path.stat()
+    path.write_text(text)
+    os.utime(path, (st.st_atime, st.st_mtime))
 
 
 def parse_frontmatter(text: str):
@@ -69,7 +78,7 @@ def patch_md(path: Path, lifecycle: str, dry_run: bool) -> str:
     new_block = "---\n" + "\n".join(new_lines) + "\n---\n" + parsed["body"]
     if dry_run:
         return f"would-stamp-{lifecycle}"
-    path.write_text(new_block)
+    write_preserving_mtime(path, new_block)
     return f"stamped-{lifecycle}"
 
 
@@ -90,7 +99,7 @@ def patch_json(path: Path, lifecycle: str, dry_run: bool) -> str:
     data["lifecycle"] = lifecycle
     if dry_run:
         return f"would-stamp-{lifecycle}"
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    write_preserving_mtime(path, json.dumps(data, indent=2) + "\n")
     return f"stamped-{lifecycle}"
 
 

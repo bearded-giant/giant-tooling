@@ -29,11 +29,13 @@ archives.db. A launchd agent (giantmem/launchd/...session-sweep.plist) runs
 this every 5 min by default.
 
 Sources are configured at ~/.config/giantmem/sources.toml. The default
-builtins are still 'workspace-md', 'claude-jsonl', and 'domain-json' but
+builtins are 'workspace-md', 'claude-jsonl', 'domain-json', and 'memory-md'.
 workspace-md/domain-json are LEGACY — live.db is now the authoritative
 store for .giantmem/ content (see 'giantmem index backfill'). Run them only
 to populate archives.db.documents source_type='workspace' for back-compat
-search; the daemon does not depend on them.
+search; the daemon does not depend on them. memory-md ingests
+~/.claude/projects/*/memory/*.md as source_type='memory' so harness memory is
+durable in archives.db (the SessionStart hook runs it detached).
 
 --source can be repeated to limit the run to specific sources.
 --sessions-only / --workspaces-only translate to source filters.`,
@@ -176,4 +178,3 @@ func init() {
 	ingestCmd.Flags().StringSliceVarP(&ingestSourceFilter, "source", "s", nil, "comma-separated source names to run (default: all enabled)")
 	rootCmd.AddCommand(ingestCmd)
 }
-

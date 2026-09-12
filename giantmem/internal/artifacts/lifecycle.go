@@ -22,7 +22,8 @@ func validLifecycle(v string) bool {
 
 // defaultLifecycle returns the lifecycle to stamp on a freshly-scanned
 // artifact whose frontmatter did not declare one. Path heuristics catch
-// AI-generated discoveries; everything else defaults to durable for
+// AI-generated discoveries, research, and session logs (history/ is machine
+// written and ages out via tier C); everything else defaults to durable for
 // backwards compat with existing artifacts.
 func defaultLifecycle(relPath string) string {
 	p := strings.ToLower(relPath)
@@ -30,6 +31,14 @@ func defaultLifecycle(relPath string) string {
 	case strings.HasSuffix(p, "context/discoveries.md"):
 		return LifecycleCandidate
 	case strings.HasPrefix(p, "research/") || strings.Contains(p, "/research/"):
+		return LifecycleCandidate
+	case strings.HasPrefix(p, "history/") || strings.Contains(p, "/history/"):
+		return LifecycleCandidate
+	case p == "notes.md" || strings.HasSuffix(p, "/notes.md") || strings.HasSuffix(p, "-notes.md"):
+		return LifecycleCandidate
+	case (strings.HasPrefix(p, "context/") || strings.Contains(p, "/context/")) &&
+		!strings.HasSuffix(p, "context/patterns.md"):
+		// context/patterns.md is the one curated file; the rest is model-written
 		return LifecycleCandidate
 	}
 	return LifecycleDurable

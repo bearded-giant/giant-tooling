@@ -58,12 +58,12 @@ type Config struct {
 
 // SourceConfig is one [[source]] block.
 type SourceConfig struct {
-	Name       string            `toml:"name"`
-	Kind       string            `toml:"kind"` // builtin | external
-	Enabled    bool              `toml:"enabled"`
-	IngestCmd  string            `toml:"ingest_cmd"`
-	Parse      string            `toml:"parse"` // json (currently only)
-	Mapping    map[string]string `toml:"mapping"`
+	Name      string            `toml:"name"`
+	Kind      string            `toml:"kind"` // builtin | external
+	Enabled   bool              `toml:"enabled"`
+	IngestCmd string            `toml:"ingest_cmd"`
+	Parse     string            `toml:"parse"` // json (currently only)
+	Mapping   map[string]string `toml:"mapping"`
 }
 
 // LoadConfig reads sources.toml. If missing, returns the default builtin set.
@@ -85,6 +85,7 @@ func DefaultConfig() *Config {
 			{Name: "workspace-md", Kind: "builtin", Enabled: true},
 			{Name: "claude-jsonl", Kind: "builtin", Enabled: true},
 			{Name: "domain-json", Kind: "builtin", Enabled: true},
+			{Name: "memory-md", Kind: "builtin", Enabled: true},
 		},
 	}
 }

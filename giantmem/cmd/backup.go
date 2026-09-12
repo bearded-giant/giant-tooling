@@ -21,9 +21,9 @@ var (
 
 var backupCmd = &cobra.Command{
 	Use:   "backup",
-	Short: "Snapshot archives.db to a private git repo (init / push / status)",
-	Long: `Maintain a backup of archives.db (and optionally live.db) in a private
-git repo. Designed to pair with /schedule for periodic snapshots.
+	Short: "Snapshot archives.db and live.db to a private git repo (init / push / status)",
+	Long: `Maintain a backup of archives.db and live.db in a private git repo.
+Designed to pair with /schedule for periodic snapshots.
 
 The default backup dir is ~/giantmem_archive_backup. Pass --dir to override.`,
 }
@@ -74,7 +74,7 @@ var backupInitCmd = &cobra.Command{
 
 var backupPushCmd = &cobra.Command{
 	Use:   "push",
-	Short: "Copy archives.db into the backup repo, commit, and push (unless --no-push)",
+	Short: "Copy archives.db and live.db into the backup repo, commit, and push (unless --no-push)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir := backupDirPath()
 		if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {

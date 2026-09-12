@@ -28,8 +28,10 @@ Type inference from path:
   .giantmem/features/{name}/{name}-notes.md                 -> notes
   .giantmem/domains/{name}.json                             -> domain
   .giantmem/context/patterns.md, .giantmem/context/*.md     -> pattern
+  .giantmem/notes.md                                        -> notes
 """
 
+import os
 import sys
 import json
 import argparse
@@ -117,6 +119,9 @@ def classify(path: Path, workspace_dir: Path) -> ArtifactSpec | None:
     if len(parts) == 2 and parts[0] == "context" and parts[1].endswith(".md"):
         return ArtifactSpec(type="pattern", name=parts[1].removesuffix(".md"))
 
+    if len(parts) == 1 and parts[0] == "notes.md":
+        return ArtifactSpec(type="notes", name="notes")
+
     return None
 
 
@@ -195,9 +200,16 @@ def backfill_md(path: Path, spec: ArtifactSpec, repo: str, branch: str,
         print(f"  [dry-run] would stamp {path}")
         return True
 
-    path.write_text(new_text)
+    write_preserving_mtime(path, new_text)
     print(f"  stamped {path}")
     return True
+
+
+def write_preserving_mtime(path: Path, text: str) -> None:
+    # a metadata stamp is not an edit: keep recency and recent-writes honest
+    st = path.stat()
+    path.write_text(text)
+    os.utime(path, (st.st_atime, st.st_mtime))
 
 
 def backfill_json(path: Path, spec: ArtifactSpec, repo: str, branch: str,
@@ -223,7 +235,7 @@ def backfill_json(path: Path, spec: ArtifactSpec, repo: str, branch: str,
         print(f"  [dry-run] would stamp {path}")
         return True
 
-    path.write_text(json.dumps(data, indent=2) + "\n")
+    write_preserving_mtime(path, json.dumps(data, indent=2) + "\n")
     print(f"  stamped {path}")
     return True
 
