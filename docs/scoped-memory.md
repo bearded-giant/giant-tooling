@@ -1,6 +1,6 @@
 # Scoped memory — giant-tooling surfaces
 
-What this repo ships from the scoped-memory feature. Focuses on giantmem CLI, MCP, scripts, and embedder daemon. Mental model + session-hook wiring + `/review-memory` live on the claude-code-config side: see [`scoped-memory-guide.md`](../../claude-code-config/docs/scoped-memory-guide.md) and [`scoped-memory-overview.md`](../../claude-code-config/docs/scoped-memory-overview.md).
+What this repo ships from the scoped-memory feature. Focuses on giantmem CLI, MCP, scripts, and embedder daemon. Mental model + session-hook wiring + `/review-memory` live on the claude-code-config side: see [`scoped-memory-overview.md`](../../claude-code-config/docs/scoped-memory-overview.md).
 
 ## What landed
 
@@ -139,9 +139,8 @@ GIANTMEM_EMBED_BACKEND=python giantmem db embed --backfill   # real semantic (op
 
 | Topic | Location |
 |---|---|
-| Mental model + narrative | `claude-code-config/docs/scoped-memory-guide.md` |
+| Mental model + narrative | `claude-code-config/docs/scoped-memory-overview.md` |
 | One-page overview | `claude-code-config/docs/scoped-memory-overview.md` |
 | `/review-memory` slash command | `claude-code-config/commands/review-memory.md` |
-| `preload_packs.yaml` session-hook layers | `claude-code-config/config/preload_packs.yaml` |
-| Session-hook refactor | `workspace/workspace_session_hook.py` (this repo) |
+| Session-hook refactor | `claude-code-config/hooks/workspace_session_hook.py` (the registered copy; `workspace/workspace_session_hook.py` in this repo is an older unused fork) |
 | Backend decision rationale | (was at `claude-code-config/.giantmem/features/scoped-memory/research/sqlite_vec_decision.md`; .giantmem/ is gitignored) |
