@@ -27,9 +27,9 @@ var projectListCmd = &cobra.Command{
 
 var projectDeleteCmd = &cobra.Command{
 	Use:   "delete <project>",
-	Short: "Remove a project from the live index (live_docs, artifacts, embeddings, sessions)",
+	Short: "Remove a project from the live index (live_docs, artifacts, embeddings, access rows)",
 	Long: `Removes every live-index row for the project: live_docs (+fts via trigger),
-active_sessions, artifacts and their embeddings/access rows.
+artifacts and their embeddings/access rows.
 
 archives.db documents are kept unless --purge-archive is passed, so long-term
 search still finds the project's history after a live-index delete.
@@ -52,8 +52,30 @@ func init() {
 	projectDeleteCmd.Flags().BoolVar(&projectDeleteYes, "yes", false, "skip confirmation prompt")
 	projectDeleteCmd.Flags().BoolVar(&projectPurgeArchive, "purge-archive", false, "also delete the project's archives.db documents")
 	projectDeleteCmd.Flags().BoolVar(&projectJSON, "json", false, "JSON output")
-	projectCmd.AddCommand(projectListCmd, projectDeleteCmd)
+	projectCanonicalCmd.Flags().BoolVar(&projectJSON, "json", false, "JSON output")
+	projectCmd.AddCommand(projectListCmd, projectDeleteCmd, projectCanonicalCmd)
 	rootCmd.AddCommand(projectCmd)
+}
+
+var projectCanonicalCmd = &cobra.Command{
+	Use:   "canonical [path]",
+	Short: "Print the canonical project name for a path (default: cwd)",
+	Args:  cobra.MaximumNArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cwd, _ := os.Getwd()
+		if len(args) > 0 {
+			cwd = args[0]
+		}
+		info := project.Detect(cwd, archiveBasePath())
+		if projectJSON {
+			return output.JSON(map[string]string{
+				"project":       info.Project,
+				"worktree_path": info.WorktreePath,
+			})
+		}
+		fmt.Println(info.Project)
+		return nil
+	},
 }
 
 func runProjectList(cmd *cobra.Command, args []string) error {
@@ -171,8 +193,8 @@ func runProjectDelete(cmd *cobra.Command, args []string) error {
 	if projectJSON {
 		return output.JSON(d)
 	}
-	fmt.Printf("deleted %q: %d live docs, %d artifacts, %d embeddings, %d access rows, %d sessions",
-		name, d.LiveDocs, d.Artifacts, d.Embeddings, d.AccessRows, d.Sessions)
+	fmt.Printf("deleted %q: %d live docs, %d artifacts, %d embeddings, %d access rows",
+		name, d.LiveDocs, d.Artifacts, d.Embeddings, d.AccessRows)
 	if projectPurgeArchive {
 		fmt.Printf(", %d archive docs", d.ArchiveDocs)
 	}
