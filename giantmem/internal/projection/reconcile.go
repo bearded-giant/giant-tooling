@@ -15,9 +15,10 @@ import (
 // Stats reports what one Reconcile pass changed.
 type Stats struct {
 	artifacts.TableStats
-	Embedded     int  `json:"embedded"`
-	EmbedSkipped int  `json:"embed_skipped"`
-	Embeddings   bool `json:"embeddings_enabled"`
+	Embedded         int  `json:"embedded"`
+	EmbedSkipped     int  `json:"embed_skipped"`
+	EmbeddingsPruned int  `json:"embeddings_pruned"`
+	Embeddings       bool `json:"embeddings_enabled"`
 }
 
 // Reconcile is the full incremental engine: project live_docs into the
@@ -36,6 +37,13 @@ func Reconcile(live *sql.DB, archiveBase string, embedder search.Embedder) (Stat
 		return st, err
 	}
 	st.TableStats = ts
+
+	// runs even with embeddings disabled: orphans from deleted artifacts still rank in KNN
+	pruned, err := search.DeleteOrphanEmbeddings(live)
+	if err != nil {
+		return st, err
+	}
+	st.EmbeddingsPruned = pruned
 
 	if !embeddingsEnabled(embedder) {
 		return st, nil

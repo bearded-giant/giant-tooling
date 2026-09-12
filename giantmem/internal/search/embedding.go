@@ -400,6 +400,38 @@ func ResetEmbeddings(db *sql.DB) error {
 	return nil
 }
 
+// DeleteOrphanEmbeddings removes vectors whose artifact no longer exists, plus
+// vec0 rows with no meta. Returns the number of meta rows removed.
+func DeleteOrphanEmbeddings(db *sql.DB) (int, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	// vec0 rows first while meta still maps artifact_id -> rowid
+	if _, err := tx.Exec(
+		`DELETE FROM artifact_embeddings WHERE rowid IN (
+            SELECT rowid FROM artifact_embedding_meta
+            WHERE artifact_id NOT IN (SELECT id FROM artifacts))`,
+	); err != nil {
+		return 0, err
+	}
+	res, err := tx.Exec(
+		`DELETE FROM artifact_embedding_meta WHERE artifact_id NOT IN (SELECT id FROM artifacts)`,
+	)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	if _, err := tx.Exec(
+		`DELETE FROM artifact_embeddings WHERE rowid NOT IN (SELECT rowid FROM artifact_embedding_meta)`,
+	); err != nil {
+		return 0, err
+	}
+	return int(n), tx.Commit()
+}
+
 // EmbeddingsCount returns total rows in artifact_embedding_meta.
 func EmbeddingsCount(db *sql.DB) (int, error) {
 	var n int
