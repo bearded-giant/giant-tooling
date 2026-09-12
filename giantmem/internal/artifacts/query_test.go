@@ -31,8 +31,8 @@ func TestListArtifacts_FiltersAccessAndVecJoins(t *testing.T) {
 	}
 	// embedding presence for the proposal only.
 	if _, err := d.Exec(
-		`INSERT INTO artifact_embedding_meta(artifact_id, rowid, body_hash, dim, model, updated_at)
-         VALUES (?,?,?,?,?,?)`,
+		`INSERT INTO artifact_embedding_meta(artifact_id, ord, rowid, body_hash, dim, model, updated_at)
+         VALUES (?,0,?,?,?,?,?)`,
 		"repoA/feat:foo:proposal", 1, "h", 768, "m", now); err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,6 +71,9 @@ type HybridResult struct {
 	VectorScore  float64            `json:"vector_score"`
 	RecencyScore float64            `json:"recency_score"`
 	AccessScore  float64            `json:"access_score"`
+	// best-matching chunk, when the vector arm scored this artifact
+	ChunkOrd int    `json:"chunk_ord"`
+	Passage  string `json:"passage,omitempty"`
 }
 
 // Hybrid runs the blended ranker over a candidate set.
@@ -98,13 +102,19 @@ func Hybrid(
 		limit = 20
 	}
 
-	ftsScores := scoreFTS(query, candidates)
+	ftsScores := scoreFTS(live, query, candidates)
 	vecScores := map[string]float64{}
+	bestChunk := map[string]VecHit{}
 	if w.Vector > 0 && live != nil && len(queryVec) > 0 {
-		hits, err := NearestNeighbors(live, queryVec, 200)
+		// several hits per artifact now that bodies are chunked; keep the best
+		hits, err := NearestNeighbors(live, queryVec, 400)
 		if err == nil {
 			for _, h := range hits {
-				vecScores[h.ArtifactID] = distanceToScore(h.Distance)
+				s := distanceToScore(h.Distance)
+				if s > vecScores[h.ArtifactID] {
+					vecScores[h.ArtifactID] = s
+					bestChunk[h.ArtifactID] = h
+				}
 			}
 		}
 	}
@@ -146,6 +156,8 @@ func Hybrid(
 			VectorScore:  vecS,
 			RecencyScore: recS,
 			AccessScore:  accS,
+			ChunkOrd:     bestChunk[a.ID].Ord,
+			Passage:      bestChunk[a.ID].Snippet,
 		})
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].Score > out[j].Score })
@@ -165,25 +177,87 @@ func distanceToScore(d float64) float64 {
 	return 1.0 / (1.0 + d)
 }
 
-// scoreFTS returns substring-hit scores per artifact id. Body fetched
-// lazily; small files. Score = 1.0 when the query substring appears, 0
-// otherwise. Phase 2 keeps it cheap; future iteration could plug
-// SQLite FTS bm25 here when artifact bodies are indexed.
-func scoreFTS(query string, candidates []artifacts.Artifact) map[string]float64 {
+// scoreFTS ranks candidate bodies with FTS5 bm25 over live_docs_fts (content
+// column only), normalized so the best candidate hit scores 1.0. Bodies carry
+// their frontmatter, so name/feature/domain matches are covered too. Empty when
+// live is nil or nothing matches.
+func scoreFTS(live *sql.DB, query string, candidates []artifacts.Artifact) map[string]float64 {
 	out := map[string]float64{}
-	if strings.TrimSpace(query) == "" {
+	match := ftsBodyQuery(query)
+	if live == nil || match == "" {
 		return out
 	}
-	needle := strings.ToLower(query)
+	byPath := make(map[string]string, len(candidates))
 	for _, a := range candidates {
-		for _, field := range []string{a.ID, a.Feature, a.Domain, a.Name} {
-			if field != "" && strings.Contains(strings.ToLower(field), needle) {
-				out[a.ID] = 1.0
-				break
-			}
+		if a.Worktree != "" && a.Path != "" {
+			byPath[a.Worktree+"/.giantmem/"+a.Path] = a.ID
 		}
 	}
+	rows, err := live.Query(
+		`SELECT ld.path, bm25(live_docs_fts, 0, 0, 0, 0, 1)
+           FROM live_docs_fts
+           JOIN live_docs ld ON ld.rowid = live_docs_fts.rowid
+          WHERE live_docs_fts MATCH ?`, match)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	raw := map[string]float64{}
+	best := 0.0
+	for rows.Next() {
+		var path string
+		var s float64
+		if err := rows.Scan(&path, &s); err != nil {
+			return out
+		}
+		id, ok := byPath[path]
+		if !ok || s >= 0 {
+			continue
+		}
+		// fts5 bm25 is negative, more negative = better
+		if s < best {
+			best = s
+		}
+		raw[id] = s
+	}
+	if best == 0 {
+		return out
+	}
+	for id, s := range raw {
+		out[id] = s / best
+	}
 	return out
+}
+
+var ftsTokenRE = regexp.MustCompile(`[A-Za-z0-9_]+`)
+
+// ftsBodyQuery turns a natural-language query into an OR match over the
+// content column, so a prompt-length query still ranks by bm25 instead of
+// requiring every word. Queries already using FTS5 syntax pass through.
+func ftsBodyQuery(query string) string {
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return ""
+	}
+	if ftsOperatorRE.MatchString(query) {
+		return query
+	}
+	seen := map[string]bool{}
+	terms := make([]string, 0, 12)
+	for _, tok := range ftsTokenRE.FindAllString(strings.ToLower(query), -1) {
+		if len(tok) < 3 || seen[tok] {
+			continue
+		}
+		seen[tok] = true
+		terms = append(terms, `"`+tok+`"`)
+		if len(terms) >= 12 {
+			break
+		}
+	}
+	if len(terms) == 0 {
+		return ""
+	}
+	return "content: (" + strings.Join(terms, " OR ") + ")"
 }
 
 // recencyScore maps an artifact's Updated date to a [0, 1] decay. Today

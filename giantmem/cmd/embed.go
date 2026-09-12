@@ -98,13 +98,23 @@ func runEmbed(cmd *cobra.Command, args []string) error {
 			skipped++
 			continue
 		}
-		vec, err := embedder.Embed(body)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "[%d/%d] FAIL %s: %v\n", i+1, total, a.ID, err)
+		chunks := search.ChunkBodyFor(a.Type, body)
+		vecs := make([][]float32, 0, len(chunks))
+		var embedErr error
+		for _, c := range chunks {
+			vec, err := embedder.Embed(c.Text)
+			if err != nil {
+				embedErr = err
+				break
+			}
+			vecs = append(vecs, vec)
+		}
+		if embedErr != nil {
+			fmt.Fprintf(os.Stderr, "[%d/%d] FAIL %s: %v\n", i+1, total, a.ID, embedErr)
 			failed++
 			continue
 		}
-		changed, err := search.WriteEmbedding(live, a.ID, body, vec, embedder.ModelName())
+		changed, err := search.WriteChunkEmbeddings(live, a.ID, body, chunks, vecs, embedder.ModelName())
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[%d/%d] FAIL %s: %v\n", i+1, total, a.ID, err)
 			failed++

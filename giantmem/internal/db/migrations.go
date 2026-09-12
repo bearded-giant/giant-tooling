@@ -293,6 +293,65 @@ var liveMigrations = []Migration{
 			return err
 		},
 	},
+	{
+		Version: 8,
+		Name:    "artifact_embedding_meta: one row per chunk (artifact_id, ord)",
+		Apply: func(tx *sql.Tx) error {
+			// existing vectors are whole-doc heads; drop them so the reconciler
+			// re-embeds every artifact as chunks
+			stmts := []string{
+				`DROP TABLE IF EXISTS artifact_embedding_meta`,
+				`CREATE TABLE artifact_embedding_meta (
+                    artifact_id TEXT NOT NULL,
+                    ord         INTEGER NOT NULL,
+                    rowid       INTEGER NOT NULL,
+                    chunk_start INTEGER NOT NULL DEFAULT 0,
+                    chunk_end   INTEGER NOT NULL DEFAULT 0,
+                    snippet     TEXT NOT NULL DEFAULT '',
+                    body_hash   TEXT NOT NULL,
+                    dim         INTEGER NOT NULL,
+                    model       TEXT NOT NULL,
+                    updated_at  TEXT NOT NULL,
+                    PRIMARY KEY (artifact_id, ord)
+                )`,
+				`CREATE INDEX IF NOT EXISTS idx_artifact_embedding_meta_rowid ON artifact_embedding_meta(rowid)`,
+				`DELETE FROM artifact_embeddings`,
+			}
+			for _, s := range stmts {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
+	{
+		Version: 9,
+		Name:    "recall_log: what the UserPromptSubmit hook injected, for precision reports",
+		Apply: func(tx *sql.Tx) error {
+			stmts := []string{
+				`CREATE TABLE IF NOT EXISTS recall_log (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts          TEXT NOT NULL,
+                    session_id  TEXT NOT NULL DEFAULT '',
+                    repo        TEXT NOT NULL DEFAULT '',
+                    rank        INTEGER NOT NULL,
+                    tag         TEXT NOT NULL,
+                    cur         INTEGER NOT NULL DEFAULT 0,
+                    key         TEXT NOT NULL,
+                    path        TEXT NOT NULL DEFAULT ''
+                )`,
+				`CREATE INDEX IF NOT EXISTS idx_recall_log_session ON recall_log(session_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_recall_log_ts ON recall_log(ts)`,
+			}
+			for _, s := range stmts {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // embeddingDimFromEnv returns the vec0 dimension as a string, honoring

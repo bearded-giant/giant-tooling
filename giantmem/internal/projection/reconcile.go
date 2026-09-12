@@ -72,8 +72,8 @@ func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int
 		return 0, 0, err
 	}
 	type row struct {
-		abs, body, id string
-		mtime         int64
+		abs, body, id, typ string
+		mtime              int64
 	}
 	// Collapse branch/worktree siblings (same projectedID, different body) to one
 	// winner per id — newest mtime, tie-break highest path — matching
@@ -99,7 +99,7 @@ func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int
 			continue
 		}
 		_, body, _ := artifacts.ParseFrontmatter(content)
-		r := row{abs: abs, body: body, id: a.ID, mtime: mtime}
+		r := row{abs: abs, body: body, id: a.ID, typ: a.Type, mtime: mtime}
 		if cur, ok := winners[a.ID]; !ok || r.mtime > cur.mtime || (r.mtime == cur.mtime && r.abs > cur.abs) {
 			winners[a.ID] = r
 		}
@@ -119,11 +119,16 @@ func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int
 			skipped++
 			continue
 		}
-		vec, eerr := embedder.Embed(w.body)
-		if eerr != nil {
-			return embedded, skipped, eerr
+		chunks := search.ChunkBodyFor(w.typ, w.body)
+		vecs := make([][]float32, 0, len(chunks))
+		for _, c := range chunks {
+			vec, eerr := embedder.Embed(c.Text)
+			if eerr != nil {
+				return embedded, skipped, eerr
+			}
+			vecs = append(vecs, vec)
 		}
-		changed, eerr := search.WriteEmbedding(live, w.id, w.body, vec, embedder.ModelName())
+		changed, eerr := search.WriteChunkEmbeddings(live, w.id, w.body, chunks, vecs, embedder.ModelName())
 		if eerr != nil {
 			return embedded, skipped, eerr
 		}

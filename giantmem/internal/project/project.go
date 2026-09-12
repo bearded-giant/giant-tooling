@@ -145,20 +145,16 @@ func Delete(live, archive *sql.DB, name string, purgeArchive bool) (Deleted, err
 			d.AccessRows += n
 		}
 		if hasEmbeddings {
-			var rowid int64
-			err := tx.QueryRow(`SELECT rowid FROM artifact_embedding_meta WHERE artifact_id = ?`, id).Scan(&rowid)
-			switch err {
-			case nil:
-				if _, err := tx.Exec(`DELETE FROM artifact_embeddings WHERE rowid = ?`, rowid); err != nil {
-					return d, err
-				}
-				if _, err := tx.Exec(`DELETE FROM artifact_embedding_meta WHERE artifact_id = ?`, id); err != nil {
-					return d, err
-				}
-				d.Embeddings++
-			case sql.ErrNoRows:
-			default:
+			if _, err := tx.Exec(`DELETE FROM artifact_embeddings WHERE rowid IN (
+                    SELECT rowid FROM artifact_embedding_meta WHERE artifact_id = ?)`, id); err != nil {
 				return d, err
+			}
+			n, err := execCount(tx, `DELETE FROM artifact_embedding_meta WHERE artifact_id = ?`, id)
+			if err != nil {
+				return d, err
+			}
+			if n > 0 {
+				d.Embeddings++
 			}
 		}
 		if _, err := tx.Exec(`DELETE FROM artifacts WHERE id = ?`, id); err != nil {

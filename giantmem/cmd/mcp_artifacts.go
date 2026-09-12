@@ -54,12 +54,21 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 	}
 
 	var sinceDate, untilDate string
+	filter := artifacts.ListFilter{
+		Type:      mcpSplitCSV(args.Type),
+		Status:    mcpSplitCSV(args.Status),
+		Lifecycle: mcpSplitCSV(args.Lifecycle),
+		Feature:   args.Feature,
+		Domain:    args.Domain,
+		Branch:    args.Branch,
+	}
 	if args.Since != "" {
 		t, err := search.ParseSince(args.Since)
 		if err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		sinceDate = t.Format("2006-01-02")
+		filter.Since = t
 	}
 	if args.Until != "" {
 		t, err := search.ParseUntil(args.Until)
@@ -67,9 +76,16 @@ func findArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args findArti
 			return mcp.NewToolResultError(err.Error()), nil
 		}
 		untilDate = t.Format("2006-01-02")
+		filter.Until = t
 	}
 
-	rows, err := mcpSourceArtifacts(args.Repo)
+	// scope membership, query grep, and reranking still filter in Go below, so
+	// the SQL limit is only safe for a plain listing
+	sqlLimit := 0
+	if args.Scope == "" && args.Query == "" && !args.Semantic {
+		sqlLimit = limit
+	}
+	rows, err := mcpSourceArtifacts(args.Repo, filter, sqlLimit)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -187,7 +203,7 @@ func mcpHybridRerank(hits []artifactHit, candidates []artifacts.Artifact, query 
 	}
 	out := make([]artifactHit, 0, len(results))
 	for _, r := range results {
-		out = append(out, mcpArtifactHit(r.Artifact, ""))
+		out = append(out, mcpArtifactHit(r.Artifact, r.Passage))
 	}
 	return out
 }
@@ -256,22 +272,23 @@ func mcpArtifactHit(a artifacts.Artifact, snippet string) artifactHit {
 // the SQL projection (cross-repo, no filesystem crawl) when it's populated and
 // falling back to a filesystem crawl/scan on first run. repo: ""/"all" => every
 // repo, "current" => the cwd's repo, otherwise a named repo.
-func mcpSourceArtifacts(repo string) ([]artifacts.Artifact, error) {
+// mcpSourceArtifacts reads candidates from the projection table with the
+// filters pushed into SQL. limit<=0 means all matching rows; callers that
+// filter or rerank further in Go must pass 0. The filesystem fallback ignores
+// both, so callers keep their Go-side checks.
+func mcpSourceArtifacts(repo string, f artifacts.ListFilter, limit int) ([]artifacts.Artifact, error) {
 	if live := openLiveDBQuiet(); live != nil {
 		if artifacts.TableHasRows(live) {
 			defer live.Close()
-			all, err := artifacts.ListArtifacts(live, artifacts.ListFilter{}, "", 0)
-			if err != nil {
-				return nil, err
-			}
 			switch repo {
 			case "", "all":
-				return all, nil
+				f.Repo = ""
 			case "current":
-				return mcpFilterRepo(all, mcpCurrentRepoName()), nil
+				f.Repo = mcpCurrentRepoName()
 			default:
-				return mcpFilterRepo(all, repo), nil
+				f.Repo = repo
 			}
+			return artifacts.ListArtifacts(live, f, "", limit)
 		}
 		live.Close()
 	}
@@ -413,7 +430,7 @@ func getArtifactHandler(_ context.Context, _ mcp.CallToolRequest, args getArtifa
 	if strings.TrimSpace(args.ID) == "" {
 		return mcp.NewToolResultError("id is required"), nil
 	}
-	all, err := mcpSourceArtifacts("all")
+	all, err := mcpSourceArtifacts("all", artifacts.ListFilter{}, 0)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}

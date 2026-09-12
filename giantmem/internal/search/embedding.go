@@ -290,12 +290,16 @@ func (o *ollamaEmbedder) Embed(text string) ([]float32, error) {
 
 // ----- storage helpers ------------------------------------------------------
 
-// EmbeddingMeta is the per-artifact metadata kept in
-// artifact_embedding_meta. The vector itself lives in the artifact_embeddings
-// vec0 virtual table keyed on rowid.
+// EmbeddingMeta is one chunk's row in artifact_embedding_meta. The vector
+// itself lives in the artifact_embeddings vec0 virtual table keyed on rowid.
+// Every chunk of an artifact carries the same BodyHash.
 type EmbeddingMeta struct {
 	ArtifactID string
+	Ord        int
 	RowID      int64
+	Start      int
+	End        int
+	Snippet    string
 	BodyHash   string
 	Dim        int
 	Model      string
@@ -308,15 +312,16 @@ func BodyHash(body string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// LoadEmbeddingMeta returns the meta row for artifactID, or (nil, nil) when
-// no embedding exists.
+// LoadEmbeddingMeta returns the head-chunk (ord 0) meta row for artifactID,
+// or (nil, nil) when no embedding exists. Its BodyHash and Dim stand for the
+// whole artifact since chunks are written atomically.
 func LoadEmbeddingMeta(db *sql.DB, artifactID string) (*EmbeddingMeta, error) {
 	var m EmbeddingMeta
 	err := db.QueryRow(
-		`SELECT artifact_id, rowid, body_hash, dim, model, updated_at
-         FROM artifact_embedding_meta WHERE artifact_id = ?`,
+		`SELECT artifact_id, ord, rowid, chunk_start, chunk_end, snippet, body_hash, dim, model, updated_at
+         FROM artifact_embedding_meta WHERE artifact_id = ? AND ord = 0`,
 		artifactID,
-	).Scan(&m.ArtifactID, &m.RowID, &m.BodyHash, &m.Dim, &m.Model, &m.UpdatedAt)
+	).Scan(&m.ArtifactID, &m.Ord, &m.RowID, &m.Start, &m.End, &m.Snippet, &m.BodyHash, &m.Dim, &m.Model, &m.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -326,14 +331,25 @@ func LoadEmbeddingMeta(db *sql.DB, artifactID string) (*EmbeddingMeta, error) {
 	return &m, nil
 }
 
-// WriteEmbedding upserts an artifact's vector. Skip when the body hash
-// matches the existing meta. Returns (changed=true) when a write occurred,
-// (changed=false) when the existing row was already up to date.
+// WriteEmbedding stores a single whole-body vector (one chunk). Kept for
+// callers and tests that embed short texts; production paths chunk first.
 func WriteEmbedding(db *sql.DB, artifactID, body string, vec []float32, model string) (bool, error) {
+	return WriteChunkEmbeddings(db, artifactID, body,
+		[]Chunk{{Ord: 0, Start: 0, End: len(body), Text: body}}, [][]float32{vec}, model)
+}
+
+// WriteChunkEmbeddings replaces an artifact's vectors with one row per chunk.
+// Skips when the body hash and dim already match. Returns changed=true when a
+// write occurred.
+func WriteChunkEmbeddings(db *sql.DB, artifactID, body string, chunks []Chunk, vecs [][]float32, model string) (bool, error) {
 	if db == nil {
 		return false, fmt.Errorf("nil db")
 	}
-	if len(vec) == 0 {
+	if len(chunks) == 0 || len(chunks) != len(vecs) {
+		return false, fmt.Errorf("chunks/vecs mismatch: %d vs %d", len(chunks), len(vecs))
+	}
+	dim := len(vecs[0])
+	if dim == 0 {
 		return false, fmt.Errorf("empty vec")
 	}
 	hash := BodyHash(body)
@@ -341,11 +357,9 @@ func WriteEmbedding(db *sql.DB, artifactID, body string, vec []float32, model st
 	if err != nil {
 		return false, err
 	}
-	if existing != nil && existing.BodyHash == hash && existing.Dim == len(vec) {
+	if existing != nil && existing.BodyHash == hash && existing.Dim == dim {
 		return false, nil
 	}
-
-	jsonVec := vecToJSON(vec)
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -353,38 +367,36 @@ func WriteEmbedding(db *sql.DB, artifactID, body string, vec []float32, model st
 	}
 	defer tx.Rollback()
 
-	var rowID int64
-	if existing != nil {
-		rowID = existing.RowID
+	if _, err := tx.Exec(
+		`DELETE FROM artifact_embeddings WHERE rowid IN (
+            SELECT rowid FROM artifact_embedding_meta WHERE artifact_id = ?)`, artifactID,
+	); err != nil {
+		return false, err
+	}
+	if _, err := tx.Exec(`DELETE FROM artifact_embedding_meta WHERE artifact_id = ?`, artifactID); err != nil {
+		return false, err
+	}
+	now := time.Now().UTC().Format(time.RFC3339)
+	for i, c := range chunks {
+		if len(vecs[i]) != dim {
+			return false, fmt.Errorf("chunk %d dim %d != %d", i, len(vecs[i]), dim)
+		}
+		res, err := tx.Exec(`INSERT INTO artifact_embeddings(embedding) VALUES (?)`, vecToJSON(vecs[i]))
+		if err != nil {
+			return false, err
+		}
+		rowID, err := res.LastInsertId()
+		if err != nil {
+			return false, err
+		}
 		if _, err := tx.Exec(
-			`UPDATE artifact_embeddings SET embedding = ? WHERE rowid = ?`,
-			jsonVec, rowID,
+			`INSERT INTO artifact_embedding_meta(artifact_id, ord, rowid, chunk_start, chunk_end, snippet,
+                 body_hash, dim, model, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			artifactID, c.Ord, rowID, c.Start, c.End, Snippet(c.Text), hash, dim, model, now,
 		); err != nil {
 			return false, err
 		}
-	} else {
-		res, err := tx.Exec(
-			`INSERT INTO artifact_embeddings(embedding) VALUES (?)`,
-			jsonVec,
-		)
-		if err != nil {
-			return false, err
-		}
-		rowID, err = res.LastInsertId()
-		if err != nil {
-			return false, err
-		}
-	}
-	if _, err := tx.Exec(
-		`INSERT INTO artifact_embedding_meta(artifact_id, rowid, body_hash, dim, model, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(artifact_id) DO UPDATE SET
-           rowid=excluded.rowid, body_hash=excluded.body_hash, dim=excluded.dim,
-           model=excluded.model, updated_at=excluded.updated_at`,
-		artifactID, rowID, hash, len(vec), model,
-		time.Now().UTC().Format(time.RFC3339),
-	); err != nil {
-		return false, err
 	}
 	if err := tx.Commit(); err != nil {
 		return false, err
@@ -436,15 +448,16 @@ func DeleteOrphanEmbeddings(db *sql.DB) (int, error) {
 	return int(n), tx.Commit()
 }
 
-// EmbeddingsCount returns total rows in artifact_embedding_meta.
+// EmbeddingsCount returns the number of artifacts with at least one vector.
 func EmbeddingsCount(db *sql.DB) (int, error) {
 	var n int
-	err := db.QueryRow(`SELECT COUNT(*) FROM artifact_embedding_meta`).Scan(&n)
+	err := db.QueryRow(`SELECT COUNT(DISTINCT artifact_id) FROM artifact_embedding_meta`).Scan(&n)
 	return n, err
 }
 
-// NearestNeighbors runs a KNN query against the vec0 table and returns
-// [(artifact_id, distance), ...] sorted ascending (closer first).
+// NearestNeighbors runs a KNN query against the vec0 table and returns one hit
+// per matching chunk, sorted ascending by distance (closer first). Callers
+// wanting one score per artifact take the best chunk.
 func NearestNeighbors(db *sql.DB, vec []float32, limit int) ([]VecHit, error) {
 	if limit <= 0 {
 		limit = 20
@@ -453,7 +466,7 @@ func NearestNeighbors(db *sql.DB, vec []float32, limit int) ([]VecHit, error) {
 	// vec0 KNN needs the k constraint in WHERE; a bare outer LIMIT is invisible
 	// to the KNN planner once a JOIN wraps the vec0 scan.
 	rows, err := db.Query(
-		`SELECT m.artifact_id, e.distance
+		`SELECT m.artifact_id, m.ord, m.snippet, e.distance
          FROM artifact_embeddings e
          JOIN artifact_embedding_meta m ON m.rowid = e.rowid
          WHERE e.embedding MATCH ? AND k = ?
@@ -467,7 +480,7 @@ func NearestNeighbors(db *sql.DB, vec []float32, limit int) ([]VecHit, error) {
 	out := []VecHit{}
 	for rows.Next() {
 		var h VecHit
-		if err := rows.Scan(&h.ArtifactID, &h.Distance); err != nil {
+		if err := rows.Scan(&h.ArtifactID, &h.Ord, &h.Snippet, &h.Distance); err != nil {
 			return nil, err
 		}
 		out = append(out, h)
@@ -475,9 +488,11 @@ func NearestNeighbors(db *sql.DB, vec []float32, limit int) ([]VecHit, error) {
 	return out, rows.Err()
 }
 
-// VecHit is one row from a KNN query.
+// VecHit is one chunk row from a KNN query.
 type VecHit struct {
 	ArtifactID string  `json:"id"`
+	Ord        int     `json:"ord"`
+	Snippet    string  `json:"snippet,omitempty"`
 	Distance   float64 `json:"distance"`
 }
 

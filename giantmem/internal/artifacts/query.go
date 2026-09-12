@@ -100,7 +100,7 @@ func ListArtifacts(live *sql.DB, f ListFilter, sortBy string, limit int) ([]Arti
               WHERE accessed_at > datetime('now','-30 day')
               GROUP BY artifact_id
           ) ac ON ac.artifact_id = a.id
-          LEFT JOIN artifact_embedding_meta em ON em.artifact_id = a.id`
+          LEFT JOIN (SELECT DISTINCT artifact_id FROM artifact_embedding_meta) em ON em.artifact_id = a.id`
 	if len(where) > 0 {
 		q += "\n          WHERE " + strings.Join(where, " AND ")
 	}

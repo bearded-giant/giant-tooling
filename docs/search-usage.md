@@ -55,6 +55,8 @@ giantmem artifact list --scope personal --lifecycle durable
 giantmem artifact list --lifecycle candidate        # pending /review-memory items
 giantmem artifact show <id>
 giantmem artifact stale --days 0                    # tier policy (A=never, B=180d, C=90d)
+giantmem artifact stale --days 0 --all-repos --apply   # auto-deprecate: stale candidates with no access in --idle-days (180)
+giantmem recall report --since 30d                     # precision of hook-injected recall: injected vs touched later in the session (recall_log, live.db v9)
 giantmem artifact orphans                           # files missing frontmatter
 giantmem artifact reindex                           # rebuild artifacts.json
 ```

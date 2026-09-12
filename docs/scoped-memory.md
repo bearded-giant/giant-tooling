@@ -9,7 +9,7 @@ Three phases, all merged to `main`.
 | Phase | Concept | Tables added | Subcommands |
 |---|---|---|---|
 | 1 | scopes, lifecycle, access log | `scopes`, `artifact_access` (live.db v3) | `scope`, `access` |
-| 2 | sqlite-vec embeddings + hybrid scoring | `artifact_embeddings` (vec0), `artifact_embedding_meta` (live.db v4) | `embed`, `artifact search` |
+| 2 | sqlite-vec embeddings + hybrid scoring | `artifact_embeddings` (vec0), `artifact_embedding_meta` one row per chunk keyed `(artifact_id, ord)` with byte offsets + a 400-char snippet (live.db v8; v4 was one row per artifact). Bodies chunk at 3200/320 on heading, paragraph, line, space boundaries, max 48; `file` and `history` types keep the head chunk only | `embed`, `artifact search` |
 | 3 | watcher + TF-IDF + entity promotion | none | `watch`, `suggest-domain`, `entity` |
 
 ## CLI
@@ -21,6 +21,7 @@ giantmem scope list|show <id>|add-repo <id> <repo>...|sync
 giantmem artifact list --scope <id> --lifecycle <stage>
 giantmem artifact show <id>
 giantmem artifact stale --days 0                       # tier policy (A=never, B=180d, C=90d)
+giantmem artifact stale --days 0 --all-repos --apply   # flip stale candidates with no access in 180d to deprecated (lifecycle line only, mtime kept)
 giantmem artifact reindex
 giantmem artifact orphans
 
@@ -86,7 +87,7 @@ GIANTMEM_HYBRID_RECENCY_WEIGHT=0.15
 GIANTMEM_HYBRID_ACCESS_WEIGHT=0.1
 ```
 
-- **FTS**: substring hit on id/feature/domain/name (score 1.0 on hit)
+- **FTS**: FTS5 bm25 over the artifact body in `live_docs_fts` (content column, joined via `worktree/.giantmem/path`); natural-language queries become an OR of their tokens, FTS5 syntax passes through; best candidate hit normalizes to 1.0
 - **Vector**: `1 / (1 + distance)` from sqlite-vec KNN
 - **Recency**: `exp(-ageDays / 60)` (~60d half-life)
 - **Access**: normalized 30-day count vs max in candidate set
