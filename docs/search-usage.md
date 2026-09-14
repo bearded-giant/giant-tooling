@@ -53,6 +53,7 @@ giantmem artifact list -t delta-spec -s ready
 giantmem artifact list --repo all -t proposal
 giantmem artifact list --scope personal --lifecycle durable
 giantmem artifact list --lifecycle candidate        # pending /review-memory items
+giantmem artifact list --repo all --published       # mirrored to Notion; prints page URLs
 giantmem artifact show <id>
 giantmem artifact stale --days 0                    # tier policy (A=never, B=180d, C=90d)
 giantmem artifact stale --days 0 --all-repos --apply   # auto-deprecate: stale candidates with no access in --idle-days (180)

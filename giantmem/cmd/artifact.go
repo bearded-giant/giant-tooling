@@ -29,6 +29,7 @@ var (
 	artifactLifecycle   []string
 	artifactJSON        bool
 	artifactPaths       bool
+	artifactPublished   bool
 	artifactIncludeArch bool
 	artifactSince       string
 	artifactUntil       string
@@ -139,6 +140,7 @@ func init() {
 		c.Flags().StringVar(&artifactScope, "scope", "", "filter by scope id (matches explicit frontmatter or repo membership in ~/.giantmem-global/scopes.yaml)")
 		c.Flags().StringSliceVar(&artifactLifecycle, "lifecycle", nil, "filter by lifecycle (candidate, durable, deprecated; repeat or comma-separate)")
 		c.Flags().BoolVar(&artifactIncludeArch, "include-archived", false, "with --repo all, also include archived .giantmem/ snapshots")
+		c.Flags().BoolVar(&artifactPublished, "published", false, "only artifacts mirrored to Notion; prints the page URL instead of the id")
 		c.Flags().BoolVar(&artifactJSON, "json", false, "JSON output")
 		c.Flags().BoolVar(&artifactPaths, "paths", false, "print absolute paths only")
 		c.Flags().StringVar(&artifactSince, "since", "", `only artifacts updated on/after (e.g. "7d", "2026-06-01", RFC3339)`)
@@ -193,6 +195,7 @@ func cliListFilter() artifacts.ListFilter {
 		Feature:   artifactFeature,
 		Domain:    artifactDomain,
 		Branch:    artifactBranch,
+		Published: artifactPublished,
 	}
 	if artifactRepo != "" && artifactRepo != "all" && artifactRepo != "current" {
 		f.Repo = artifactRepo
@@ -243,6 +246,9 @@ func filterArtifacts(rows []artifacts.Artifact) []artifacts.Artifact {
 			continue
 		}
 		if artifactBranch != "" && a.Branch != artifactBranch {
+			continue
+		}
+		if artifactPublished && a.Notion == "" {
 			continue
 		}
 		if artifactRepo != "" && artifactRepo != "all" && artifactRepo != "current" {
@@ -345,7 +351,7 @@ func runArtifactList(cmd *cobra.Command, args []string) error {
 
 	fmt.Printf("# repo=%s branch=%s artifacts=%d\n", idx.Repo, idx.Branch, len(rows))
 	for _, a := range rows {
-		fmt.Printf("%-12s %-8s %-22s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, a.ID)
+		fmt.Printf("%-12s %-8s %-22s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, artifactTail(a))
 	}
 	return nil
 }
@@ -392,7 +398,7 @@ func runArtifactListAll() error {
 			currentRepo = a.Repo
 			fmt.Printf("\n## %s (%s)\n", a.Repo, a.Branch)
 		}
-		fmt.Printf("%-12s %-8s %-30s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, a.ID)
+		fmt.Printf("%-12s %-8s %-30s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, artifactTail(a))
 	}
 	return nil
 }
@@ -442,9 +448,17 @@ func runArtifactListFromTable(live *sql.DB) error {
 			hdr = a.Repo
 			fmt.Printf("\n## %s (%s)\n", a.Repo, a.Branch)
 		}
-		fmt.Printf("%-12s %-8s %-30s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, a.ID)
+		fmt.Printf("%-12s %-8s %-30s %s\n", a.Type, a.Status, a.Feature+"/"+a.Domain+a.Name, artifactTail(a))
 	}
 	return nil
+}
+
+// with --published the Notion URL is the useful trailing column; the id is not clickable
+func artifactTail(a artifacts.Artifact) string {
+	if artifactPublished && a.Notion != "" {
+		return a.Notion
+	}
+	return a.ID
 }
 
 func tableArtifactAbsPath(a artifacts.Artifact) string {
@@ -601,6 +615,9 @@ func artifactListFilterSummary() string {
 	}
 	if artifactScope != "" {
 		pairs["scope"] = artifactScope
+	}
+	if artifactPublished {
+		pairs["published"] = "true"
 	}
 	if len(artifactLifecycle) > 0 {
 		pairs["lifecycle"] = strings.Join(artifactLifecycle, ",")

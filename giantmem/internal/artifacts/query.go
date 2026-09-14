@@ -19,6 +19,7 @@ type ListFilter struct {
 	Branch    string
 	Feature   string
 	Domain    string
+	Published bool
 	Since     time.Time `json:"-"`
 	Until     time.Time `json:"-"`
 }
@@ -76,6 +77,9 @@ func ListArtifacts(live *sql.DB, f ListFilter, sortBy string, limit int) ([]Arti
 	addEq("domain", f.Domain)
 	if f.Repo != "" && f.Repo != "all" && f.Repo != "current" {
 		addEq("repo", f.Repo)
+	}
+	if f.Published {
+		where = append(where, "COALESCE(a.notion,'') <> ''")
 	}
 	// artifacts.updated is date-only (YYYY-MM-DD); compare lexically. Until is
 	// pre-resolved to next-day 00:00 by search.ParseUntil, so `< untilDate`
