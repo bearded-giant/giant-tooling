@@ -96,6 +96,7 @@ func ListArtifacts(live *sql.DB, f ListFilter, sortBy string, limit int) ([]Arti
 	q := `SELECT a.id, a.type, a.feature, a.domain, a.name, a.status, a.lifecycle,
                  a.scope, a.repo, a.branch, a.path, a.worktree, a.size, a.created,
                  a.updated, a.has_front, COALESCE(a.notion,''), COALESCE(a.notion_synced,''),
+                 COALESCE(a.notion_row,''),
                  COALESCE(ac.cnt, 0) AS access_count,
                  CASE WHEN em.artifact_id IS NULL THEN 0 ELSE 1 END AS has_vec
           FROM artifacts a
@@ -126,7 +127,8 @@ func ListArtifacts(live *sql.DB, f ListFilter, sortBy string, limit int) ([]Arti
 		var hasFront, hasVec int
 		if err := rows.Scan(&a.ID, &a.Type, &a.Feature, &a.Domain, &a.Name, &a.Status,
 			&a.Lifecycle, &a.Scope, &a.Repo, &a.Branch, &a.Path, &a.Worktree, &a.Size,
-			&a.Created, &a.Updated, &hasFront, &a.Notion, &a.NotionSynced, &a.AccessCount, &hasVec); err != nil {
+			&a.Created, &a.Updated, &hasFront, &a.Notion, &a.NotionSynced, &a.NotionRow,
+			&a.AccessCount, &hasVec); err != nil {
 			return nil, err
 		}
 		a.HasFront = hasFront != 0

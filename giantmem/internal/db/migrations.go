@@ -360,6 +360,14 @@ var liveMigrations = []Migration{
 			return err
 		},
 	},
+	{
+		Version: 11,
+		Name:    "artifacts: notion catalog row mirror",
+		Apply: func(tx *sql.Tx) error {
+			_, err := tx.Exec(`ALTER TABLE artifacts ADD COLUMN notion_row TEXT`)
+			return err
+		},
+	},
 }
 
 // embeddingDimFromEnv returns the vec0 dimension as a string, honoring

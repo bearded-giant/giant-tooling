@@ -28,6 +28,7 @@ type Artifact struct {
 	Lifecycle    string `json:"lifecycle,omitempty"`
 	Notion       string `json:"notion,omitempty"`
 	NotionSynced string `json:"notion_synced,omitempty"`
+	NotionRow    string `json:"notion_row,omitempty"`
 	AccessCount  int    `json:"access_count,omitempty"`
 	HasVec       bool   `json:"has_vec,omitempty"`
 }

@@ -196,6 +196,9 @@ func applyFrontmatterMap(a *Artifact, fm map[string]string) {
 	if v, ok := fm["notion_synced"]; ok && v != "" {
 		a.NotionSynced = v
 	}
+	if v, ok := fm["notion_row"]; ok && v != "" {
+		a.NotionRow = v
+	}
 }
 
 func applyJSONFrontmatter(a *Artifact, path string) {
@@ -235,6 +238,9 @@ func applyJSONFrontmatterBytes(a *Artifact, raw []byte) {
 	}
 	if v, ok := data["notion_synced"].(string); ok && v != "" {
 		a.NotionSynced = v
+	}
+	if v, ok := data["notion_row"].(string); ok && v != "" {
+		a.NotionRow = v
 	}
 }
 

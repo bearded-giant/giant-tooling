@@ -5,6 +5,16 @@ import (
 	"testing"
 )
 
+func latestVersion(ms []Migration) int {
+	v := 0
+	for _, m := range ms {
+		if m.Version > v {
+			v = m.Version
+		}
+	}
+	return v
+}
+
 func openLiveTest(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "live.db")
@@ -39,8 +49,8 @@ func TestMigrateLive_FreshDBReachesHeadWithFullSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("schema version: %v", err)
 	}
-	if v != 10 {
-		t.Fatalf("user_version = %d, want 10", v)
+	if want := latestVersion(liveMigrations); v != want {
+		t.Fatalf("user_version = %d, want %d", v, want)
 	}
 
 	for _, name := range []string{
@@ -92,8 +102,8 @@ func TestMigrateLive_V5AdditiveAndIdempotent(t *testing.T) {
 		t.Fatalf("idempotent re-migrate: %v", err)
 	}
 	v, _ := SchemaVersion(d2)
-	if v != 10 {
-		t.Fatalf("user_version after re-migrate = %d, want 10", v)
+	if want := latestVersion(liveMigrations); v != want {
+		t.Fatalf("user_version after re-migrate = %d, want %d", v, want)
 	}
 	var docN int
 	if err := d2.QueryRow(`SELECT COUNT(*) FROM live_docs`).Scan(&docN); err != nil {
