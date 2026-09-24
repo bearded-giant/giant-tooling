@@ -804,8 +804,14 @@ def build_parser():
     p = argparse.ArgumentParser(prog="feature")
     p.add_argument("--cwd", default=os.getcwd())
     sub = p.add_subparsers(dest="verb", required=True)
+    # commands pass --cwd after the verb; SUPPRESS keeps the top-level default when they don't
+    cwd = argparse.ArgumentParser(add_help=False)
+    cwd.add_argument("--cwd", default=argparse.SUPPRESS)
 
-    n = sub.add_parser("new")
+    def add(name):
+        return sub.add_parser(name, parents=[cwd])
+
+    n = add("new")
     n.add_argument("name")
     n.add_argument("--branch")
     n.add_argument("--base")
@@ -816,44 +822,44 @@ def build_parser():
     n.add_argument("--discovery", default="")
     n.set_defaults(fn=cmd_new)
 
-    s = sub.add_parser("start")
+    s = add("start")
     s.add_argument("feature", nargs="?")
     s.add_argument("--branch")
     s.add_argument("--base")
     s.add_argument("--skip-checkout", action="store_true")
     s.set_defaults(fn=cmd_start)
 
-    pa = sub.add_parser("pause")
+    pa = add("pause")
     pa.add_argument("feature", nargs="?")
     pa.add_argument("--note", help="resumption note (else placeholder)")
     pa.add_argument("--paused-state", help="paused-state snapshot (else placeholder)")
     pa.set_defaults(fn=cmd_pause)
 
-    r = sub.add_parser("reopen")
+    r = add("reopen")
     r.add_argument("feature", nargs="?")
     r.add_argument("--skip-checkout", action="store_true")
     r.set_defaults(fn=cmd_reopen)
 
-    c = sub.add_parser("complete")
+    c = add("complete")
     c.add_argument("feature", nargs="?")
     c.add_argument("--quick", action="store_true")
     c.add_argument("--no-merge", action="store_true")
     c.add_argument("--reason", default="")
     c.set_defaults(fn=cmd_complete)
 
-    ab = sub.add_parser("abandon")
+    ab = add("abandon")
     ab.add_argument("feature", nargs="?")
     ab.add_argument("--reason", default="", help="why dropped (else placeholder)")
     ab.add_argument("--no-archive", action="store_true", help="mark abandoned but keep the dir")
     ab.set_defaults(fn=cmd_abandon)
 
-    sub.add_parser("migrate").set_defaults(fn=cmd_migrate)
+    add("migrate").set_defaults(fn=cmd_migrate)
 
-    f = sub.add_parser("facts")
+    f = add("facts")
     f.add_argument("name")
     f.set_defaults(fn=cmd_facts)
 
-    nx = sub.add_parser("next")
+    nx = add("next")
     nx.add_argument("feature", nargs="?")
     nx.set_defaults(fn=cmd_next)
     return p
