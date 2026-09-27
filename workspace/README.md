@@ -1,86 +1,115 @@
 # Workspace Management System
 
-Scripts and hooks for managing Claude Code workspaces with .giantmem directories and feature tracking.
+Scripts and hooks for managing Claude Code workspaces: the `.giantmem/` directory and feature tracking inside it. Full walkthrough in `docs/workspace-system.md`, hook internals in `docs/workspace-hooks.md`.
 
 ## Setup
 
-Source the library in your shell config:
 ```bash
-source ~/dev/giant-tooling/workspace/workspace-lib.sh
+export GIANT_TOOLING_DIR="$HOME/<your-checkout>/giant-tooling"
+source "$GIANT_TOOLING_DIR/workspace/workspace-lib.sh"
 ```
 
-## Shell Commands
+## Shell Functions
 
-| Command | Title | Description | Notes |
-|---------|-------|-------------|-------|
-| `ws` | Status | Show workspace status | |
-| `wsb` | Bootstrap | Init or migrate workspace | Use mid-session |
-| `wsm` | Migrate | Move loose files to subdirs | Auto-categorizes by filename |
-| `wsd "note"` | Discover | Add discovery note | Deprecated, use patterns.md |
-| `wsc` | Complete | Mark workspace complete | |
-| `wssync` | Sync | Refresh git log | |
-| `wsf` | Features | List features index | Reads _index.md |
-| `wsa` | Archive | Archive .giantmem to ~/giantmem_archive | |
-| `wsal [project]` | Archive List | List archives | Omit project to list all |
-| `wsao <proj> [branch]` | Archive Open | Open archive in Finder | Uses `latest` if no timestamp |
-| `ws-init [name]` | Init | Initialize new workspace | Name defaults to dir name |
-| `ws-migrate-features [dir]` | Migrate Features | Convert plans to features | `-i` interactive, `--dry-run` preview |
+The library defines functions, not aliases. Add short names yourself if you want them (`alias ws='workspace_status'` and so on).
+
+| Function | Description | Notes |
+|----------|-------------|-------|
+| `workspace_status` | Show workspace status | |
+| `workspace_bootstrap` | Init or migrate workspace | Use mid-session |
+| `workspace_migrate` | Move loose files to subdirs | Auto-categorizes by filename and content |
+| `workspace_discover "note"` | Append a discovery | Goes to `context/discoveries.md` |
+| `workspace_complete` | Mark workspace complete | |
+| `workspace_sync` | Refresh git log | |
+| `workspace_features` | Print `features/_index.md` | |
+| `workspace_new_feature <name>` | Scaffold a feature | Wraps `scripts/feature.py new` |
+| `workspace_start_feature [name]` | Promote pending to in_progress | |
+| `workspace_pause_feature [name]` | Pause | Name optional when one feature is active |
+| `workspace_reopen_feature [name]` | Reopen paused or complete | |
+| `workspace_complete_feature [name]` | Complete and merge delta-specs | |
+| `list-features [--dir <path>] [--all]` | Feature status table | Reads `features.json`; `--all` includes archived |
+| `workspace_init [dir] [name]` | Initialize a new workspace | Name defaults to dir name |
+| `workspace_archive [src] [project]` | Legacy snapshot mover | See Archiving below |
+| `workspace_archive_list [project]` | List legacy snapshots | Omit project to list all |
+| `workspace_archive_open <proj> [branch] [ts]` | Open a legacy snapshot in Finder | Uses `latest` if no timestamp |
+
+`giantmem workspace <cmd>` and `giantmem feature <cmd>` expose the same operations from the Go CLI.
 
 ## Claude Commands
 
-Run these inside Claude Code sessions:
+Run these inside Claude Code sessions (defined in the claude-code-config repo):
 
-| Command | Title | Description | Notes |
-|---------|-------|-------------|-------|
-| `/list-features` | List Features | Display feature registry | |
-| `/new-feature <name>` | New Feature | Create feature folder | `--builds-on <parent>` optional |
-| `/feature-facts <name>` | Feature Facts | Quick lookup beta flags, config | Partial name match supported |
-| `/qa-report [feature]` | QA Report | Generate validation report | Swarms auto-generate; manual on-demand |
+| Command | Description | Notes |
+|---------|-------------|-------|
+| `/ws-init` | Bootstrap `.giantmem/` and fill in `WORKSPACE.md` | |
+| `/new-feature <name>` | Create feature folder | `--builds-on <parent>` optional |
+| `/start-feature`, `/pause-feature`, `/reopen-feature` | Status transitions | |
+| `/complete-feature`, `/abandon-feature` | Close a feature | Complete merges delta-specs into `specs/` |
+| `/plan-feature` | Draft the implementation plan | |
+| `/list-features` | Feature status table | |
+| `/feature-facts <name>` | Beta flags, config keys, test commands | Partial name match supported |
+| `/feature-next` | Next ready artifact plus todo and MR state | Read-only |
+| `/feature-report [feature]` | QA validation report | |
+| `/feature-validate [--fix]` | Lint feature structure | |
 
 ## Directory Structure
 
 ```
 .giantmem/
-├── WORKSPACE.md           # Project overview
+├── WORKSPACE.md           # project overview
+├── notes.md               # freeform notes
+├── artifacts.json         # typed index (giantmem artifact reindex)
 ├── features/
-│   ├── _index.md          # Feature registry (Claude-maintained)
+│   ├── _index.md          # feature table
+│   ├── features.json      # status cache, authoritative "active feature"
 │   └── {feature-name}/
-│       ├── spec.md        # What + why + acceptance criteria
-│       ├── facts.md       # Beta flags, config, test commands
-│       └── meta.json      # Machine-readable metadata
+│       ├── proposal.md    # what, why, acceptance criteria
+│       ├── tasks.md       # task checklist, status derived from checkbox %
+│       ├── facts.md       # branch, base, beta flags, config, test commands
+│       ├── {name}-notes.md
+│       ├── meta.json      # machine-readable metadata
+│       └── specs/{domain}/spec.md   # delta-specs, merged on complete
+├── specs/
+│   ├── _index.md          # source-of-truth registry
+│   ├── _history.md        # merge log
+│   └── {domain}/spec.md
 ├── context/
-│   └── patterns.md        # Curated architectural patterns
+│   ├── discoveries.md     # codebase learnings
+│   └── git-log.md
 ├── plans/
-│   └── current.md         # Active session work (transient)
-├── research/              # External topic research
-├── reviews/               # Code review notes
-├── history/               # Session logs
-└── filebox/               # Raw data, exports
+│   └── current.md         # active plan
+├── history/
+│   ├── sessions.md        # one line per session
+│   └── sessions/          # one file per session
+├── research/
+├── reviews/
+└── filebox/               # raw data, exports
 ```
 
 ## Feature Workflow
 
-1. **Start new feature**: `/new-feature jwt-session-strict --builds-on jwt-session-enforcement`
-2. **Fill in spec.md**: Purpose, scope, acceptance criteria
-3. **Fill in facts.md**: Beta flags, config keys, test commands
-4. **Work across sessions**: Feature folder persists, _index.md tracks status
-5. **Generate QA report**: `/qa-report jwt-session-strict` when ready for review
-6. **Mark complete**: Update status in _index.md
+1. Create: `/new-feature jwt-session-strict --builds-on jwt-session-enforcement`. A new worktree does this for you, named after the branch.
+2. Fill in `proposal.md` (purpose, scope, acceptance criteria) and `facts.md` (beta flags, config keys, test commands). `/plan-feature` helps with both.
+3. Work across sessions. `features.json` tracks status, `tasks.md` tracks the checklist, `/feature-next` shows what is left.
+4. Close: `/complete-feature` merges the feature's delta-specs into `specs/{domain}/spec.md` and flips status. `/abandon-feature` drops it without a merge.
+5. Archive: `giantmem feature archive` verifies every file is in `live.db`, then removes the dir.
 
 ## Migration
 
-Convert existing plans/ to features/:
+Convert a legacy `plans/` dir into `features/`:
 
 ```bash
-# Preview what would happen
-ws-migrate-features /path/to/worktree --dry-run
+# preview
+$GIANT_TOOLING_DIR/workspace/workspace-migrate-features.py /path/to/worktree --dry-run
 
-# Interactive mode - confirm each feature
-ws-migrate-features /path/to/worktree -i
+# confirm each feature
+$GIANT_TOOLING_DIR/workspace/workspace-migrate-features.py /path/to/worktree --interactive
 
-# Auto-migrate all
-ws-migrate-features /path/to/worktree
+# migrate everything
+$GIANT_TOOLING_DIR/workspace/workspace-migrate-features.py /path/to/worktree
 ```
+
+Other one-off migrations live in `scripts/`: `migrate_spec_to_proposal.py` (legacy `spec.md` to `proposal.md`), `backfill_frontmatter.py`, and `backfill_lifecycle.py`. Each takes `--dry-run`.
 
 ## Files
 
@@ -88,12 +117,20 @@ ws-migrate-features /path/to/worktree
 |------|---------|
 | `workspace-lib.sh` | Shell functions for workspace management |
 | `workspace-init.sh` | Standalone init script |
-| `workspace_session_hook.py` | Claude Code session start hook |
-| `workspace_session_end.py` | Claude Code session end hook |
+| `workspace_session_hook.py` | Claude Code SessionStart hook |
+| `workspace_session_end.py` | Claude Code SessionEnd hook |
+| `list-features.sh` | Feature table from `features.json` |
 | `workspace-migrate-features.py` | Plan to feature migration tool |
+| `scripts/feature.py` | Feature lifecycle CLI behind the slash commands |
+| `scripts/merge_delta_spec.py` | Delta-spec merge used by complete |
+| `scripts/migrate_spec_to_proposal.py` | Legacy spec.md rename |
+| `scripts/backfill_frontmatter.py` | Add frontmatter to legacy artifacts |
+| `scripts/backfill_lifecycle.py` | Add `lifecycle:` to existing artifacts |
+| `scripts/embed.py` | Embedder daemon for `giantmem db embed` |
+| `docs/` | System overview, hook internals, CLAUDE.md snippets |
 
-## Archive Location
+## Archiving
 
-Archives stored at: `~/giantmem_archive/{project}/{timestamp}/`
+`giantmem workspace archive` and `giantmem feature archive` are the current path: verify every file is in `live.db`, then delete the dir. Rows stay searchable, no filesystem copy is made.
 
-Each archive includes a `latest` symlink to the most recent backup.
+`workspace_archive` in the shell library is the older snapshot mover. It moves `.giantmem/` to `$GIANTMEM_ARCHIVE_BASE/{project}/{timestamp}/` (default `~/giantmem_archive`), points a `latest` symlink at it, and re-runs `workspace_init`. `workspace_archive_list` and `workspace_archive_open` browse those snapshot dirs, as does `giantmem archive list|open`.

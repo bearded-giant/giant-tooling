@@ -112,6 +112,7 @@ After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions ex
 | `{prefix}p` / `{prefix}pr` | pull / pull --rebase |
 | `{prefix}f` | fetch |
 | `{prefix}c <src> <dst>` | copy bootstrap files between worktrees |
+| `{prefix}bs` | sweep the current worktree's `.giantmem/` into `live.db` |
 | `{prefix}prune` | git worktree prune |
 | `{prefix}repair` | git worktree repair |
 | `{prefix}sl` / `{prefix}sb` / `{prefix}so` | list live_docs rows for this project / sweep workspace into live.db / no-op (snapshot dirs deprecated) |

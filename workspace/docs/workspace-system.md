@@ -1,237 +1,237 @@
 # Workspace System
 
-Context management for Claude Code sessions. Works with git worktrees or standalone in any project.
+Context management for Claude Code sessions. Works with git worktrees or standalone in any project. Everything lives in a `.giantmem/` directory at the project root.
 
 ## Quick Start
 
-### For Worktree Projects (MA, CC, etc.)
+### Worktree projects
 
-Already integrated. New worktrees automatically get workspace structure:
+Nothing to do. `{prefix} <branch>` (from `git-worktrees/worktree-core.sh`) creates the worktree, runs `workspace_init`, and scaffolds a feature named after the branch. `{prefix}r <branch>` sweeps `.giantmem/` into `live.db` before removing the worktree.
 
 ```bash
-mwt feature-xyz              # workspace + feature auto-created in .giantmem/
+{prefix} feature-xyz         # worktree + .giantmem/ + features/feature-xyz/
 # ... work ...
-mwtr feature-xyz             # workspace auto-archived
+{prefix}r feature-xyz        # sweep into live.db, remove worktree
 ```
 
-### For Ad-Hoc Projects
+### Ad-hoc projects
+
+Pick one:
 
 ```bash
 cd ~/projects/some-project
-wsi                          # initialize workspace
-# or: workspace-init.sh
+workspace_init               # after sourcing workspace-lib.sh
+giantmem workspace init      # same thing via the Go CLI
 ```
+
+Inside Claude, `/ws-init` runs `workspace_bootstrap` and fills in `WORKSPACE.md`.
 
 ## Setup
 
-Add to `~/.bashrc` or `~/.zshrc`:
+Source the library from your shell rc:
 
 ```bash
-# Workspace functions
-source "$HOME/dev/giant-tooling/workspace/workspace-lib.sh"
+export GIANT_TOOLING_DIR="$HOME/<your-checkout>/giant-tooling"
+source "$GIANT_TOOLING_DIR/workspace/workspace-lib.sh"
+```
 
-# Short aliases
+The library defines functions only. If you want short names, add your own aliases:
+
+```bash
 alias ws='workspace_status'
+alias wsb='workspace_bootstrap'
+alias wsm='workspace_migrate'
 alias wsd='workspace_discover'
 alias wsc='workspace_complete'
 alias wssync='workspace_sync'
-
-# Quick init
+alias wsf='workspace_features'
 wsi() { workspace_init "$PWD" "${1:-$(basename "$PWD")}"; }
 ```
 
+The rest of this doc uses the full function names.
+
 ## Directory Structure
+
+`workspace_init` creates this:
 
 ```
 project/
 └── .giantmem/
-    ├── WORKSPACE.md          # Branch/project purpose, status
+    ├── WORKSPACE.md          # branch/project purpose, status
+    ├── notes.md              # freeform notes
+    ├── features/
+    │   ├── _index.md         # feature table, maintained by feature.py
+    │   ├── features.json     # status cache, authoritative "active feature" signal
+    │   └── {name}/           # one dir per feature (see workspace/README.md)
+    ├── specs/
+    │   ├── _index.md         # source-of-truth spec registry
+    │   ├── _history.md       # append-only merge log
+    │   └── {domain}/spec.md  # merged specs, written by /complete-feature
     ├── context/
-    │   ├── discoveries.md    # Codebase learnings
-    │   └── git-log.md        # Recent commits
+    │   ├── discoveries.md    # codebase learnings
+    │   └── git-log.md        # recent commits (workspace_gitlog)
     ├── plans/
-    │   └── current.md        # Implementation plans
+    │   └── current.md        # active plan
     ├── history/
-    │   └── sessions.md       # Session timestamps/notes
-    ├── research/             # Web research findings
-    ├── reviews/              # Code review notes
-    └── filebox/              # Scratch files, samples, temp stuff
+    │   ├── sessions.md       # one line per session
+    │   └── sessions/         # one file per session (SessionEnd hook)
+    ├── research/
+    ├── reviews/
+    └── filebox/              # scratch files, samples, exports
 ```
+
+`artifacts.json` appears at the root once `giantmem artifact reindex` has run; the SessionStart hook reads it for the artifacts summary.
 
 ## Claude Code Integration
 
-Hooks automatically manage workspace lifecycle:
+Two hooks bridge the shell library and Claude Code:
 
 | Event | Hook | Action |
 |-------|------|--------|
-| Session start | `workspace_session_hook.py` | Bootstrap .giantmem/ if missing, inject context |
-| Session end | `workspace_session_end.py` | Extract discoveries/plans from transcript |
+| SessionStart | `workspace_session_hook.py` | Bootstrap `.giantmem/` if missing, inject context |
+| SessionEnd | `workspace_session_end.py` | Write a session file, extract discoveries and plans |
 
-**Automatic on session start:**
-- Creates `.giantmem/` structure if missing
-- Injects `WORKSPACE.md` content into session
-- Injects recent discoveries for continuity
+Session start injects, in order: `WORKSPACE.md`, the three most recent session summaries, an artifacts summary from `artifacts.json`, `plans/current.md`, and the last 20 lines of `context/discoveries.md`.
 
-**Automatic on session end:**
-- Parses transcript for codebase learnings
-- Appends to `.giantmem/context/discoveries.md`
-- Updates `.giantmem/plans/current.md` with any plans discussed
-- Logs session to `.giantmem/history/sessions.md`
+Session end parses the transcript JSONL, writes `history/sessions/{timestamp}_{id}.md`, appends a line to `history/sessions.md`, appends pattern-matched discoveries to `context/discoveries.md`, and writes extracted steps to `plans/current.md` (appending when the file changed within the last hour).
 
-See `WORKSPACE-CLAUDE-HOOKS.md` for full hook documentation.
+Hook wiring lives in the claude-code-config repo (`hooks/dispatch.py` chains them from `~/.claude/hooks/`), and that repo carries its own copies of both hook files. See `workspace-hooks.md` for the versions in this repo.
 
-## Shell Commands
+## Shell Functions
 
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `workspace_bootstrap` | `wsb` | Smart init: creates, migrates, or syncs (use mid-session) |
-| `workspace_migrate` | `wsm` | Move loose .giantmem files to appropriate subdirs |
-| `workspace_init` | `wsi` | Initialize workspace in current dir |
-| `workspace_status` | `ws` | Show workspace status and recent discoveries |
-| `workspace_discover "note"` | `wsd` | Add a discovery note |
-| `workspace_complete` | `wsc` | Mark workspace as complete |
-| `workspace_sync` | `wssync` | Refresh git log |
-| `workspace_session_note` | - | Add session marker/note to history |
-| `workspace_gitlog` | - | Update git-log.md |
+| Function | Description |
+|----------|-------------|
+| `workspace_init [dir] [name]` | Create the structure above. Migrates a legacy `scratch/` dir first |
+| `workspace_bootstrap` | Smart init: create, migrate loose files, or just sync (use mid-session) |
+| `workspace_migrate` | Move loose `.giantmem/*.md` files into subdirs by name and content |
+| `workspace_status` | Show `WORKSPACE.md` head, file counts per subdir, last 5 discoveries |
+| `workspace_discover "note"` | Append a timestamped line to `context/discoveries.md` |
+| `workspace_session_note [note]` | Append a session marker or note to `history/sessions.md` |
+| `workspace_complete` | Flip `WORKSPACE.md` status to complete |
+| `workspace_sync` | Refresh `context/git-log.md` when inside a git repo |
+| `workspace_gitlog` | Write the last 20 commits to `context/git-log.md` |
+| `workspace_features` | Print `features/_index.md` |
+| `workspace_new_feature <name> [flags]` | Scaffold a feature via `scripts/feature.py new` |
+| `workspace_start_feature [name]` | Promote pending to in_progress |
+| `workspace_pause_feature [name]` | Pause the active or named feature |
+| `workspace_reopen_feature [name]` | Reopen a paused or complete feature |
+| `workspace_complete_feature [name]` | Mark complete and merge delta-specs |
+| `list-features [--dir <path>] [--all]` | Feature status table from `features.json` |
+| `workspace_archive [src] [project]` | Legacy snapshot mover, see workspace/README.md |
+| `workspace_archive_list [project]` | List legacy snapshot dirs |
+| `workspace_archive_open <project> [branch] [ts]` | Open a legacy snapshot dir in Finder |
+
+`giantmem workspace <cmd>` mirrors the first nine (init, bootstrap, migrate, status, discover, note, complete, sync, gitlog) plus `archive`, and `giantmem feature <cmd>` mirrors the feature verbs. Use whichever is on your PATH.
 
 ### Mid-Session Bootstrap
 
-If you're in an existing Claude session and want to start using workspace:
+Already in a Claude session and want to start using the workspace? Run `workspace_bootstrap`:
 
-```bash
-wsb                    # Smart bootstrap - handles all cases
-```
-
-This will:
-- **No .giantmem/**: Create full workspace structure
-- **.giantmem/ with loose files**: Migrate files to subdirs, create WORKSPACE.md
-- **Already structured**: Just sync context files
+1. No `.giantmem/`: creates the full structure.
+2. `.giantmem/` present but no `WORKSPACE.md`: migrates loose files into subdirs and creates `WORKSPACE.md`.
+3. Already structured: refreshes `git-log.md` and prints status.
 
 ### Migration Logic
 
-`workspace_migrate` categorizes files by name and content:
+`workspace_migrate` looks at each file directly under `.giantmem/` (skipping `WORKSPACE.md` and `notes.md`) and moves it:
 
 | Pattern | Destination |
 |---------|-------------|
-| `*plan*.md`, `*todo*.md`, `*steps*.md` | plans/ |
-| `*discover*.md`, `*context*.md` | context/ |
-| `*history*.md`, `*session*.md` | history/ |
-| `*research*.md`, `*notes*.md` | research/ |
-| `*review*.md`, `*feedback*.md` | reviews/ |
-| `git-log.md` | context/ |
-| Other `.md` files | Checked for content hints, else filebox/ |
-| Non-markdown files | filebox/ |
+| `*plan*.md`, `*todo*.md`, `*steps*.md`, `*implementation*.md` | `plans/` |
+| `*discover*.md`, `*finding*.md`, `*learn*.md`, `*context*.md` | `context/` |
+| `*history*.md`, `*session*.md`, `*log*.md`, `*journal*.md` | `history/` |
+| `*research*.md`, `*notes*.md`, `*reference*.md` | `research/` |
+| `*review*.md`, `*feedback*.md` | `reviews/` |
+| `git-log.md` | `context/` |
+| other `.md` | `plans/` if the body mentions plan/step/todo/implement, `context/` if it mentions discover/found/learned/architecture/pattern, else `filebox/` |
+| non-markdown | `filebox/` |
 
-## Claude Slash Commands
+## Claude Commands
 
-If `.claude/commands/workspace/` exists (created by `workspace-init.sh`):
+Slash commands that operate on `.giantmem/` (defined in the claude-code-config repo):
 
 | Command | Purpose |
 |---------|---------|
-| `/workspace/discover` | Explore codebase, document findings |
-| `/workspace/plan` | Create/update implementation plan |
-| `/workspace/sync` | Refresh context files |
-| `/workspace/archive` | Mark complete, create summary |
+| `/ws-init` | Bootstrap the workspace and fill in `WORKSPACE.md` |
+| `/new-feature <name>` | Scaffold a feature folder (`--builds-on <parent>` optional) |
+| `/start-feature`, `/pause-feature`, `/reopen-feature` | Feature status transitions |
+| `/complete-feature`, `/abandon-feature` | Close a feature; complete merges delta-specs |
+| `/plan-feature` | Explore touched code and draft the implementation plan |
+| `/list-features` | Feature status table |
+| `/feature-facts <name>` | Look up beta flags, config keys, test commands from `facts.md` |
+| `/feature-next` | Next ready artifact plus todo and MR state |
+| `/feature-report` | QA validation report |
+| `/feature-validate [--fix]` | Lint a feature's structure |
 
-## Workflow Examples
+`workspace-init.sh` can also drop a legacy `/workspace/{discover,plan,sync,archive}` command set into `.claude/commands/`. Those predate the feature commands above.
 
-### Feature Development (Worktree)
+## Workflow Example
 
 ```bash
-mwt feature-login            # Create worktree + workspace
-ws                           # Check workspace status
+{prefix} feature-login       # worktree + workspace + feature scaffold
+workspace_status             # check state
 ```
 
 In Claude:
-```
-/workspace/discover          # Explore relevant code
-/workspace/plan              # Plan the implementation
-```
 
-During work:
-```bash
-wsd "Auth middleware in src/middleware/auth.py"
-wsd "JWT tokens stored in Redis with 24h TTL"
 ```
-
-Finishing:
-```bash
-wsc                          # Mark complete
-mwtr feature-login           # Archive and remove
-```
-
-### Ad-Hoc Investigation
-
-```bash
-cd ~/projects/legacy-api
-wsi                          # Init workspace
-```
-
-In Claude:
-```
-/workspace/discover          # Map the codebase
+/plan-feature                # fill proposal.md and tasks.md
+# ... work ...
+/feature-next                # what's left
+/complete-feature            # merge delta-specs, mark complete
 ```
 
 Add notes as you go:
+
 ```bash
-wsd "[architecture] Uses hexagonal architecture with ports/adapters"
-wsd "[gotcha] Database migrations run on app start, not separately"
-wsd "[pattern] All services inherit from BaseService"
+workspace_discover "[gotcha] Tests require Docker running"
+workspace_discover "[entry] API starts from src/main.py"
 ```
 
-Check what you've learned:
-```bash
-ws                           # See status + recent discoveries
-cat .giantmem/context/discoveries.md
-```
+Finish:
 
-### Quick Context Refresh
-
-Before a Claude session:
 ```bash
-wssync                       # Update git-log.md
-ws                           # Review current state
+{prefix}r feature-login      # sweep .giantmem into live.db, remove worktree
 ```
 
 ## Integration with Worktree Helpers
 
-The workspace library is sourced by worktree helpers. Add this to your helper's setup function:
-
-```bash
-# In _m_wt_setup_worktree() or _wt_setup_worktree():
-if type workspace_init &>/dev/null; then
-    workspace_init "$target_dir" "$branch"
-fi
-```
-
-Archiving happens automatically via existing `mwtr`/`wtr` workspace backup logic.
+`__wt_setup` in `git-worktrees/worktree-core.sh` calls `workspace_init "$target_dir" "$branch"` when the library is sourced, then `scripts/feature.py new "$branch" --skip-checkout` unless the branch is one of the project's default branches. `{prefix}r` and `{prefix}bs` run `giantmem index backfill --workspace` so every file is in `live.db` before the dir goes away.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `workspace-lib.sh` | Core functions, source in bashrc and worktree helpers |
-| `workspace-init.sh` | Standalone init script, creates slash commands |
-| `workspace_session_hook.py` | Claude Code SessionStart hook (bootstrap + inject) |
-| `workspace_session_end.py` | Claude Code SessionEnd hook (extract + persist) |
-| `WORKSPACE-CLAUDE-HOOKS.md` | Hook integration documentation |
-| `WORKSPACE-INTEGRATION-ANALYSIS.md` | Full design analysis and rationale |
+| `workspace-lib.sh` | Shell functions above. Source from your rc and from worktree helpers |
+| `workspace-init.sh` | Standalone init script, optionally writes the legacy slash commands |
+| `workspace_session_hook.py` | SessionStart hook: bootstrap and inject context |
+| `workspace_session_end.py` | SessionEnd hook: session file, discoveries, plans |
+| `list-features.sh` | Feature table from `features.json` |
+| `workspace-migrate-features.py` | Convert legacy `plans/` files into `features/` dirs |
+| `scripts/feature.py` | Feature lifecycle CLI: new, start, pause, reopen, complete, abandon, and more |
+| `scripts/merge_delta_spec.py` | Merge a feature's delta-specs into `specs/{domain}/spec.md` |
+| `scripts/migrate_spec_to_proposal.py` | Rename legacy `features/{name}/spec.md` to `proposal.md` |
+| `scripts/backfill_frontmatter.py` | Add YAML frontmatter to legacy artifacts |
+| `scripts/backfill_lifecycle.py` | Add `lifecycle:` frontmatter to existing artifacts |
+| `scripts/embed.py` | Long-running embedder daemon used by `giantmem db embed` |
+| `docs/workspace-hooks.md` | Hook behavior and file formats |
+| `docs/workspace-claude-config.md` | CLAUDE.md snippets that teach Claude the layout |
 
 ## Discovery Categories
 
-When adding discoveries with `wsd`, use categories for organization:
+Tag discoveries so they group well. The SessionEnd hook uses the same set when it extracts them from transcripts:
 
-- `[architecture]` - Overall structure, patterns used
-- `[pattern]` - Code patterns, conventions
-- `[gotcha]` - Surprises, traps, things to watch out for
-- `[dependency]` - External deps, integrations
-- `[convention]` - Naming, style, project-specific rules
-- `[entry]` - Entry points, main files
-- `[config]` - Configuration, env vars, settings
+| Category | Use for |
+|----------|---------|
+| `[finding]` | Anything discovered, found, learned |
+| `[architecture]` | Overall structure, patterns |
+| `[gotcha]` | Surprises, traps, caveats |
+| `[convention]` | Naming, style, project rules |
+| `[dependency]` | External deps, integrations |
+| `[config]` | Configuration, env vars, settings |
+| `[entry]` | Entry points, main files |
 
-Example:
 ```bash
-wsd "[gotcha] Tests require Docker running"
-wsd "[entry] API starts from src/main.py"
-wsd "[config] All secrets in .env, never committed"
+workspace_discover "[gotcha] Tests require Docker running"
+workspace_discover "[config] All secrets in .env, never committed"
 ```

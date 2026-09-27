@@ -1,252 +1,117 @@
 # Workspace Claude Code Hooks
 
-Automatic workspace integration with Claude Code via SessionStart and SessionEnd hooks.
-
-## Overview
-
-Two Python hooks bridge `workspace-lib.sh` with Claude Code sessions:
+Two Python hooks bridge `workspace-lib.sh` with Claude Code sessions. Both are stdlib only and wrap `main()` in a bare `try/except`, so a broken hook never breaks a session.
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `workspace_session_hook.py` | SessionStart | Bootstrap workspace, inject context + recent sessions |
-| `workspace_session_end.py` | SessionEnd | Create session summary file, extract discoveries/plans |
+| `workspace_session_hook.py` | SessionStart | Bootstrap `.giantmem/` if missing, inject context and recent sessions |
+| `workspace_session_end.py` | SessionEnd | Write a session summary file, extract discoveries and plans |
 
 ```
-Session Lifecycle:
-
-  claude starts
-       |
-       v
-  SessionStart hook
-       |
-       +-- .giantmem/ exists? --> inject context + recent sessions
-       |
-       +-- .giantmem/ missing? --> bootstrap via workspace_init
-       |                         then inject context
-       v
-  [Claude session runs]
-       |
-       v
-  SessionEnd hook
-       |
-       +-- read transcript JSONL
-       +-- extract topic from full session content
-       +-- extract user prompts, tool usage with file paths
-       +-- create .giantmem/history/sessions/{timestamp}_{id}.md
-       +-- update .giantmem/history/sessions.md index
-       +-- extract discoveries (patterns, gotchas, architecture)
-       +-- extract plans (numbered lists, TODOs)
-       +-- append to .giantmem/context/discoveries.md
-       +-- update .giantmem/plans/current.md
-       |
-       v
-  session ends
+claude starts
+     |
+     v
+SessionStart hook
+     |
+     +-- source=startup, no .giantmem/ or scratch/ --> workspace_init, then inject
+     +-- otherwise --> inject only
+     v
+[Claude session runs]
+     |
+     v
+SessionEnd hook
+     |
+     +-- read transcript JSONL
+     +-- derive topic and brief
+     +-- create .giantmem/history/sessions/{timestamp}_{id}.md
+     +-- append one line to .giantmem/history/sessions.md
+     +-- append discoveries to .giantmem/context/discoveries.md
+     +-- write .giantmem/plans/current.md when steps were found
+     v
+session ends
 ```
 
-## Installation
+## Wiring
 
-### Files
-
-```
-~/.claude/hooks/
-├── workspace_session_hook.py    # Start hook
-├── workspace_session_end.py     # End hook
-├── memory_*.py                  # Existing memory hooks
-```
-
-Source files in `~/dev/giant-tooling/workspace/`.
-Stow-managed copies in `~/dotfiles/claude-code/.claude/hooks/`.
-
-### Settings
-
-In `~/.claude/settings.json` (via stow from `~/dotfiles/claude-code/.claude/settings.json`):
+Claude Code runs hooks from `~/.claude/settings.json`. In the claude-code-config repo the two hooks are chained through `hooks/dispatch.py`, which loads modules by name from `~/.claude/hooks/`:
 
 ```json
 {
   "hooks": {
-    "SessionStart": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/workspace_session_hook.py"
-          },
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/memory_session_start.py"
-          }
-        ]
-      }
-    ],
-    "SessionEnd": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/workspace_session_end.py"
-          },
-          {
-            "type": "command",
-            "command": "python3 ~/.claude/hooks/memory_curate.py"
-          }
-        ]
-      }
-    ]
+    "SessionStart": [{ "hooks": [{ "type": "command",
+      "command": "python3 ~/.claude/hooks/dispatch.py workspace_session_hook ..." }] }],
+    "SessionEnd":   [{ "hooks": [{ "type": "command",
+      "command": "python3 ~/.claude/hooks/dispatch.py workspace_session_end ..." }] }]
   }
 }
 ```
 
-Workspace hooks run first, then memory hooks.
+That repo carries its own copies of both hook files. This doc describes the versions in `workspace/` here, which you can also wire directly:
 
-## Hook Details
-
-### SessionStart: workspace_session_hook.py
-
-**Input** (JSON on stdin):
 ```json
-{
-  "session_id": "abc123",
-  "cwd": "/path/to/project",
-  "source": "startup" | "resume" | "clear"
-}
+{ "type": "command", "command": "python3 $GIANT_TOOLING_DIR/workspace/workspace_session_hook.py" }
 ```
 
-**Behavior**:
+The start hook finds `workspace-lib.sh` through `$GIANT_TOOLING_DIR` (default `~/dev/giant-tooling`).
 
-| Condition | Action |
-|-----------|--------|
-| `source: startup` + no .giantmem/ | Run `workspace_init` via workspace-lib.sh |
-| `source: startup` + .giantmem/ exists | Read and inject context |
-| `source: resume` | Read and inject context (no bootstrap) |
+## SessionStart: workspace_session_hook.py
 
-**Output** (stdout, injected into session):
-```
-[Workspace bootstrapped for project-name]
-Created .giantmem/ with: context/, plans/, history/, research/, reviews/, filebox/
+Input on stdin:
 
-=== WORKSPACE CONTEXT ===
-# Workspace: project-name
-Started: 2025-12-22
-Status: [ ] In Progress  [ ] Complete
-...
-
-=== ACTIVE PLAN ===
-(if .giantmem/plans/current.md exists)
-
-=== RECENT DISCOVERIES ===
-(last 20 lines of .giantmem/context/discoveries.md)
-
----
-Remember: Save findings to .giantmem/context/discoveries.md, plans to .giantmem/plans/
-```
-
-**Configuration**:
-```python
-WORKSPACE_LIB = Path.home() / "dev/giant-tooling/workspace/workspace-lib.sh"
-```
-
-### SessionEnd: workspace_session_end.py
-
-**Input** (JSON on stdin):
 ```json
-{
-  "session_id": "abc123",
-  "cwd": "/path/to/project",
-  "transcript_path": "~/.claude/projects/.../session.jsonl"
-}
+{ "session_id": "...", "cwd": "/path/to/project", "source": "startup" }
 ```
 
-**Behavior**:
+`source` is `startup`, `resume`, or `clear`. Bootstrap runs only on `startup`, and only when neither `.giantmem/` nor a legacy `scratch/` dir exists. Context is read and injected on every source.
 
-1. Skip if no `.giantmem/` directory
-2. Read transcript JSONL file
-3. Extract assistant message content
-4. Pattern-match for discoveries and plans
-5. Persist to workspace files
+Output on stdout, each section present only when its file exists:
 
-**Discovery Extraction**:
+| Section | Source | Limit |
+|---------|--------|-------|
+| `[Workspace bootstrapped for {name}]` | printed when `workspace_init` just ran | |
+| `=== WORKSPACE CONTEXT ===` | `WORKSPACE.md` | first 2000 chars |
+| `=== RECENT SESSIONS ===` | `history/sessions/*.md`, newest first | 3 files, `Topic:` and `Brief:` lines |
+| `=== ACTIVE ARTIFACTS ===` | `artifacts.json` (built by `giantmem artifact reindex`) | counts by type and feature, up to 3 ready items per feature |
+| `=== ACTIVE PLAN ===` | `plans/current.md` | first 1500 chars |
+| `=== RECENT DISCOVERIES ===` | `context/discoveries.md` | last 20 lines |
 
-Searches for patterns indicating codebase learnings:
+A trailing reminder line tells Claude where to save findings and plans.
 
-| Category | Trigger Words |
+## SessionEnd: workspace_session_end.py
+
+Input on stdin:
+
+```json
+{ "session_id": "...", "cwd": "/path/to/project", "transcript_path": "~/.claude/projects/.../session.jsonl" }
+```
+
+The hook returns early when there is no `.giantmem/` (or `scratch/`) dir, no transcript path, or no messages. Otherwise it:
+
+1. Reads the transcript JSONL and pulls out user prompts, assistant text, tool calls with file paths, and timestamps.
+2. Scores the text against the topic keyword table and picks the top topic when it clears a small threshold, else `general`.
+3. Uses the first user prompt (trimmed to 80 chars) as the brief.
+4. Regex-matches discoveries and plan steps from assistant text.
+5. Writes the session file, appends the index line, appends discoveries, and saves plans.
+
+### Discovery extraction
+
+Each pattern captures the trigger word plus the next 10 to 100 characters. Matches shorter than 20 chars are dropped, longer than 200 are truncated, and at most 10 survive.
+
+| Category | Trigger words |
 |----------|---------------|
 | `finding` | discovered, found, learned, realized, noticed |
 | `architecture` | pattern, architecture, structure |
-| `gotcha` | gotcha, caveat, watch out, careful, important |
+| `gotcha` | gotcha, caveat, watch out, careful, note that, important |
 | `convention` | convention, standard, style, naming |
-| `dependency` | dependency, requires, depends on, imports |
+| `dependency` | dependency, requires, depends on, import, imports |
 | `config` | config, configuration, setting, environment |
 | `entry` | entry point, main, bootstrap, init |
 
-**Plan Extraction**:
+### Plan extraction
 
-- Numbered lists (1. 2. 3.)
-- Bulleted lists (- *)
-- TODO/NEXT/STEP markers
+Numbered list items (`1.` or `1)`) longer than 15 chars, plus lines marked `TODO`, `NEXT`, or `STEP` longer than 10 chars. At most 15 steps.
 
-**Output Files**:
-
-| File | Content |
-|------|---------|
-| `.giantmem/history/sessions/{ts}_{id}.md` | Individual session summary with full details |
-| `.giantmem/history/sessions.md` | Index with one-liner per session |
-| `.giantmem/context/discoveries.md` | Appended: `- YYYY-MM-DD HH:MM: [category] finding` |
-| `.giantmem/plans/current.md` | Updated with extracted steps |
-
-**Individual Session File Format** (`.giantmem/history/sessions/20250106_143022_abc123ef.md`):
-
-```markdown
-# Session: 2025-01-06 14:30 - 15:22
-
-## Summary
-Topic: auth
-Brief: Investigated JWT refresh flow and added endpoint
-
-## User Prompts
-- Find where auth tokens are validated
-- Add a refresh token endpoint
-- Run the tests
-
-## Files Touched
-### Modified
-- /path/to/src/api/auth.py
-- /path/to/tests/test_auth.py
-### Created
-- /path/to/src/services/token_refresh.py
-### Read
-- /path/to/src/middleware/auth.py
-- /path/to/src/config.py
-
-## Tool Usage
-- Bash: 8
-- Edit: 4
-- Grep: 6
-- Read: 12
-
-## Commands Run
-- `pytest tests/test_auth.py -v`
-- `git status`
-
-## Discoveries Extracted
-- [architecture] JWT validation in middleware/auth.py
-- [config] Token TTL configured in settings.py
-
-## Metadata
-- Session ID: abc123ef-1234-5678-abcd-ef0123456789
-- Generated: 2025-01-06 15:22:45
-```
-
-**Session Index Format** (`.giantmem/history/sessions.md`):
-
-```
-- 2025-01-06 14:30: [auth] abc123ef - Investigated JWT refresh flow... (4 edits, 2 discoveries)
-- 2025-01-06 10:15: [api] def456gh - Added user profile endpoint (6 edits, 1 discovery)
-- 2025-01-05 16:00: [test] 12345678 - Fixed failing integration tests (2 edits, read-only)
-```
-
-**Topic Extraction**:
-
-Topics are derived by analyzing user prompts and assistant content for keywords:
+### Topic keywords
 
 | Topic | Keywords |
 |-------|----------|
@@ -263,198 +128,88 @@ Topics are derived by analyzing user prompts and assistant content for keywords:
 | `ui` | ui, frontend, component, style, css, render, display |
 | `deploy` | deploy, ci, cd, pipeline, docker, kubernetes |
 
-**Output** (stderr, visible to user):
-```
-Workspace: session:20250106_143022_abc123ef.md, 2 discoveries, plans
-```
+### Output files
 
-## Transcript Format
+| File | Content |
+|------|---------|
+| `history/sessions/{YYYYMMDD_HHMMSS}_{id8}.md` | Session summary, format below |
+| `history/sessions.md` | One appended line per session |
+| `context/discoveries.md` | Appended `- YYYY-MM-DD HH:MM: [category] finding` lines |
+| `plans/current.md` | Extracted steps. Overwritten, or appended when the file changed within the last hour |
 
-The JSONL transcript contains message objects:
+Session file:
 
-```json
-{"type": "assistant", "message": {"content": [{"type": "text", "text": "..."}]}}
-{"type": "user", "message": {"content": "..."}}
-{"type": "tool_use", ...}
-{"type": "tool_result", ...}
-```
-
-The end hook extracts only assistant text content for analysis.
-
-## Example Session
-
-**Start** (in project with prior sessions):
-```
-$ claude
-=== WORKSPACE CONTEXT ===
-# Workspace: my-project
-Started: 2025-12-22
-...
-
-=== RECENT SESSIONS ===
-- 2025-01-05 [auth]: Fixed JWT validation bug in middleware
-- 2025-01-04 [api]: Added user profile endpoint
-- 2025-01-03 [test]: Set up integration test framework
-
-=== ACTIVE PLAN ===
-...
-
-=== RECENT DISCOVERIES ===
-...
-```
-
-**During session** (Claude learns things):
-```
-Claude: I discovered that the auth middleware is in src/middleware/auth.py
-        and it uses JWT tokens stored in Redis with a 24h TTL.
-
-        The implementation plan:
-        1. Add new endpoint in api/routes.py
-        2. Create service in services/feature.py
-        3. Add tests in tests/test_feature.py
-```
-
-**End** (session exit):
-```
-Workspace: session:20250106_103522_abc123ef.md, 2 discoveries, plans
-```
-
-**Result in .giantmem/**:
-
-`.giantmem/history/sessions/20250106_103522_abc123ef.md`:
 ```markdown
-# Session: 2025-01-06 10:30 - 10:35
+# Session: YYYY-MM-DD HH:MM - HH:MM
 
 ## Summary
-Topic: auth
-Brief: Add refresh token endpoint
+Topic: {topic}
+Brief: {first user prompt}
 
 ## User Prompts
-- Add a refresh token endpoint to the auth API
+- ... (up to 10)
 
 ## Files Touched
-### Modified
-- /project/src/api/routes.py
-- /project/src/services/feature.py
-### Read
-- /project/src/middleware/auth.py
+### Modified   (Edit, MultiEdit; up to 20)
+### Created    (Write; up to 10)
+### Read       (Read; up to 15)
 
 ## Tool Usage
-- Edit: 2
-- Read: 5
-- Bash: 3
+- {tool}: {count}
+
+## Commands Run
+- `{bash command}` (up to 10)
 
 ## Discoveries Extracted
-- [architecture] auth middleware is in src/middleware/auth.py
-- [config] JWT tokens stored in Redis with a 24h TTL
+- [{category}] {finding}
 
 ## Metadata
-- Session ID: abc123ef-...
-- Generated: 2025-01-06 10:35:22
+- Session ID: {full id}
+- Generated: YYYY-MM-DD HH:MM:SS
 ```
 
-`.giantmem/history/sessions.md`:
-```
-- 2025-01-06 10:35: [auth] abc123ef - Add refresh token endpoint (2 edits, 2 discoveries)
-```
-
-`.giantmem/context/discoveries.md`:
-```
-- 2025-01-06 10:35: [architecture] auth middleware is in src/middleware/auth.py
-- 2025-01-06 10:35: [config] JWT tokens stored in Redis with a 24h TTL
-```
-
-## Relationship to Other Components
+Index line:
 
 ```
-workspace-lib.sh          Shell functions for manual workspace ops
-       |
-       +-- workspace_init()     Called by start hook
-       |
-       v
-workspace_session_hook.py    Bootstrap + inject context + recent sessions (SessionStart)
-       |
-       +-- reads .giantmem/history/sessions/*.md for recent session context
-       |
-       v
-[Claude session]
-       |
-       v
-workspace_session_end.py     Create session file + extract + persist (SessionEnd)
-       |
-       v
-.giantmem/                     Persistent workspace state
-├── WORKSPACE.md
-├── context/
-│   └── discoveries.md       <-- End hook appends here
-├── plans/
-│   └── current.md           <-- End hook updates here
-└── history/
-    ├── sessions.md          <-- End hook appends index line
-    └── sessions/            <-- Individual session files (NEW)
-        ├── 20250106_103522_abc123ef.md
-        ├── 20250105_160000_def456gh.md
-        └── ...
+- YYYY-MM-DD HH:MM: [{topic}] {id8} - {brief, 50 chars} ({N edits, M discoveries} | read-only)
+```
+
+Summary on stderr, visible in the terminal:
+
+```
+Workspace: session:{filename}, {N} discoveries, plans
 ```
 
 ## Manual vs Automatic
 
 | Action | Manual (shell) | Automatic (hooks) |
 |--------|----------------|-------------------|
-| Bootstrap workspace | `wsi` / `workspace_init` | SessionStart hook |
-| Add discovery | `wsd "note"` | SessionEnd hook (extracted) |
-| Update plan | Edit `.giantmem/plans/current.md` | SessionEnd hook (extracted) |
-| Mark complete | `wsc` / `workspace_complete` | Manual only |
-| View status | `ws` / `workspace_status` | Manual only |
-
-The hooks automate context injection and extraction. Manual commands still useful for:
-- Explicit discovery notes during session
-- Marking completion
-- Checking status
+| Bootstrap workspace | `workspace_init` | SessionStart |
+| Add discovery | `workspace_discover "note"` | SessionEnd (extracted) |
+| Update plan | edit `plans/current.md` | SessionEnd (extracted) |
+| Mark complete | `workspace_complete` | manual only |
+| View status | `workspace_status` | manual only |
 
 ## Troubleshooting
 
-**Hook not running**:
-```bash
-# Check settings
-cat ~/.claude/settings.json | jq '.hooks.SessionStart'
-cat ~/.claude/settings.json | jq '.hooks.SessionEnd'
+Hook not running:
 
-# Check hook exists and is executable
-ls -la ~/.claude/hooks/workspace_session_hook.py
-ls -la ~/.claude/hooks/workspace_session_end.py
+```bash
+jq '.hooks.SessionStart, .hooks.SessionEnd' ~/.claude/settings.json
 ```
 
-**Bootstrap not working**:
-```bash
-# Check workspace-lib.sh path
-cat ~/.claude/hooks/workspace_session_hook.py | grep WORKSPACE_LIB
+Test either hook by hand:
 
-# Test manually
-echo '{"session_id":"test","cwd":"/tmp/test","source":"startup"}' | \
-  python3 ~/.claude/hooks/workspace_session_hook.py
+```bash
+echo '{"session_id":"test","cwd":"/path/with/.giantmem","source":"startup"}' | \
+  python3 $GIANT_TOOLING_DIR/workspace/workspace_session_hook.py
+
+echo '{"session_id":"test","cwd":"/path/with/.giantmem","transcript_path":"/path/to/session.jsonl"}' | \
+  python3 $GIANT_TOOLING_DIR/workspace/workspace_session_end.py
 ```
 
-**End hook not extracting**:
-```bash
-# Check transcript path in hook input
-# The transcript_path must point to valid JSONL
-
-# Test extraction manually (need real transcript)
-echo '{"session_id":"test","cwd":"/path/with/.giantmem","transcript_path":"~/.claude/projects/.../session.jsonl"}' | \
-  python3 ~/.claude/hooks/workspace_session_end.py
-```
-
-**No discoveries extracted**:
-- Check that assistant messages contain trigger words
-- Extraction is pattern-based; very unique phrasing may not match
-- Manual `wsd "note"` still works as fallback
+No discoveries extracted: extraction is regex on trigger words, so unusual phrasing will not match. `workspace_discover` is the manual fallback.
 
 ## Dependencies
 
-- Python 3 (standard library only)
-- `workspace-lib.sh` at configured path
-- `bash` for workspace_init subprocess
-- Claude Code with hooks support
-
-No external Python packages required.
+Python 3 standard library, `bash` for the `workspace_init` subprocess, and `workspace-lib.sh` at `$GIANT_TOOLING_DIR/workspace/`.

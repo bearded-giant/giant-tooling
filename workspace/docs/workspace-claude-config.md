@@ -1,12 +1,10 @@
 # Workspace Guidance for Claude Code
 
-This guidance tells Claude how to use the `.giantmem/` workspace structure. Include this in your global `~/.claude/CLAUDE.md` or per-project CLAUDE.md.
+Snippets that tell Claude how to use the `.giantmem/` layout. Paste one into your global `~/.claude/CLAUDE.md` or a per-project CLAUDE.md.
 
 ---
 
 ## For Global CLAUDE.md
-
-Add this to `~/dotfiles/claude-code/.claude/CLAUDE.md`:
 
 ```markdown
 ## Workspace Context System
@@ -14,60 +12,45 @@ Add this to `~/dotfiles/claude-code/.claude/CLAUDE.md`:
 When working in a project with a `.giantmem/` directory, use it as persistent session context.
 
 ### On Session Start
-1. Check if `.giantmem/WORKSPACE.md` exists - if so, read it for branch/project context
-2. Check `.giantmem/context/discoveries.md` for prior learnings about this codebase
-3. Check `.giantmem/plans/current.md` for any active implementation plan
+1. Read `.giantmem/WORKSPACE.md` for branch/project context
+2. Read `.giantmem/features/features.json` to find the in_progress feature
+3. Read `.giantmem/context/discoveries.md` for prior learnings
+4. Read `.giantmem/plans/current.md` for any active plan
 
 ### During Work
-Save learnings and context to the appropriate .giantmem/ subdirectory:
+Route output by directory:
 
 | Directory | Purpose | When to Write |
 |-----------|---------|---------------|
-| `.giantmem/context/` | Codebase knowledge | Discoveries about architecture, patterns, gotchas |
-| `.giantmem/plans/` | Implementation plans | When planning features or refactors |
-| `.giantmem/history/` | Session summaries | End of significant work sessions |
-| `.giantmem/research/` | Research findings | Web research, documentation summaries |
-| `.giantmem/reviews/` | Code reviews | Review notes, feedback, analysis |
-| `.giantmem/filebox/` | Scratch files | Temporary files, samples, exports |
+| `.giantmem/features/{name}/` | Feature proposal, tasks, facts, notes, delta-specs | Anything scoped to the active feature |
+| `.giantmem/specs/{domain}/` | Source-of-truth specs | Only via /complete-feature merge |
+| `.giantmem/context/` | Codebase knowledge | Architecture, patterns, gotchas |
+| `.giantmem/plans/` | Implementation plans | Repo-level plans with no active feature |
+| `.giantmem/history/` | Session summaries | Written by the SessionEnd hook |
+| `.giantmem/research/` | Research findings | Web research, doc summaries |
+| `.giantmem/reviews/` | Code reviews | Review notes, feedback |
+| `.giantmem/filebox/` | Scratch files | Samples, exports, temp data |
 
 ### File Conventions
 
-**discoveries.md** - Append-only log of codebase learnings:
+**discoveries.md** is an append-only log:
 ```
 - YYYY-MM-DD HH:MM: [category] finding
 ```
-Categories: architecture, pattern, gotcha, dependency, convention, entry, config
+Categories: finding, architecture, gotcha, convention, dependency, config, entry
 
-**current.md** in plans/ - Active implementation plan with steps, files to modify, risks
+**plans/current.md** holds the active plan: goal, steps, files to modify, risks
 
-**sessions.md** in history/ - Session timestamps and summaries
-
-### Writing Context Files
-
-When you discover something important about the codebase:
-1. Append to `.giantmem/context/discoveries.md` with timestamp and category
-2. For major architectural findings, also update `.giantmem/WORKSPACE.md` Discoveries section
-
-When creating an implementation plan:
-1. Write to `.giantmem/plans/current.md` (or `.giantmem/plans/{feature-name}.md` for multiple plans)
-2. Include: goal, steps, files to modify, dependencies, risks
-
-When completing significant work:
-1. Append session summary to `.giantmem/history/sessions.md`
-2. Update `.giantmem/WORKSPACE.md` status if branch work is complete
+**history/sessions.md** holds one line per session; `history/sessions/` holds the full summaries
 
 ### Research Findings
 
-Save web research and documentation summaries to `.giantmem/research/`:
-- `.giantmem/research/{topic}.md` - Research on specific topics
-- Include sources, key findings, and relevance to current work
+Save web research and documentation summaries to `.giantmem/research/{topic}.md` with sources, key findings, and relevance to the current work.
 ```
 
 ---
 
 ## For Per-Project CLAUDE.md
-
-Add a reference to load workspace context:
 
 ```markdown
 ## Workspace
@@ -82,55 +65,55 @@ Save discoveries to .giantmem/context/discoveries.md during work.
 
 ---
 
-## Alternative: Minimal Global Addition
-
-If you want minimal global config, just add this to `~/.claude/CLAUDE.md`:
+## Minimal Global Addition
 
 ```markdown
 ## Workspace
 
-If `.giantmem/` directory exists, use it for persistent context:
-- Read `.giantmem/WORKSPACE.md` at session start for project context
+If `.giantmem/` exists, use it for persistent context:
+- Read `.giantmem/WORKSPACE.md` at session start
 - Append discoveries to `.giantmem/context/discoveries.md`
 - Write plans to `.giantmem/plans/`
 ```
 
 ---
 
-## Complete Directory Reference
+## Directory Reference
 
 ```
 .giantmem/
-├── WORKSPACE.md              # Branch/project purpose, status, notes
+├── WORKSPACE.md              # branch/project purpose, status, notes
+├── notes.md                  # freeform notes
+├── artifacts.json            # typed index, built by giantmem artifact reindex
+├── features/
+│   ├── _index.md             # feature table
+│   ├── features.json         # status cache
+│   └── {name}/               # proposal.md, tasks.md, facts.md, {name}-notes.md, meta.json, specs/
+├── specs/
+│   ├── _index.md             # source-of-truth registry
+│   ├── _history.md           # merge log
+│   └── {domain}/spec.md
 ├── context/
-│   ├── discoveries.md        # Codebase learnings log
-│   ├── git-log.md            # Recent commits (auto-generated)
-│   └── changes.md            # Files modified this session (optional)
+│   ├── discoveries.md        # codebase learnings log
+│   └── git-log.md            # recent commits
 ├── plans/
-│   ├── current.md            # Active implementation plan
-│   └── {feature}.md          # Feature-specific plans
+│   └── current.md            # active plan
 ├── history/
-│   ├── sessions.md           # Session timestamps and summaries
-│   └── {date}-summary.md     # Detailed session summaries
+│   ├── sessions.md           # one line per session
+│   └── sessions/             # one file per session
 ├── research/
-│   └── {topic}.md            # Research findings and summaries
+│   └── {topic}.md
 ├── reviews/
-│   └── {date}-{subject}.md   # Code review notes
+│   └── {date}-{subject}.md
 └── filebox/
-    └── *                     # Temporary files, samples, exports
 ```
 
 ---
 
 ## Integration Notes
 
-The workspace structure is:
-- Created automatically by worktree helpers (`mwt`, `cwt`, `wt`)
-- Created manually via `wsi` or `workspace-init.sh` for ad-hoc projects
-- Archived automatically when worktree is removed (`mwtr`, `cwtr`, `wtr`)
-- Gitignored (stays local, no repo bloat)
+The structure is created by `{prefix} <branch>` (worktree helpers, along with a feature named after the branch), by `workspace_init` or `giantmem workspace init` for ad-hoc projects, and by the SessionStart hook when a session opens in a dir without one. `{prefix}r` sweeps it into `live.db` before removing a worktree.
 
-Shell commands for manual updates:
-- `ws` / `workspace_status` - Show workspace status
-- `wsd "note"` / `workspace_discover "note"` - Add discovery
-- `wssync` / `workspace_sync` - Refresh git log
+Nothing adds `.giantmem/` to `.gitignore` automatically. Put `**/.giantmem` in your global excludes file (`git config --global core.excludesfile`) so it stays out of every repo.
+
+Shell functions for manual updates: `workspace_status`, `workspace_discover "note"`, `workspace_sync`. Full list in `workspace-system.md`.
