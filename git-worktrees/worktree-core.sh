@@ -66,10 +66,7 @@ __wt_branch_status() {
 __wt_tmux_rename() {
     local prefix="$1" branch="$2"
     [ -n "$TMUX" ] || return 0
-    local base=$(__wt_config "$prefix" BASE)
-    local repo=$(basename "$base")
-    repo="${repo%-wt}"
-    local default="$repo $branch wt"
+    local default="$branch wt"
     local name
     read -rp "tmux window name [$default]: " name
     tmux rename-window "${name:-$default}"
@@ -188,8 +185,8 @@ __wt_setup() {
         [ ! -d "$target_dir/.giantmem" ] && mkdir -p "$target_dir/.giantmem"
     fi
 
-    # offer initial workspace feature (branch name -> feature name)
-    __wt_offer_feature "$prefix" "$branch" "$target_dir"
+    # initial workspace feature (branch name -> feature name)
+    __wt_create_feature "$prefix" "$branch" "$target_dir"
 
     # custom post-setup hook
     if type "_${prefix}_post_setup" &>/dev/null 2>&1; then
@@ -202,14 +199,13 @@ __wt_setup() {
 }
 
 # ---------------------------------------------------------------------------
-# offer initial workspace feature (branch name -> feature name, like /new-feature)
+# initial workspace feature (branch name -> feature name, like /new-feature)
 # ---------------------------------------------------------------------------
 
-__wt_offer_feature() {
+__wt_create_feature() {
     local prefix="$1" branch="$2" target_dir="$3"
     local feature_py="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/workspace/scripts/feature.py"
 
-    [ -t 0 ] || return 0
     [ -f "$feature_py" ] || return 0
     [ -d "$target_dir/.giantmem/features" ] || return 0
 
@@ -220,10 +216,7 @@ __wt_offer_feature() {
         [ "$branch" = "$b" ] && return 0
     done
 
-    echo -n "Create initial workspace feature '$branch'? (Y/n) "
-    read -r response
-    [[ "$response" =~ ^[Nn]$ ]] && return 0
-
+    echo "Creating initial workspace feature '$branch'"
     python3 "$feature_py" --cwd "$target_dir" new "$branch" --skip-checkout
 }
 

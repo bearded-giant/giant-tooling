@@ -34,7 +34,7 @@ Per-project prefix functions (`cwt`, `awt`, etc.) are how you actually use this.
 
 Worktrees are throwaway. Spin one up for a feature, do the work, kill the worktree when done, never touch git directly. Before removal, `.giantmem/` is swept into the giantmem `live.db` (via `giantmem index backfill --workspace`), so context survives in the searchable DB even after the worktree dir is gone. Stack-aware setup (python/node/lua/bash) runs on create so you don't re-pin versions per worktree.
 
-Because a worktree usually maps one-to-one to a feature, creating one prompts `Create initial workspace feature '<branch>'? (Y/n)` (defaults to yes). Answer yes and it runs the same `feature.py new <branch>` that Claude's `/new-feature` uses, so the `.giantmem/features/<branch>/` folder (proposal, tasks, facts, notes, specs) is scaffolded before you start. Base branches (main/master/develop/stage) skip the prompt, and it's skipped entirely when stdin isn't a terminal.
+Because a worktree usually maps one-to-one to a feature, creating one runs the same `feature.py new <branch>` that Claude's `/new-feature` uses, so the `.giantmem/features/<branch>/` folder (proposal, tasks, facts, notes, specs) is scaffolded before you start. Base branches (main/master/develop/stage) are skipped.
 
 `wt_init` is for greenfield (clone fresh). `wt_adopt` is for "I already have a working clone with WIP I don't want to lose" -- it converts the existing repo in place, preserving uncommitted/untracked files. The two flows exist because the cost of getting either one wrong is real lost work, and most "convert to worktree" advice on the internet drops your WIP on the floor.
 
@@ -102,7 +102,7 @@ After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions ex
 
 | Command | What |
 |---------|------|
-| `{prefix} <branch>` | switch to worktree, or create if missing (add `--push`/`-p` to push the new branch to origin; default is local-only). Inside tmux, create also prompts to rename the current window, default `{repo} {branch} wt` |
+| `{prefix} <branch>` | switch to worktree, or create if missing (add `--push`/`-p` to push the new branch to origin; default is local-only). Inside tmux, create also prompts to rename the current window, default `{branch} wt` |
 | `{prefix}l` | list worktrees |
 | `{prefix}b` | list branches |
 | `{prefix}s` | status across worktrees |
