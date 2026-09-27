@@ -9,7 +9,7 @@ Context management for Claude Code sessions. Works with git worktrees or standal
 Already integrated. New worktrees automatically get workspace structure:
 
 ```bash
-mwt feature-xyz              # workspace auto-created in .giantmem/
+mwt feature-xyz              # workspace + feature auto-created in .giantmem/
 # ... work ...
 mwtr feature-xyz             # workspace auto-archived
 ```

@@ -34,7 +34,7 @@ See [workspace/README.md](workspace/README.md) for shell and Claude commands, di
 
 Shared library (`worktree-core.sh`) plus per-project config files (`wt-{name}.sh`) for managing git worktrees. You source `worktree-core.sh` once, then run `wt_init` to scaffold a new project config or `wt_adopt` to convert an existing repo into the bare-plus-worktree layout in place. Each project gets prefix-style shell functions: `{prefix}` (switch/create worktree), `{prefix}l` (list), `{prefix}r` (remove with `.giantmem/` backup), and a dozen more.
 
-The bare repo lives at `{base}/.bare` with worktrees as siblings. New worktrees auto-bootstrap `.giantmem/`, removed ones sweep `.giantmem/` into `live.db` before deletion (no on-disk archive snapshot). Stack-specific setup for python/node/lua/bash.
+The bare repo lives at `{base}/.bare` with worktrees as siblings. New worktrees auto-bootstrap `.giantmem/` and scaffold a feature named after the branch, removed ones sweep `.giantmem/` into `live.db` before deletion (no on-disk archive snapshot). Stack-specific setup for python/node/lua/bash.
 
 See [git-worktrees/README.md](git-worktrees/README.md) for the full command reference, the `wt_init` and `wt_adopt` flows, and directory layout.
 
