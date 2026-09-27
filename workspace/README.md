@@ -18,7 +18,6 @@ The library defines functions, not aliases. Add short names yourself if you want
 | `workspace_status` | Show workspace status | |
 | `workspace_bootstrap` | Init or migrate workspace | Use mid-session |
 | `workspace_migrate` | Move loose files to subdirs | Auto-categorizes by filename and content |
-| `workspace_discover "note"` | Append a discovery | Goes to `context/discoveries.md` |
 | `workspace_complete` | Mark workspace complete | |
 | `workspace_sync` | Refresh git log | |
 | `workspace_features` | Print `features/_index.md` | |
@@ -74,8 +73,7 @@ Run these inside Claude Code sessions (defined in the claude-code-config repo):
 │   ├── _history.md        # merge log
 │   └── {domain}/spec.md
 ├── context/
-│   ├── discoveries.md     # codebase learnings
-│   └── git-log.md
+│   └── git-log.md         # workspace_gitlog
 ├── plans/
 │   └── current.md         # active plan
 ├── history/

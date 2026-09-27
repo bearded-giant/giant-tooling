@@ -8,7 +8,7 @@ These tools were extracted from a private utility repo where they evolved over m
 
 This repo is opinionated and bespoke -- it codifies a specific way of working with Claude Code, not a general-purpose toolkit. Reading the code straight through is the fastest way to understand it. A few load-bearing choices shape everything else:
 
-Each project gets its own `.giantmem/` workspace dir. Plans, research, feature specs, session history, and discoveries live there alongside the code. Claude Code reads it on session start and writes back on session end via hooks. Nothing about your work lives in the chat transcript -- it lives in files you can grep, diff, and version. When a session ends or context compacts, the next session picks up exactly where the last one left off.
+Each project gets its own `.giantmem/` workspace dir. Plans, research, feature specs, and session history live there alongside the code. Claude Code reads it on session start and writes back on session end via hooks. Nothing about your work lives in the chat transcript -- it lives in files you can grep, diff, and version. When a session ends or context compacts, the next session picks up exactly where the last one left off.
 
 Worktrees are throwaway. Spin one up per feature, branch, or experiment. Kill it when done. Before the dir is deleted, `.giantmem/` is swept into `live.db` (via `giantmem db index backfill --workspace <path>`) so the content survives in the searchable DB even after the worktree disappears. A bare repo with sibling worktrees keeps git data in one fixed spot, and per-project prefix functions (`{prefix}`, `{prefix}l`, etc.) replace muscle-heavy git invocations with two-key moves.
 

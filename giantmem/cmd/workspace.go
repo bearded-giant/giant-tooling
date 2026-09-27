@@ -91,7 +91,6 @@ func init() {
 		workspaceSubcmd("bootstrap", "workspace_bootstrap", "Smart init/migrate/sync"),
 		workspaceSubcmd("migrate", "workspace_migrate", "Move loose .giantmem files into subdirs"),
 		workspaceSubcmd("note", "workspace_session_note", "Add a session note"),
-		workspaceSubcmd("discover", "workspace_discover", "Add a discovery note"),
 		workspaceSubcmd("complete", "workspace_complete", "Mark workspace complete"),
 		workspaceSubcmd("sync", "workspace_sync", "Refresh git log"),
 		deprecatedWorkspaceSubcmd("features", "workspace_features", "Show feature status table", "use `giantmem feature list`"),

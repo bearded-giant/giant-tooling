@@ -9,7 +9,6 @@
 #   workspace_init [dir] [name]   - Initialize workspace structure
 #   workspace_bootstrap           - Smart init: creates, migrates, or syncs
 #   workspace_migrate             - Move loose .giantmem files to subdirs
-#   workspace_discover "note"     - Add discovery note
 #   workspace_session_note [note] - Add session marker/note
 #   workspace_complete            - Mark workspace complete
 #   workspace_status              - Show workspace status
@@ -76,9 +75,6 @@ Status: [ ] In Progress  [ ] Complete
 ## Purpose
 <!-- Describe what this branch/project is for -->
 
-## Discoveries
-<!-- Learnings about the codebase relevant to this work -->
-
 ## Notes
 <!-- Session notes, decisions, context -->
 EOF
@@ -134,21 +130,6 @@ EOF
     fi
 
     echo "Workspace initialized in $scratch_dir"
-}
-
-# Add a discovery note
-workspace_discover() {
-    local scratch_dir="${PWD}/.giantmem"
-    local discoveries="$scratch_dir/context/discoveries.md"
-
-    if [ -z "$1" ]; then
-        echo "Usage: workspace_discover 'your discovery note'"
-        return 1
-    fi
-
-    mkdir -p "$(dirname "$discoveries")"
-    echo "- $(date '+%Y-%m-%d %H:%M'): $*" >> "$discoveries"
-    echo "Added to discoveries"
 }
 
 # Add a session note to history
@@ -212,11 +193,6 @@ workspace_status() {
         fi
     done
 
-    if [ -f "$scratch_dir/context/discoveries.md" ]; then
-        echo ""
-        echo "=== Recent Discoveries ==="
-        tail -5 "$scratch_dir/context/discoveries.md"
-    fi
 }
 
 # List features from index
@@ -367,9 +343,6 @@ Status: [ ] In Progress  [ ] Complete
 
 ## Purpose
 <!-- Describe what this branch/project is for -->
-
-## Discoveries
-<!-- Learnings about the codebase relevant to this work -->
 
 ## Notes
 <!-- Session notes, decisions, context -->

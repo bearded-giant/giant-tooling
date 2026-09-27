@@ -118,7 +118,7 @@ After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions ex
 | `{prefix}sl` / `{prefix}sb` / `{prefix}so` | list live_docs rows for this project / sweep workspace into live.db / no-op (snapshot dirs deprecated) |
 | `{prefix}_init <src>` | bare clone init (no-op if `.bare` exists) |
 
-Workspace aliases (when `WS_BASE` set in config): `{ws}`, `{ws}sync`, `{ws}discover`, `{ws}complete`.
+Workspace aliases (when `WS_BASE` set in config): `{ws}`, `{ws}sync`, `{ws}complete`.
 
 `wt_projects` lists all registered prefixes with their base dirs and archive names.
 

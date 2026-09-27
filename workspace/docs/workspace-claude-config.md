@@ -14,8 +14,7 @@ When working in a project with a `.giantmem/` directory, use it as persistent se
 ### On Session Start
 1. Read `.giantmem/WORKSPACE.md` for branch/project context
 2. Read `.giantmem/features/features.json` to find the in_progress feature
-3. Read `.giantmem/context/discoveries.md` for prior learnings
-4. Read `.giantmem/plans/current.md` for any active plan
+3. Read `.giantmem/plans/current.md` for any active plan
 
 ### During Work
 Route output by directory:
@@ -24,7 +23,7 @@ Route output by directory:
 |-----------|---------|---------------|
 | `.giantmem/features/{name}/` | Feature proposal, tasks, facts, notes, delta-specs | Anything scoped to the active feature |
 | `.giantmem/specs/{domain}/` | Source-of-truth specs | Only via /complete-feature merge |
-| `.giantmem/context/` | Codebase knowledge | Architecture, patterns, gotchas |
+| `.giantmem/context/` | Codebase knowledge | Curated patterns in `patterns.md` |
 | `.giantmem/plans/` | Implementation plans | Repo-level plans with no active feature |
 | `.giantmem/history/` | Session summaries | Written by the SessionEnd hook |
 | `.giantmem/research/` | Research findings | Web research, doc summaries |
@@ -32,12 +31,6 @@ Route output by directory:
 | `.giantmem/filebox/` | Scratch files | Samples, exports, temp data |
 
 ### File Conventions
-
-**discoveries.md** is an append-only log:
-```
-- YYYY-MM-DD HH:MM: [category] finding
-```
-Categories: finding, architecture, gotcha, convention, dependency, config, entry
 
 **plans/current.md** holds the active plan: goal, steps, files to modify, risks
 
@@ -57,10 +50,7 @@ Save web research and documentation summaries to `.giantmem/research/{topic}.md`
 
 This project uses .giantmem/ for session context. On session start, read:
 - @.giantmem/WORKSPACE.md - Branch purpose and status
-- @.giantmem/context/discoveries.md - Prior learnings (if exists)
 - @.giantmem/plans/current.md - Active plan (if exists)
-
-Save discoveries to .giantmem/context/discoveries.md during work.
 ```
 
 ---
@@ -72,7 +62,6 @@ Save discoveries to .giantmem/context/discoveries.md during work.
 
 If `.giantmem/` exists, use it for persistent context:
 - Read `.giantmem/WORKSPACE.md` at session start
-- Append discoveries to `.giantmem/context/discoveries.md`
 - Write plans to `.giantmem/plans/`
 ```
 
@@ -94,7 +83,7 @@ If `.giantmem/` exists, use it for persistent context:
 │   ├── _history.md           # merge log
 │   └── {domain}/spec.md
 ├── context/
-│   ├── discoveries.md        # codebase learnings log
+│   ├── patterns.md           # curated architectural patterns
 │   └── git-log.md            # recent commits
 ├── plans/
 │   └── current.md            # active plan
@@ -116,4 +105,4 @@ The structure is created by `{prefix} <branch>` (worktree helpers, along with a 
 
 Nothing adds `.giantmem/` to `.gitignore` automatically. Put `**/.giantmem` in your global excludes file (`git config --global core.excludesfile`) so it stays out of every repo.
 
-Shell functions for manual updates: `workspace_status`, `workspace_discover "note"`, `workspace_sync`. Full list in `workspace-system.md`.
+Shell functions for manual updates: `workspace_status`, `workspace_sync`, `workspace_complete`. Full list in `workspace-system.md`.

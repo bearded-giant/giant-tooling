@@ -41,7 +41,6 @@ The library defines functions only. If you want short names, add your own aliase
 alias ws='workspace_status'
 alias wsb='workspace_bootstrap'
 alias wsm='workspace_migrate'
-alias wsd='workspace_discover'
 alias wsc='workspace_complete'
 alias wssync='workspace_sync'
 alias wsf='workspace_features'
@@ -68,7 +67,6 @@ project/
     │   ├── _history.md       # append-only merge log
     │   └── {domain}/spec.md  # merged specs, written by /complete-feature
     ├── context/
-    │   ├── discoveries.md    # codebase learnings
     │   └── git-log.md        # recent commits (workspace_gitlog)
     ├── plans/
     │   └── current.md        # active plan
@@ -93,8 +91,7 @@ Two hooks in the claude-code-config repo drive the session lifecycle. `hooks/wor
 | `workspace_init [dir] [name]` | Create the structure above. Migrates a legacy `scratch/` dir first |
 | `workspace_bootstrap` | Smart init: create, migrate loose files, or just sync (use mid-session) |
 | `workspace_migrate` | Move loose `.giantmem/*.md` files into subdirs by name and content |
-| `workspace_status` | Show `WORKSPACE.md` head, file counts per subdir, last 5 discoveries |
-| `workspace_discover "note"` | Append a timestamped line to `context/discoveries.md` |
+| `workspace_status` | Show `WORKSPACE.md` head and file counts per subdir |
 | `workspace_session_note [note]` | Append a session marker or note to `history/sessions.md` |
 | `workspace_complete` | Flip `WORKSPACE.md` status to complete |
 | `workspace_sync` | Refresh `context/git-log.md` when inside a git repo |
@@ -110,7 +107,7 @@ Two hooks in the claude-code-config repo drive the session lifecycle. `hooks/wor
 | `workspace_archive_list [project]` | List legacy snapshot dirs |
 | `workspace_archive_open <project> [branch] [ts]` | Open a legacy snapshot dir in Finder |
 
-`giantmem workspace <cmd>` mirrors the first nine (init, bootstrap, migrate, status, discover, note, complete, sync, gitlog) plus `archive`, and `giantmem feature <cmd>` mirrors the feature verbs. Use whichever is on your PATH.
+`giantmem workspace <cmd>` mirrors the first eight (init, bootstrap, migrate, status, note, complete, sync, gitlog) plus `archive`, and `giantmem feature <cmd>` mirrors the feature verbs. Use whichever is on your PATH.
 
 ### Mid-Session Bootstrap
 
@@ -152,8 +149,6 @@ Slash commands that operate on `.giantmem/` (defined in the claude-code-config r
 | `/feature-report` | QA validation report |
 | `/feature-validate [--fix]` | Lint a feature's structure |
 
-`workspace-init.sh` can also drop a legacy `/workspace/{discover,plan,sync,archive}` command set into `.claude/commands/`. Those predate the feature commands above.
-
 ## Workflow Example
 
 ```bash
@@ -168,13 +163,6 @@ In Claude:
 # ... work ...
 /feature-next                # what's left
 /complete-feature            # merge delta-specs, mark complete
-```
-
-Add notes as you go:
-
-```bash
-workspace_discover "[gotcha] Tests require Docker running"
-workspace_discover "[entry] API starts from src/main.py"
 ```
 
 Finish:
@@ -192,7 +180,7 @@ Finish:
 | File | Purpose |
 |------|---------|
 | `workspace-lib.sh` | Shell functions above. Source from your rc and from worktree helpers |
-| `workspace-init.sh` | Standalone init script, optionally writes the legacy slash commands |
+| `workspace-init.sh` | Standalone init script |
 | `list-features.sh` | Feature table from `features.json` |
 | `workspace-migrate-features.py` | Convert legacy `plans/` files into `features/` dirs |
 | `scripts/feature.py` | Feature lifecycle CLI: new, start, pause, reopen, complete, abandon, and more |
@@ -202,22 +190,3 @@ Finish:
 | `scripts/backfill_lifecycle.py` | Add `lifecycle:` frontmatter to existing artifacts |
 | `scripts/embed.py` | Long-running embedder daemon used by `giantmem db embed` |
 | `docs/workspace-claude-config.md` | CLAUDE.md snippets that teach Claude the layout |
-
-## Discovery Categories
-
-Tag discoveries so they group well:
-
-| Category | Use for |
-|----------|---------|
-| `[finding]` | Anything discovered, found, learned |
-| `[architecture]` | Overall structure, patterns |
-| `[gotcha]` | Surprises, traps, caveats |
-| `[convention]` | Naming, style, project rules |
-| `[dependency]` | External deps, integrations |
-| `[config]` | Configuration, env vars, settings |
-| `[entry]` | Entry points, main files |
-
-```bash
-workspace_discover "[gotcha] Tests require Docker running"
-workspace_discover "[config] All secrets in .env, never committed"
-```

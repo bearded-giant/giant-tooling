@@ -1303,7 +1303,6 @@ __wt_workspace_open() {
 # ---------------------------------------------------------------------------
 
 __wt_ws_status()   { workspace_status; }
-__wt_ws_discover() { shift; workspace_discover "$@"; }
 __wt_ws_complete() { workspace_complete; }
 __wt_ws_sync()     { workspace_sync; }
 
@@ -1396,7 +1395,6 @@ wt_register() {
     ws_base="${!ws_base:-}"
     if [ -n "$ws_base" ]; then
         eval "${ws_base}() { workspace_status; }"
-        eval "${ws_base}discover() { workspace_discover \"\$@\"; }"
         eval "${ws_base}complete() { workspace_complete; }"
         eval "${ws_base}sync() { workspace_sync; }"
     fi

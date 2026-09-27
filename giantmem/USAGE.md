@@ -168,7 +168,6 @@ This is the autoarchive entry point: deleting a worktree no longer leaves `.gian
 | `giantmem workspace bootstrap` | smart init/migrate/sync |
 | `giantmem workspace migrate` | move loose `.giantmem/` files into the right subdirs |
 | `giantmem workspace note "..."` | add a session note |
-| `giantmem workspace discover "..."` | add a discovery note |
 | `giantmem workspace complete` | mark workspace complete |
 | `giantmem workspace sync` | refresh git log |
 | `giantmem workspace archive [src] [--dry-run] [--no-reinit]` | wipe entire `.giantmem/` after live.db verify, re-init (see Archiving) |
