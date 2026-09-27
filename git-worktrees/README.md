@@ -32,7 +32,7 @@ The bare repo lives at `{base}/.bare` and worktrees are siblings, not children. 
 
 Per-project prefix functions (`cwt`, `awt`, etc.) are how you actually use this. `wt_register` binds twenty-odd functions per prefix using `eval`, then your muscle memory does the rest. Two-key moves replace ten-key git invocations. The wizard exists because writing a config by hand is friction nobody needs.
 
-Worktrees are throwaway. Spin one up for a feature, do the work, kill the worktree when done, never touch git directly. Before removal, `.giantmem/` is swept into the giantmem `live.db` (via `giantmem index backfill --workspace`), so context survives in the searchable DB even after the worktree dir is gone. Stack-aware setup (python/node/lua/bash) runs on create so you don't re-pin versions per worktree.
+Worktrees are throwaway. Spin one up for a feature, do the work, kill the worktree when done, never touch git directly. Before removal, `.giantmem/` is swept into the giantmem `live.db` (via `giantmem db index backfill --workspace`), so context survives in the searchable DB even after the worktree dir is gone. Stack-aware setup (python/node/lua/bash) runs on create so you don't re-pin versions per worktree.
 
 Because a worktree usually maps one-to-one to a feature, creating one runs the same `feature.py new <branch>` that Claude's `/new-feature` uses, so the `.giantmem/features/<branch>/` folder (proposal, tasks, facts, notes, specs) is scaffolded before you start. Base branches (main/master/develop/stage) are skipped.
 
@@ -118,7 +118,7 @@ After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions ex
 | `{prefix}sl` / `{prefix}sb` / `{prefix}so` | list live_docs rows for this project / sweep workspace into live.db / no-op (snapshot dirs deprecated) |
 | `{prefix}_init <src>` | bare clone init (no-op if `.bare` exists) |
 
-Workspace aliases (when `WS_BASE` set in config): `{ws}`, `{ws}tree`, `{ws}sync`, `{ws}discover`, `{ws}complete`.
+Workspace aliases (when `WS_BASE` set in config): `{ws}`, `{ws}sync`, `{ws}discover`, `{ws}complete`.
 
 `wt_projects` lists all registered prefixes with their base dirs and archive names.
 

@@ -8,7 +8,7 @@ giant-tooling is a collection of shell and Python utilities for Claude Code deve
 
 1. **workspace/** -- `.giantmem/` directory lifecycle, session hooks, feature tracking
 2. **git-worktrees/** -- worktree helper generator that creates per-project shell functions
-3. **giantmem-archive/** -- archive and FTS5 search system for `.giantmem/` directories
+3. **giantmem/** -- Go CLI: live.db index, FTS5 + vector search, sessions, feature and workspace lifecycle, MCP server
 
 All scripts use only Python stdlib (no pip dependencies). Shell scripts target bash.
 
@@ -16,14 +16,14 @@ All scripts use only Python stdlib (no pip dependencies). Shell scripts target b
 
 ### Workspace System
 
-`workspace-lib.sh` is the core library. It provides shell functions (`workspace_init`, `workspace_bootstrap`, `workspace_migrate`, `workspace_migrate_dir`, etc.) that manage `.giantmem/` directories in any project. Two Python hooks integrate with Claude Code:
+`workspace-lib.sh` is the core library. It provides shell functions (`workspace_init`, `workspace_bootstrap`, `workspace_migrate`, `workspace_migrate_dir`, etc.) that manage `.giantmem/` directories in any project. Two Python hooks integrate with Claude Code (canonical copies and the `settings.json` wiring via `hooks/dispatch.py` live in the claude-code-config repo; the copies here mirror them):
 
-- `workspace_session_hook.py` (SessionStart) -- bootstraps `.giantmem/` if missing, injects WORKSPACE.md + recent discoveries into session context
-- `workspace_session_end.py` (SessionEnd) -- parses JSONL transcript, extracts discoveries/plans via regex, creates session summary files in `.giantmem/history/sessions/`
+- `workspace_session_hook.py` (SessionStart) -- on `startup` bootstraps `.giantmem/` if missing (via `workspace-lib.sh`), then injects WORKSPACE.md and `plans/current.md` into session context
+- `workspace_session_end.py` (SessionEnd) -- parses the JSONL transcript, writes `.giantmem/history/sessions/{ts}_{id}.md` plus an index line in `history/sessions.md`, regenerates the Features and Timeline tables in WORKSPACE.md, then spawns a detached `claude -p --model haiku` child that fills in Topic, Brief, and Outcomes. Auto-inits a minimal `.giantmem/` (own Python, no shell lib) when none exists
 
-The hooks read JSON from stdin and write to stdout/stderr. They call `workspace-lib.sh` functions via subprocess for bootstrapping.
+The hooks read JSON from stdin and write to stdout/stderr.
 
-`list-features.sh` renders a formatted table from `.giantmem/features/` directories by reading `spec.md` and `meta.json` from each feature folder.
+`list-features.sh` renders a formatted table from `.giantmem/features/features.json` (read-only; `--all` includes archived).
 
 `workspace-migrate-features.py` converts legacy `.giantmem/plans/` files into the `.giantmem/features/{name}/` structure with `spec.md`, `facts.md`, and `meta.json`.
 
@@ -36,7 +36,7 @@ The hooks read JSON from stdin and write to stdout/stderr. They call `workspace-
 - `wt_init` -- wizard that prompts for project name, prefix, base dir, stack, default branches, env files, etc. Writes a `wt-{name}.sh` config file beside core, sources it, calls `wt_register {prefix}` to bind the prefix shell functions. Use this for greenfield projects (clone fresh from URL or repo path you haven't touched).
 - `wt_adopt [path]` -- converts an existing non-bare repo into the layout in place. Moves `<repo>/.git` to `<repo>-wt/.bare`, moves the working tree to `<repo>-wt/<branch>/`, manually wires worktree metadata so WIP and untracked files survive. Errors on already-bare repos, detached HEAD, submodules, linked worktrees, or pre-existing target. Run `wt_init` after to bind prefix functions; the wizard detects existing `.bare` and tells you to skip the `{prefix}_init` step.
 
-`wt_register {prefix}` (called from generated configs) binds the per-project shell functions: `{prefix}` (switch/create worktree), `{prefix}l` (list), `{prefix}a` (add), `{prefix}r` (remove with `.giantmem/` backup), `{prefix}p`/`{prefix}pr` (pull), `{prefix}f` (fetch), `{prefix}c` (copy bootstrap files), `{prefix}prune`, `{prefix}repair`, `{prefix}sl`/`{prefix}sb`/`{prefix}so` (workspace archive ops), `{prefix}_init` (bare clone, no-op if `.bare` exists). Stack-specific setup runs on worktree create (python/node/lua/bash).
+`wt_register {prefix}` (called from generated configs) binds the per-project shell functions: `{prefix}` (switch/create worktree), `{prefix}l` (list), `{prefix}a` (add), `{prefix}r` (remove with `.giantmem/` backup), `{prefix}p`/`{prefix}pr` (pull), `{prefix}f` (fetch), `{prefix}c` (copy bootstrap files), `{prefix}prune`, `{prefix}repair`, `{prefix}sl`/`{prefix}sb`/`{prefix}so` (workspace archive ops), `{prefix}_init` (bare clone, no-op if `.bare` exists). Stack-specific setup runs on worktree create (python/node/lua/bash), followed by `workspace_init` and `feature.py new <branch>` so every non-base worktree starts with a feature named after its branch.
 
 Generated configs source `worktree-core.sh` via the relative path `${BASH_SOURCE[0]%/*}/worktree-core.sh`. To keep configs in a separate dir (e.g. private dotfiles), symlink `worktree-core.sh` into that dir; configs sourced through the symlink resolve `${BASH_SOURCE[0]}` to the symlink path, so the wizard writes new configs there rather than in this repo.
 
@@ -53,8 +53,6 @@ Single source of truth is `~/giantmem_archive/live.db` (SQLite). Two tables matt
 Claude session JSONLs live in `~/giantmem_archive/archives.db.documents` (source_type='session'), populated by `~/.claude/hooks/session_end_ingest.py` plus a 5-min launchd sweep (`giantmem/launchd/com.bryan.giantmem-session-sweep.plist`).
 
 Archiving is a live.db-verified delete, not a snapshot: `giantmem feature archive` (per-feature) and `giantmem workspace archive` (full wipe + reinit) verify every file is captured in `live.db` before removing the dir — rows are kept and stay searchable. No filesystem copy is made and no DB ingest happens. Pre-existing snapshot dirs under `~/giantmem_archive/{project}/{timestamp}/` are browsable via `giantmem archive list|open|dedup`; `archives.db` source_type='workspace' rows are no longer produced. `giantmem archive run`/`archive feature` remain as deprecated aliases.
-
-`giantmem-archive.sh` + `giantmem-search.py` are pre-Go-rewrite scripts and remain only for historical reads against existing snapshot directories.
 
 ## Key Paths and Environment
 

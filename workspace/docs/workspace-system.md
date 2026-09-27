@@ -88,14 +88,12 @@ Two hooks bridge the shell library and Claude Code:
 
 | Event | Hook | Action |
 |-------|------|--------|
-| SessionStart | `workspace_session_hook.py` | Bootstrap `.giantmem/` if missing, inject context |
-| SessionEnd | `workspace_session_end.py` | Write a session file, extract discoveries and plans |
+| SessionStart | `workspace_session_hook.py` | Bootstrap `.giantmem/` if missing, inject `WORKSPACE.md` and the active plan |
+| SessionEnd | `workspace_session_end.py` | Write a session file and index line, refresh `WORKSPACE.md` tables, summarize via haiku |
 
-Session start injects, in order: `WORKSPACE.md`, the three most recent session summaries, an artifacts summary from `artifacts.json`, `plans/current.md`, and the last 20 lines of `context/discoveries.md`.
+Session start injects `WORKSPACE.md` and `plans/current.md`. Session end parses the transcript JSONL, writes `history/sessions/{timestamp}_{id}.md`, appends a line to `history/sessions.md`, regenerates the Features and Timeline tables in `WORKSPACE.md`, and spawns a detached `claude -p --model haiku` call that fills in the session's topic, brief, and outcomes.
 
-Session end parses the transcript JSONL, writes `history/sessions/{timestamp}_{id}.md`, appends a line to `history/sessions.md`, appends pattern-matched discoveries to `context/discoveries.md`, and writes extracted steps to `plans/current.md` (appending when the file changed within the last hour).
-
-Hook wiring lives in the claude-code-config repo (`hooks/dispatch.py` chains them from `~/.claude/hooks/`), and that repo carries its own copies of both hook files. See `workspace-hooks.md` for the versions in this repo.
+Canonical copies of both hooks and the `settings.json` wiring (`hooks/dispatch.py`) live in the claude-code-config repo; the copies here mirror them. See `workspace-hooks.md` for details.
 
 ## Shell Functions
 
@@ -196,7 +194,7 @@ Finish:
 
 ## Integration with Worktree Helpers
 
-`__wt_setup` in `git-worktrees/worktree-core.sh` calls `workspace_init "$target_dir" "$branch"` when the library is sourced, then `scripts/feature.py new "$branch" --skip-checkout` unless the branch is one of the project's default branches. `{prefix}r` and `{prefix}bs` run `giantmem index backfill --workspace` so every file is in `live.db` before the dir goes away.
+`__wt_setup` in `git-worktrees/worktree-core.sh` calls `workspace_init "$target_dir" "$branch"` when the library is sourced, then `scripts/feature.py new "$branch" --skip-checkout` unless the branch is one of the project's default branches. `{prefix}r` and `{prefix}bs` run `giantmem db index backfill --workspace` so every file is in `live.db` before the dir goes away.
 
 ## Files
 
@@ -205,7 +203,7 @@ Finish:
 | `workspace-lib.sh` | Shell functions above. Source from your rc and from worktree helpers |
 | `workspace-init.sh` | Standalone init script, optionally writes the legacy slash commands |
 | `workspace_session_hook.py` | SessionStart hook: bootstrap and inject context |
-| `workspace_session_end.py` | SessionEnd hook: session file, discoveries, plans |
+| `workspace_session_end.py` | SessionEnd hook: session file, index line, WORKSPACE.md tables, haiku summary |
 | `list-features.sh` | Feature table from `features.json` |
 | `workspace-migrate-features.py` | Convert legacy `plans/` files into `features/` dirs |
 | `scripts/feature.py` | Feature lifecycle CLI: new, start, pause, reopen, complete, abandon, and more |
@@ -219,7 +217,7 @@ Finish:
 
 ## Discovery Categories
 
-Tag discoveries so they group well. The SessionEnd hook uses the same set when it extracts them from transcripts:
+Tag discoveries so they group well:
 
 | Category | Use for |
 |----------|---------|

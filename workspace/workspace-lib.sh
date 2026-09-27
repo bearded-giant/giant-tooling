@@ -444,10 +444,6 @@ workspace_archive() {
         local size=$(du -sh "$backup_dir" 2>/dev/null | cut -f1)
         echo "Archive size: $size"
 
-        # update fts5 search index
-        local search_script="${GIANT_TOOLING_DIR:-$HOME/dev/giant-tooling}/giantmem-archive/giantmem-search.py"
-        [ -f "$search_script" ] && python3 "$search_script" ingest --project "$project_name" 2>/dev/null &
-
         # re-init workspace so .giantmem/ isn't left empty
         local parent_dir="$(dirname "$scratch_source")"
         workspace_init "$parent_dir" "$(basename "$parent_dir")"

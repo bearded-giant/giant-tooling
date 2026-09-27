@@ -811,7 +811,7 @@ __wt_remove() {
     if [ -d "$workspace_source" ]; then
         if command -v giantmem >/dev/null 2>&1; then
             echo "Sweeping workspace into live.db..."
-            if ! giantmem index backfill --workspace "$workspace_source"; then
+            if ! giantmem db index backfill --workspace "$workspace_source"; then
                 echo "ERROR: Sweep failed. Worktree removal cancelled to preserve your work."
                 echo "Hint: fix the sweep error, then re-run, or pass --force to skip the sweep."
                 return 1
@@ -972,7 +972,7 @@ __wt_backup_workspace_current() {
         echo "Error: giantmem not on PATH"
         return 1
     fi
-    giantmem index backfill --workspace "$workspace_source"
+    giantmem db index backfill --workspace "$workspace_source"
 }
 
 # ---------------------------------------------------------------------------
@@ -1286,7 +1286,7 @@ __wt_workspace_backup() {
         echo "Error: giantmem not on PATH"
         return 1
     fi
-    giantmem index backfill --workspace "$workspace_source"
+    giantmem db index backfill --workspace "$workspace_source"
 }
 
 # Open is a no-op: snapshot dirs are deprecated. The GUI + `giantmem artifact
@@ -1303,7 +1303,6 @@ __wt_workspace_open() {
 # ---------------------------------------------------------------------------
 
 __wt_ws_status()   { workspace_status; }
-__wt_ws_tree()     { workspace_tree; }
 __wt_ws_discover() { shift; workspace_discover "$@"; }
 __wt_ws_complete() { workspace_complete; }
 __wt_ws_sync()     { workspace_sync; }
@@ -1397,7 +1396,6 @@ wt_register() {
     ws_base="${!ws_base:-}"
     if [ -n "$ws_base" ]; then
         eval "${ws_base}() { workspace_status; }"
-        eval "${ws_base}tree() { workspace_tree; }"
         eval "${ws_base}discover() { workspace_discover \"\$@\"; }"
         eval "${ws_base}complete() { workspace_complete; }"
         eval "${ws_base}sync() { workspace_sync; }"

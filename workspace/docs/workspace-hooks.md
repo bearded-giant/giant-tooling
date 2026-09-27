@@ -4,8 +4,8 @@ Two Python hooks bridge `workspace-lib.sh` with Claude Code sessions. Both are s
 
 | Hook | Event | Purpose |
 |------|-------|---------|
-| `workspace_session_hook.py` | SessionStart | Bootstrap `.giantmem/` if missing, inject context and recent sessions |
-| `workspace_session_end.py` | SessionEnd | Write a session summary file, extract discoveries and plans |
+| `workspace_session_hook.py` | SessionStart | Bootstrap `.giantmem/` if missing, inject `WORKSPACE.md` and the active plan |
+| `workspace_session_end.py` | SessionEnd | Write a session file and index line, refresh `WORKSPACE.md` tables, summarize the session with haiku |
 
 ```
 claude starts
@@ -13,27 +13,30 @@ claude starts
      v
 SessionStart hook
      |
-     +-- source=startup, no .giantmem/ or scratch/ --> workspace_init, then inject
-     +-- otherwise --> inject only
+     +-- source=startup, no .giantmem/ or scratch/ --> workspace_init via workspace-lib.sh
+     +-- inject WORKSPACE.md and plans/current.md
      v
 [Claude session runs]
      |
      v
 SessionEnd hook
      |
+     +-- no .giantmem/ or scratch/ --> minimal auto-init (own Python, no shell lib)
      +-- read transcript JSONL
-     +-- derive topic and brief
-     +-- create .giantmem/history/sessions/{timestamp}_{id}.md
+     +-- create .giantmem/history/sessions/{timestamp}_{id}.md (Topic/Brief = pending)
      +-- append one line to .giantmem/history/sessions.md
-     +-- append discoveries to .giantmem/context/discoveries.md
-     +-- write .giantmem/plans/current.md when steps were found
+     +-- regenerate ## Features and ## Timeline in WORKSPACE.md
+     +-- spawn detached `--summarize` child
+              |
+              +-- claude -p --model haiku over the session file
+              +-- rewrite Topic, Brief, add ## Outcomes, patch the index line
      v
 session ends
 ```
 
 ## Wiring
 
-Claude Code runs hooks from `~/.claude/settings.json`. In the claude-code-config repo the two hooks are chained through `hooks/dispatch.py`, which loads modules by name from `~/.claude/hooks/`:
+Claude Code runs hooks from `~/.claude/settings.json`. The claude-code-config repo chains both through `hooks/dispatch.py`, which loads modules by name from `~/.claude/hooks/`:
 
 ```json
 {
@@ -46,13 +49,13 @@ Claude Code runs hooks from `~/.claude/settings.json`. In the claude-code-config
 }
 ```
 
-That repo carries its own copies of both hook files. This doc describes the versions in `workspace/` here, which you can also wire directly:
+That repo holds the canonical copies. The files in `workspace/` here mirror them and can be wired directly:
 
 ```json
 { "type": "command", "command": "python3 $GIANT_TOOLING_DIR/workspace/workspace_session_hook.py" }
 ```
 
-The start hook finds `workspace-lib.sh` through `$GIANT_TOOLING_DIR` (default `~/dev/giant-tooling`).
+The start hook looks for `workspace-lib.sh` at `$WORKSPACE_LIB`, then `~/.claude/lib/workspace/workspace-lib.sh`, then `$GIANT_TOOLING_DIR/workspace/workspace-lib.sh`.
 
 ## SessionStart: workspace_session_hook.py
 
@@ -62,20 +65,15 @@ Input on stdin:
 { "session_id": "...", "cwd": "/path/to/project", "source": "startup" }
 ```
 
-`source` is `startup`, `resume`, or `clear`. Bootstrap runs only on `startup`, and only when neither `.giantmem/` nor a legacy `scratch/` dir exists. Context is read and injected on every source.
+`source` is `startup`, `resume`, or `clear`. Bootstrap runs only on `startup`, and only when neither `.giantmem/` nor a legacy `scratch/` dir exists. Context is injected on every source.
 
 Output on stdout, each section present only when its file exists:
 
 | Section | Source | Limit |
 |---------|--------|-------|
 | `[Workspace bootstrapped for {name}]` | printed when `workspace_init` just ran | |
-| `=== WORKSPACE CONTEXT ===` | `WORKSPACE.md` | first 2000 chars |
-| `=== RECENT SESSIONS ===` | `history/sessions/*.md`, newest first | 3 files, `Topic:` and `Brief:` lines |
-| `=== ACTIVE ARTIFACTS ===` | `artifacts.json` (built by `giantmem artifact reindex`) | counts by type and feature, up to 3 ready items per feature |
+| `=== WORKSPACE CONTEXT ===` | `WORKSPACE.md` | first 3500 chars |
 | `=== ACTIVE PLAN ===` | `plans/current.md` | first 1500 chars |
-| `=== RECENT DISCOVERIES ===` | `context/discoveries.md` | last 20 lines |
-
-A trailing reminder line tells Claude where to save findings and plans.
 
 ## SessionEnd: workspace_session_end.py
 
@@ -85,48 +83,28 @@ Input on stdin:
 { "session_id": "...", "cwd": "/path/to/project", "transcript_path": "~/.claude/projects/.../session.jsonl" }
 ```
 
-The hook returns early when there is no `.giantmem/` (or `scratch/`) dir, no transcript path, or no messages. Otherwise it:
+When neither `.giantmem/` nor `scratch/` exists the hook creates a minimal `.giantmem/` itself (`context/`, `plans/`, `history/sessions/`, `filebox/`, `research/`, `reviews/`, `WORKSPACE.md`, `.gitkeep`) and prints `Workspace: initialized .giantmem/ in {dir}` to stderr. It then returns early when there is no transcript path, no messages, or no user or assistant content. Otherwise it:
 
-1. Reads the transcript JSONL and pulls out user prompts, assistant text, tool calls with file paths, and timestamps.
-2. Scores the text against the topic keyword table and picks the top topic when it clears a small threshold, else `general`.
-3. Uses the first user prompt (trimmed to 80 chars) as the brief.
-4. Regex-matches discoveries and plan steps from assistant text.
-5. Writes the session file, appends the index line, appends discoveries, and saves plans.
+1. Reads the transcript JSONL and pulls out user prompts, tool calls with file paths, and timestamps.
+2. Writes the session file with `Topic: pending` and `Brief: pending`.
+3. Appends the index line to `history/sessions.md`.
+4. Regenerates `## Features` (from each `features/*/meta.json`) and `## Timeline` (ten most recently modified `.md` files outside `history/`, excluding `WORKSPACE.md` and `_index.md`) in `WORKSPACE.md`, inserting the sections after `## Purpose` when missing.
+5. Prints `Workspace: session:{filename}` to stderr.
+6. Spawns `python3 workspace_session_end.py --summarize {session_file}` detached, with stdin, stdout, and stderr closed.
 
-### Discovery extraction
+### Summarizer
 
-Each pattern captures the trigger word plus the next 10 to 100 characters. Matches shorter than 20 chars are dropped, longer than 200 are truncated, and at most 10 survive.
+The child runs `claude -p --model haiku --output-format text --no-session-persistence --strict-mcp-config --disable-slash-commands --tools ""` over the first 12000 chars of the session file (`--bare` added when `ANTHROPIC_API_KEY` is set), with a 180 second timeout and `GIANTMEM_SUMMARY_CHILD=1` so the nested session's own SessionEnd hook exits immediately. The prompt asks for:
 
-| Category | Trigger words |
-|----------|---------------|
-| `finding` | discovered, found, learned, realized, noticed |
-| `architecture` | pattern, architecture, structure |
-| `gotcha` | gotcha, caveat, watch out, careful, note that, important |
-| `convention` | convention, standard, style, naming |
-| `dependency` | dependency, requires, depends on, import, imports |
-| `config` | config, configuration, setting, environment |
-| `entry` | entry point, main, bootstrap, init |
+```
+TOPIC: <one lowercase tag, 1-2 words, hyphenated>
+BRIEF: <one sentence under 90 chars>
+- <outcome 1>
+- <outcome 2>
+- <outcome 3>
+```
 
-### Plan extraction
-
-Numbered list items (`1.` or `1)`) longer than 15 chars, plus lines marked `TODO`, `NEXT`, or `STEP` longer than 10 chars. At most 15 steps.
-
-### Topic keywords
-
-| Topic | Keywords |
-|-------|----------|
-| `auth` | auth, login, jwt, token, session, password, credential |
-| `api` | api, endpoint, route, rest, graphql, request, response |
-| `database` | database, sql, query, migration, model, schema, table |
-| `test` | test, spec, pytest, jest, coverage, mock, fixture |
-| `bug` | bug, fix, error, issue, debug, broken, failing |
-| `feature` | feature, implement, add, create, new, build |
-| `refactor` | refactor, cleanup, reorganize, restructure, rename |
-| `config` | config, setting, env, environment, setup, install |
-| `docs` | document, readme, comment, explain, describe |
-| `perf` | performance, optimize, speed, slow, fast, cache |
-| `ui` | ui, frontend, component, style, css, render, display |
-| `deploy` | deploy, ci, cd, pipeline, docker, kubernetes |
+On success it rewrites the `Topic:` and `Brief:` lines, inserts `## Outcomes` with up to three bullets after the brief, and patches the matching line in `history/sessions.md`. When `claude` is not on PATH or the call fails, both stay `pending`.
 
 ### Output files
 
@@ -134,17 +112,26 @@ Numbered list items (`1.` or `1)`) longer than 15 chars, plus lines marked `TODO
 |------|---------|
 | `history/sessions/{YYYYMMDD_HHMMSS}_{id8}.md` | Session summary, format below |
 | `history/sessions.md` | One appended line per session |
-| `context/discoveries.md` | Appended `- YYYY-MM-DD HH:MM: [category] finding` lines |
-| `plans/current.md` | Extracted steps. Overwritten, or appended when the file changed within the last hour |
+| `WORKSPACE.md` | `## Features` and `## Timeline` regenerated |
 
 Session file:
 
 ```markdown
+---
+type: history
+repo: {project dir name}
+status: done
+lifecycle: candidate
+created: YYYY-MM-DD
+---
 # Session: YYYY-MM-DD HH:MM - HH:MM
 
 ## Summary
 Topic: {topic}
-Brief: {first user prompt}
+Brief: {brief}
+
+## Outcomes            (added by the summarizer)
+- ...
 
 ## User Prompts
 - ... (up to 10)
@@ -160,9 +147,6 @@ Brief: {first user prompt}
 ## Commands Run
 - `{bash command}` (up to 10)
 
-## Discoveries Extracted
-- [{category}] {finding}
-
 ## Metadata
 - Session ID: {full id}
 - Generated: YYYY-MM-DD HH:MM:SS
@@ -171,22 +155,17 @@ Brief: {first user prompt}
 Index line:
 
 ```
-- YYYY-MM-DD HH:MM: [{topic}] {id8} - {brief, 50 chars} ({N edits, M discoveries} | read-only)
-```
-
-Summary on stderr, visible in the terminal:
-
-```
-Workspace: session:{filename}, {N} discoveries, plans
+- YYYY-MM-DD HH:MM: [{topic}] {id8} - {brief, 50 chars} ({N edits} | read-only)
 ```
 
 ## Manual vs Automatic
 
 | Action | Manual (shell) | Automatic (hooks) |
 |--------|----------------|-------------------|
-| Bootstrap workspace | `workspace_init` | SessionStart |
-| Add discovery | `workspace_discover "note"` | SessionEnd (extracted) |
-| Update plan | edit `plans/current.md` | SessionEnd (extracted) |
+| Bootstrap workspace | `workspace_init` | SessionStart, or SessionEnd fallback |
+| Add discovery | `workspace_discover "note"` | manual only |
+| Update plan | edit `plans/current.md` | manual only |
+| Session summary | `workspace_session_note` | SessionEnd |
 | Mark complete | `workspace_complete` | manual only |
 | View status | `workspace_status` | manual only |
 
@@ -208,8 +187,12 @@ echo '{"session_id":"test","cwd":"/path/with/.giantmem","transcript_path":"/path
   python3 $GIANT_TOOLING_DIR/workspace/workspace_session_end.py
 ```
 
-No discoveries extracted: extraction is regex on trigger words, so unusual phrasing will not match. `workspace_discover` is the manual fallback.
+Topic and brief stuck at `pending`: the summarizer child could not run `claude`, or the call failed or timed out. Run the `--summarize` form by hand against the session file to see the error:
+
+```bash
+python3 $GIANT_TOOLING_DIR/workspace/workspace_session_end.py --summarize /path/to/.giantmem/history/sessions/{file}.md
+```
 
 ## Dependencies
 
-Python 3 standard library, `bash` for the `workspace_init` subprocess, and `workspace-lib.sh` at `$GIANT_TOOLING_DIR/workspace/`.
+Python 3 standard library, `bash` for the `workspace_init` subprocess, `workspace-lib.sh` on one of the lookup paths above, and the `claude` CLI on PATH for summaries.
