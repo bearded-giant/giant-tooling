@@ -155,10 +155,10 @@ Watches `$GIANTMEM_DEV_ROOTS` (or `~/dev`). 2s debounce per workspace. Edits to 
 ## Architecture
 
 ```
-session-end hook (workspace/workspace_session_end.py)
+session-end hook (claude-code-config/hooks/session_end_ingest.py)
   └── ingests Claude JSONL → archives.db (incremental, by mtime)
 
-PostToolUse hook (workspace/scripts/live_index.py)
+PostToolUse hook (claude-code-config/hooks/live_index.py)
   └── upserts .giantmem/** edits → live.db
 
 giantmem db watch (fsnotify)

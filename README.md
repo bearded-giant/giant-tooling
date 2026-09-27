@@ -14,7 +14,7 @@ Worktrees are throwaway. Spin one up per feature, branch, or experiment. Kill it
 
 Everything is searchable from one SQLite file. `live.db.live_docs` holds every file under every `.giantmem/`, written by three paths: the Claude PostToolUse hook on edit, a daemon-startup filesystem backfill, and `giantmem db index backfill` on demand. The daemon projects those rows into a typed `artifacts` table and keeps embeddings fresh (for hybrid search). Claude session JSONLs are sweep-ingested into `archives.db` every 5 min via a launchd agent. Past plans, research, discoveries, and chat history stay queryable across all projects forever.
 
-Stdlib-only where it makes sense. `workspace/` and `git-worktrees/` are Bash + Python (stdlib, no pip deps). `giantmem/` is Go — single static binary, modernc.org/sqlite for FTS5, BurntSushi/toml for source plugin config. All hooks are Python stdlib and wrap their main in try/except so a broken hook never breaks a session; failures land in `~/.cache/giantmem/hook.log`. Shell scripts use `set -euo pipefail`. Comments are lowercase. The `giantmemd` daemon is opt-in (auto-routed when its socket is alive, easy to bypass with `--no-daemon` or `GIANTMEM_NO_DAEMON=1`); it caches DB handles to cut ~700ms of cold start per CLI invocation. If something breaks, the call graph is small and the fix is usually obvious.
+Stdlib-only where it makes sense. `workspace/` and `git-worktrees/` are Bash + Python (stdlib, no pip deps). `giantmem/` is Go — single static binary, modernc.org/sqlite for FTS5, BurntSushi/toml for source plugin config. Shell scripts use `set -euo pipefail`. Comments are lowercase. The `giantmemd` daemon is opt-in (auto-routed when its socket is alive, easy to bypass with `--no-daemon` or `GIANTMEM_NO_DAEMON=1`); it caches DB handles to cut ~700ms of cold start per CLI invocation. If something breaks, the call graph is small and the fix is usually obvious.
 
 The whole thing is meant to be forked, edited, and tweaked to your own bespoke workflow. The defaults reflect one author's working style; your mileage will vary. Read the subsystem READMEs (linked below) for the actual command reference and setup walkthroughs.
 
@@ -24,7 +24,7 @@ The whole thing is meant to be forked, edited, and tweaked to your own bespoke w
 
 Manages `.giantmem/` directories that live inside any project repo. The .giantmem dir is a structured workspace for plans, features, research, context, and session history that Claude Code reads and writes during sessions.
 
-The system has two parts. `workspace-lib.sh` provides shell functions (`ws`, `wsb`, `wst`, `wsa`, etc.) for creating, migrating, and inspecting .giantmem dirs from your terminal. Two Python hooks integrate with Claude Code directly: `workspace_session_hook.py` runs at session start to bootstrap .giantmem/ and inject context, and `workspace_session_end.py` parses the JSONL transcript at session end to extract discoveries and create session summaries.
+The system has two parts. `workspace-lib.sh` provides shell functions (`workspace_init`, `workspace_bootstrap`, `workspace_status`, `workspace_new_feature`, etc.) for creating, migrating, and inspecting .giantmem dirs from your terminal, and `scripts/feature.py` drives the feature lifecycle behind the slash commands. The SessionStart and SessionEnd hooks that call into the library live in claude-code-config.
 
 Also includes feature tracking -- `.giantmem/features/` directories with specs, facts, and metadata that persist across sessions, plus a migration tool (`workspace-migrate-features.py`) for converting legacy plan files into the feature structure.
 
@@ -92,7 +92,7 @@ wt_adopt /path/to/existing/repo      # convert an existing clone in place
 
 ## Conventions
 
-Python scripts use stdlib only (no pip dependencies). Go code in `giantmem/` keeps its dependency surface tight (cobra, modernc.org/sqlite, BurntSushi/toml, mark3labs/mcp-go) and ships as one static binary. Shell scripts target bash with `set -euo pipefail`. Hook scripts never crash — exceptions are caught and appended to `~/.cache/giantmem/hook.log` so they don't break Claude Code sessions.
+Python scripts use stdlib only (no pip dependencies). Go code in `giantmem/` keeps its dependency surface tight (cobra, modernc.org/sqlite, BurntSushi/toml, mark3labs/mcp-go) and ships as one static binary. Shell scripts target bash with `set -euo pipefail`.
 
 ## License
 

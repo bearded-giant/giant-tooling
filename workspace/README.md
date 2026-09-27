@@ -1,6 +1,6 @@
 # Workspace Management System
 
-Scripts and hooks for managing Claude Code workspaces: the `.giantmem/` directory and feature tracking inside it. Full walkthrough in `docs/workspace-system.md`, hook internals in `docs/workspace-hooks.md`.
+Scripts for managing Claude Code workspaces: the `.giantmem/` directory and feature tracking inside it. Full walkthrough in `docs/workspace-system.md`. The SessionStart and SessionEnd hooks that call into this library live in the claude-code-config repo.
 
 ## Setup
 
@@ -117,8 +117,6 @@ Other one-off migrations live in `scripts/`: `migrate_spec_to_proposal.py` (lega
 |------|---------|
 | `workspace-lib.sh` | Shell functions for workspace management |
 | `workspace-init.sh` | Standalone init script |
-| `workspace_session_hook.py` | Claude Code SessionStart hook |
-| `workspace_session_end.py` | Claude Code SessionEnd hook |
 | `list-features.sh` | Feature table from `features.json` |
 | `workspace-migrate-features.py` | Plan to feature migration tool |
 | `scripts/feature.py` | Feature lifecycle CLI behind the slash commands |
@@ -127,7 +125,7 @@ Other one-off migrations live in `scripts/`: `migrate_spec_to_proposal.py` (lega
 | `scripts/backfill_frontmatter.py` | Add frontmatter to legacy artifacts |
 | `scripts/backfill_lifecycle.py` | Add `lifecycle:` to existing artifacts |
 | `scripts/embed.py` | Embedder daemon for `giantmem db embed` |
-| `docs/` | System overview, hook internals, CLAUDE.md snippets |
+| `docs/` | System overview, CLAUDE.md snippets |
 
 ## Archiving
 

@@ -142,5 +142,5 @@ GIANTMEM_EMBED_BACKEND=python giantmem db embed --backfill   # real semantic (op
 | Mental model + narrative | `claude-code-config/docs/scoped-memory-overview.md` |
 | One-page overview | `claude-code-config/docs/scoped-memory-overview.md` |
 | `/review-memory` slash command | `claude-code-config/commands/review-memory.md` |
-| Session-hook refactor | `claude-code-config/hooks/workspace_session_hook.py` (the registered copy; `workspace/workspace_session_hook.py` in this repo is an older unused fork) |
+| Session-hook refactor | `claude-code-config/hooks/workspace_session_hook.py` |
 | Backend decision rationale | (was at `claude-code-config/.giantmem/features/scoped-memory/research/sqlite_vec_decision.md`; .giantmem/ is gitignored) |

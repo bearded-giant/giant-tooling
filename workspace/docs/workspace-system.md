@@ -74,26 +74,17 @@ project/
     │   └── current.md        # active plan
     ├── history/
     │   ├── sessions.md       # one line per session
-    │   └── sessions/         # one file per session (SessionEnd hook)
+    │   └── sessions/         # one file per session (claude-code-config SessionEnd hook)
     ├── research/
     ├── reviews/
     └── filebox/              # scratch files, samples, exports
 ```
 
-`artifacts.json` appears at the root once `giantmem artifact reindex` has run; the SessionStart hook reads it for the artifacts summary.
+`artifacts.json` appears at the root once `giantmem artifact reindex` has run.
 
 ## Claude Code Integration
 
-Two hooks bridge the shell library and Claude Code:
-
-| Event | Hook | Action |
-|-------|------|--------|
-| SessionStart | `workspace_session_hook.py` | Bootstrap `.giantmem/` if missing, inject `WORKSPACE.md` and the active plan |
-| SessionEnd | `workspace_session_end.py` | Write a session file and index line, refresh `WORKSPACE.md` tables, summarize via haiku |
-
-Session start injects `WORKSPACE.md` and `plans/current.md`. Session end parses the transcript JSONL, writes `history/sessions/{timestamp}_{id}.md`, appends a line to `history/sessions.md`, regenerates the Features and Timeline tables in `WORKSPACE.md`, and spawns a detached `claude -p --model haiku` call that fills in the session's topic, brief, and outcomes.
-
-Canonical copies of both hooks and the `settings.json` wiring (`hooks/dispatch.py`) live in the claude-code-config repo; the copies here mirror them. See `workspace-hooks.md` for details.
+Two hooks in the claude-code-config repo drive the session lifecycle. `hooks/workspace_session_hook.py` (SessionStart) runs `workspace_init` from this library when a session opens in a dir without `.giantmem/`, then injects `WORKSPACE.md` and `plans/current.md`. `hooks/workspace_session_end.py` (SessionEnd) writes `history/sessions/{timestamp}_{id}.md`, appends a line to `history/sessions.md`, regenerates the Features and Timeline tables in `WORKSPACE.md`, and spawns a detached haiku call that fills in the session's topic, brief, and outcomes. Details in that repo's `docs/workspace-hooks.md`.
 
 ## Shell Functions
 
@@ -202,8 +193,6 @@ Finish:
 |------|---------|
 | `workspace-lib.sh` | Shell functions above. Source from your rc and from worktree helpers |
 | `workspace-init.sh` | Standalone init script, optionally writes the legacy slash commands |
-| `workspace_session_hook.py` | SessionStart hook: bootstrap and inject context |
-| `workspace_session_end.py` | SessionEnd hook: session file, index line, WORKSPACE.md tables, haiku summary |
 | `list-features.sh` | Feature table from `features.json` |
 | `workspace-migrate-features.py` | Convert legacy `plans/` files into `features/` dirs |
 | `scripts/feature.py` | Feature lifecycle CLI: new, start, pause, reopen, complete, abandon, and more |
@@ -212,7 +201,6 @@ Finish:
 | `scripts/backfill_frontmatter.py` | Add YAML frontmatter to legacy artifacts |
 | `scripts/backfill_lifecycle.py` | Add `lifecycle:` frontmatter to existing artifacts |
 | `scripts/embed.py` | Long-running embedder daemon used by `giantmem db embed` |
-| `docs/workspace-hooks.md` | Hook behavior and file formats |
 | `docs/workspace-claude-config.md` | CLAUDE.md snippets that teach Claude the layout |
 
 ## Discovery Categories

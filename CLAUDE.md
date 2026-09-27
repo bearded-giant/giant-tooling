@@ -6,7 +6,7 @@ Guidance for AI coding assistants (Claude Code, Cursor, Aider, etc.) working in 
 
 giant-tooling is a collection of shell and Python utilities for Claude Code development workflows. Three subsystems:
 
-1. **workspace/** -- `.giantmem/` directory lifecycle, session hooks, feature tracking
+1. **workspace/** -- `.giantmem/` directory lifecycle, feature tracking
 2. **git-worktrees/** -- worktree helper generator that creates per-project shell functions
 3. **giantmem/** -- Go CLI: live.db index, FTS5 + vector search, sessions, feature and workspace lifecycle, MCP server
 
@@ -16,12 +16,7 @@ All scripts use only Python stdlib (no pip dependencies). Shell scripts target b
 
 ### Workspace System
 
-`workspace-lib.sh` is the core library. It provides shell functions (`workspace_init`, `workspace_bootstrap`, `workspace_migrate`, `workspace_migrate_dir`, etc.) that manage `.giantmem/` directories in any project. Two Python hooks integrate with Claude Code (canonical copies and the `settings.json` wiring via `hooks/dispatch.py` live in the claude-code-config repo; the copies here mirror them):
-
-- `workspace_session_hook.py` (SessionStart) -- on `startup` bootstraps `.giantmem/` if missing (via `workspace-lib.sh`), then injects WORKSPACE.md and `plans/current.md` into session context
-- `workspace_session_end.py` (SessionEnd) -- parses the JSONL transcript, writes `.giantmem/history/sessions/{ts}_{id}.md` plus an index line in `history/sessions.md`, regenerates the Features and Timeline tables in WORKSPACE.md, then spawns a detached `claude -p --model haiku` child that fills in Topic, Brief, and Outcomes. Auto-inits a minimal `.giantmem/` (own Python, no shell lib) when none exists
-
-The hooks read JSON from stdin and write to stdout/stderr.
+`workspace-lib.sh` is the core library. It provides shell functions (`workspace_init`, `workspace_bootstrap`, `workspace_migrate`, `workspace_migrate_dir`, etc.) that manage `.giantmem/` directories in any project. The Claude Code session hooks that call it live in the claude-code-config repo (`hooks/workspace_session_hook.py` runs `workspace_init` on SessionStart and injects WORKSPACE.md plus the active plan; `hooks/workspace_session_end.py` writes the session file, index line, and WORKSPACE.md tables on SessionEnd). Nothing in this repo is wired as a hook.
 
 `list-features.sh` renders a formatted table from `.giantmem/features/features.json` (read-only; `--all` includes archived).
 
@@ -64,6 +59,5 @@ Archiving is a live.db-verified delete, not a snapshot: `giantmem feature archiv
 
 - Shell scripts use `set -euo pipefail`
 - Python scripts use `#!/usr/bin/env python3` and stdlib only
-- Hook scripts never crash -- all exceptions are silently caught
 - Comments are lowercase
 - No external Python packages
