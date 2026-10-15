@@ -3822,8 +3822,16 @@ function SessionLinksPanel({ links }: { links: hub.Link[] }) {
               </button>
             )}
             {isPath && (
-              <button className="mini-btn" onClick={() => OpenPath(l.target, false)}>
-                open
+              <button
+                className="mini-btn"
+                onClick={() =>
+                  OpenPath(
+                    l.kind === "vault" ? `obsidian://open?path=${encodeURIComponent(l.target)}` : l.target,
+                    false,
+                  )
+                }
+              >
+                {l.kind === "vault" ? "open in Obsidian" : "open"}
               </button>
             )}
             <CopyButton text={l.target} label={l.kind === "doit" ? "copy doit id" : "copy"} />
