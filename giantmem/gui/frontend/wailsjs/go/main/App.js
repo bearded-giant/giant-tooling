@@ -130,6 +130,10 @@ export function SetPref(arg1, arg2) {
   return window['go']['main']['App']['SetPref'](arg1, arg2);
 }
 
+export function SetToolStar(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['SetToolStar'](arg1, arg2, arg3, arg4);
+}
+
 export function TakePendingLink() {
   return window['go']['main']['App']['TakePendingLink']();
 }

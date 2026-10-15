@@ -40,6 +40,7 @@ import {
   SessionPathByID,
   SessionToolCalls,
   SetPref,
+  SetToolStar,
   TakePendingLink,
   TranscriptForSession,
   Version,
@@ -240,6 +241,7 @@ function App() {
     () => localStorage.getItem("gm.toolNameFilter") || "any",
   );
   const [toolErrorsOnly, setToolErrorsOnly] = useState(false);
+  const [toolStarredOnly, setToolStarredOnly] = useState(false);
   const [day, setDay] = useState<string>(todayISO());
   const [dayRows, setDayRows] = useState<hub.DaySession[]>([]);
   const [toolSelected, setToolSelected] = useState<main.ToolUseHit | null>(null);
@@ -601,6 +603,7 @@ function App() {
             project: "",
             useFTSPre: true,
             errorsOnly: toolErrorsOnly,
+            starredOnly: toolStarredOnly,
             since,
             until,
             limit: 200,
@@ -665,6 +668,7 @@ function App() {
     until,
     toolNameFilter,
     toolErrorsOnly,
+    toolStarredOnly,
     day,
     reloadKey,
   ]);
@@ -968,6 +972,23 @@ function App() {
                 onChange={(e) => setToolErrorsOnly(e.target.checked)}
               />
               errors only
+            </label>
+            <label
+              style={{
+                fontSize: 13,
+                color: "var(--fg-muted)",
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+              title="only tool calls you starred (search box optional)"
+            >
+              <input
+                type="checkbox"
+                checked={toolStarredOnly}
+                onChange={(e) => setToolStarredOnly(e.target.checked)}
+              />
+              starred
             </label>
           </>
         )}
@@ -1317,6 +1338,7 @@ function App() {
         {tab === "tools" && toolSelected && (
           <ToolUseDetail
             hit={toolSelected}
+            onStarToggled={() => setToolHits((hs) => [...hs])}
             onOpenSession={() => {
               setTab("sessions");
               setSelection({ kind: "session", path: toolSelected.sessionPath });
@@ -2210,6 +2232,35 @@ function SidebarResizer({
   );
 }
 
+function StarButton({
+  sessionId,
+  agentId,
+  seq,
+  starred,
+  onToggled,
+}: {
+  sessionId: string;
+  agentId: string;
+  seq: number;
+  starred: boolean;
+  onToggled: (on: boolean) => void;
+}) {
+  return (
+    <button
+      className="mini-btn"
+      title={starred ? "unstar this call" : "star this call"}
+      onClick={(e) => {
+        e.stopPropagation();
+        SetToolStar(sessionId, agentId, seq, !starred)
+          .then(() => onToggled(!starred))
+          .catch((err: unknown) => console.error(err));
+      }}
+    >
+      {starred ? "★ starred" : "☆ star"}
+    </button>
+  );
+}
+
 function CopyButton({ text, label }: { text: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   if (!text) return null;
@@ -2448,6 +2499,7 @@ function ToolUseRow({
         {" · #"}
         {hit.turnIndex}
         {hit.isError && <span style={{ color: "var(--danger)" }}> · error</span>}
+        {hit.starred && <span title="starred"> · ★</span>}
         {" · "}
         <a
           onClick={(e) => {
@@ -2471,9 +2523,11 @@ function ToolUseRow({
 function ToolUseDetail({
   hit,
   onOpenSession,
+  onStarToggled,
 }: {
   hit: main.ToolUseHit;
   onOpenSession: () => void;
+  onStarToggled: () => void;
 }) {
   let inputObj: any = null;
   try {
@@ -2502,6 +2556,18 @@ function ToolUseDetail({
           </span>
           <CopyButton text={hit.sessionPath} label="copy session path" />
           <CopyButton text={hit.link || ""} label="copy deep link" />
+          {hit.link && (
+            <StarButton
+              sessionId={hit.sessionId}
+              agentId={hit.agentId || ""}
+              seq={hit.turnIndex}
+              starred={!!hit.starred}
+              onToggled={(on) => {
+                hit.starred = on;
+                onStarToggled();
+              }}
+            />
+          )}
           <button
             onClick={onOpenSession}
             style={{
@@ -3682,6 +3748,7 @@ function SessionToolsPanel({
                 <div className={`hub-row ${open === key ? "selected" : ""}`} onClick={() => setOpen(open === key ? null : key)}>
                   <span className="row-meta hub-seq">#{c.seq}</span>
                   <span className={`chip tool ${c.is_error ? "err" : ""}`}>{c.tool}</span>
+                  {c.starred && <span className="row-meta" title="starred">★</span>}
                   <span className="hub-summary" title={c.summary}>
                     {c.summary}
                   </span>
@@ -3700,6 +3767,16 @@ function SessionToolsPanel({
                     )}
                     <CopyButton text={c.summary} label="copy summary (command / path)" />
                     <CopyButton text={c.link} label="copy deep link" />
+                    <StarButton
+                      sessionId={sessionId}
+                      agentId={c.agent_id || ""}
+                      seq={c.seq}
+                      starred={!!c.starred}
+                      onToggled={(on) => {
+                        c.starred = on;
+                        setCalls((cs) => (cs ? [...cs] : cs));
+                      }}
+                    />
                   </div>
                 )}
               </div>

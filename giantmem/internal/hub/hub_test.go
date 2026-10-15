@@ -142,3 +142,49 @@ func TestBundleAgentsDayTranscript(t *testing.T) {
 		t.Fatalf("pruned transcript should fall back to bundle, got %s", got)
 	}
 }
+
+func TestStarSurvivesReingest(t *testing.T) {
+	d, _, _ := fixture(t)
+	sub, _ := QueryToolUses(d, ToolQuery{SessionID: sid, Agent: "a1"})
+	if len(sub) != 1 {
+		t.Fatalf("subagent calls = %+v", sub)
+	}
+	if err := SetStar(d, sid, "a1", sub[0].Seq, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := SetStar(d, sid, "a1", sub[0].Seq, true); err != nil {
+		t.Fatalf("re-star should be a no-op: %v", err)
+	}
+	starred, _ := QueryToolUses(d, ToolQuery{Starred: true})
+	if len(starred) != 1 || !starred[0].Starred || starred[0].AgentID != "a1" {
+		t.Fatalf("starred = %+v", starred)
+	}
+	all, _ := QueryToolUses(d, ToolQuery{SessionID: sid})
+	for _, c := range all {
+		if c.Starred != (c.AgentID == "a1") {
+			t.Fatalf("starred flag wrong on %+v", c)
+		}
+	}
+
+	// ingest deletes and reinserts a transcript's calls under new ids
+	if _, err := d.Exec(`INSERT INTO tool_uses (session_id, agent_id, project, seq, ts, tool, summary, input, is_error, result_head)
+		SELECT session_id, agent_id, project, seq, ts, tool, summary, input, is_error, result_head FROM tool_uses WHERE agent_id = 'a1'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`DELETE FROM tool_uses WHERE id = (SELECT MIN(id) FROM tool_uses WHERE agent_id = 'a1')`); err != nil {
+		t.Fatal(err)
+	}
+	if starred, _ = QueryToolUses(d, ToolQuery{Starred: true, Match: "map"}); len(starred) > 1 {
+		t.Fatalf("fts + starred = %+v", starred)
+	}
+	if starred, _ = QueryToolUses(d, ToolQuery{Starred: true}); len(starred) != 1 {
+		t.Fatalf("star lost on reingest: %+v", starred)
+	}
+
+	if err := SetStar(d, sid, "a1", sub[0].Seq, false); err != nil {
+		t.Fatal(err)
+	}
+	if starred, _ = QueryToolUses(d, ToolQuery{Starred: true}); len(starred) != 0 {
+		t.Fatalf("unstar left %+v", starred)
+	}
+}

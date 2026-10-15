@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 )
@@ -27,6 +28,7 @@ type ToolUse struct {
 	Input      string `json:"input,omitempty"`
 	ResultHead string `json:"result_head,omitempty"`
 	IsError    bool   `json:"is_error,omitempty"`
+	Starred    bool   `json:"starred,omitempty"`
 	Link       string `json:"link"`
 }
 
@@ -104,6 +106,7 @@ type ToolQuery struct {
 	Project   string
 	Agent     string
 	Errors    bool
+	Starred   bool
 	Since     string
 	Until     string
 	Limit     int
@@ -118,6 +121,10 @@ func QueryToolUses(d *sql.DB, q ToolQuery) ([]ToolUse, error) {
 		from = "tool_uses_fts f JOIN tool_uses t ON t.id = f.rowid"
 		conds = append(conds, "tool_uses_fts MATCH ?")
 		args = append(args, search.SanitizeFTSQuery(q.Match))
+	}
+	from += " LEFT JOIN starred_tool_uses s ON s.session_id = t.session_id AND s.agent_id = t.agent_id AND s.seq = t.seq"
+	if q.Starred {
+		conds = append(conds, "s.seq IS NOT NULL")
 	}
 	add := func(cond string, v any) {
 		conds = append(conds, cond)
@@ -164,7 +171,7 @@ func QueryToolUses(d *sql.DB, q ToolQuery) ([]ToolUse, error) {
 		io = "t.input, COALESCE(t.result_head,'')"
 	}
 	sqlq := fmt.Sprintf(`SELECT t.session_id, t.agent_id, t.project, t.seq, COALESCE(t.ts,''),
-                                t.tool, t.summary, t.is_error, %s
+                                t.tool, t.summary, t.is_error, s.seq IS NOT NULL, %s
                            FROM %s %s ORDER BY %s`, io, from, where, order)
 	if q.Limit > 0 {
 		sqlq += " LIMIT ?"
@@ -179,7 +186,7 @@ func QueryToolUses(d *sql.DB, q ToolQuery) ([]ToolUse, error) {
 	for rows.Next() {
 		var r ToolUse
 		var isErr int
-		if err := rows.Scan(&r.SessionID, &r.AgentID, &r.Project, &r.Seq, &r.TS, &r.Tool, &r.Summary, &isErr, &r.Input, &r.ResultHead); err != nil {
+		if err := rows.Scan(&r.SessionID, &r.AgentID, &r.Project, &r.Seq, &r.TS, &r.Tool, &r.Summary, &isErr, &r.Starred, &r.Input, &r.ResultHead); err != nil {
 			return nil, err
 		}
 		r.IsError = isErr == 1
@@ -187,6 +194,17 @@ func QueryToolUses(d *sql.DB, q ToolQuery) ([]ToolUse, error) {
 		out = append(out, r)
 	}
 	return out, rows.Err()
+}
+
+// SetStar keys on (session, agent, seq) so a star survives re-ingest of the transcript.
+func SetStar(d *sql.DB, sessionID, agentID string, seq int, on bool) error {
+	if !on {
+		_, err := d.Exec(`DELETE FROM starred_tool_uses WHERE session_id = ? AND agent_id = ? AND seq = ?`, sessionID, agentID, seq)
+		return err
+	}
+	_, err := d.Exec(`INSERT OR IGNORE INTO starred_tool_uses (session_id, agent_id, seq, starred_at) VALUES (?, ?, ?, ?)`,
+		sessionID, agentID, seq, time.Now().UTC().Format(time.RFC3339))
+	return err
 }
 
 func QueryLinks(d *sql.DB, sessionID string) ([]Link, error) {

@@ -5,10 +5,10 @@ Desktop memory browser for your `giantmem` archive. It's a Wails app (Go backend
 Five tabs:
 
 1. **activity** — which repos and files moved recently, with per-project sparklines and a heatmap.
-2. **sessions** — search and browse Claude Code sessions indexed in `archives.db`. Pick one and the right pane has four views. **transcript** unpacks the JSONL into a devtools-style log: collapsible turns, paired tool_use ↔ tool_result blocks, expand-all / collapse-all, either sort order. **tools** lists every tool call the session made, grouped by thread, so each subagent shows up under its type and description; click a call for its input and the head of its result. **files** is the session's archived working set (scratchpad scripts, patches, drafts, background task output, workflow scripts) with a viewer, open, and reveal-in-Finder. **links** is what the session produced: claude.ai artifacts, vault notes (they open in Obsidian), handoffs, doit items, MRs. The header carries the first prompt, the bundle folder, and a copyable resume command. A transcript Claude Code has already pruned loads from the bundle's snapshot instead.
+2. **sessions** — search and browse Claude Code sessions indexed in `archives.db`. Pick one and the right pane has four views. **transcript** unpacks the JSONL into a devtools-style log: collapsible turns, paired tool_use ↔ tool_result blocks, expand-all / collapse-all, either sort order. **tools** lists every tool call the session made, grouped by thread, so each subagent shows up under its type and description; click a call for its input, the head of its result, and a star toggle. **files** is the session's archived working set (scratchpad scripts, patches, drafts, background task output, workflow scripts) with a viewer, open, and reveal-in-Finder. **links** is what the session produced: claude.ai artifacts, vault notes (they open in Obsidian), handoffs, doit items, MRs. The header carries the first prompt, the bundle folder, and a copyable resume command. A transcript Claude Code has already pruned loads from the bundle's snapshot instead.
 3. **day** — every session with tool activity on a given day, oldest first, with its first prompt, call and error counts, files, and links. Click one to open it.
 4. **artifacts** — hybrid search (FTS + vector + recency + access) and faceted browse over the typed `artifacts` projection in `live.db`. Filter by type, status, lifecycle, feature, and repo. Detail pane renders the markdown body.
-5. **tools** — search tool calls across every session and subagent. Pick `Bash`, `Edit`, `WebFetch`, etc. (or `any tool`), type some words, tick **errors only** if you're hunting failures, and jump from any hit into its session.
+5. **tools** — search tool calls across every session and subagent. Pick `Bash`, `Edit`, `WebFetch`, etc. (or `any tool`), type some words, tick **errors only** if you're hunting failures or **starred** for the calls you kept, and jump from any hit into its session.
 
 Deep links open the app straight onto what they name, which is how the vault daily note and doit items link back here:
 
@@ -21,7 +21,7 @@ Deep links open the app straight onto what they name, which is how the vault dai
 
 The session header, every tool call, and every archived file have a "copy deep link" button, and the CLI (`--links`, `--json`) and MCP tools hand out the same links. The scheme is declared in `wails.json` and macOS picks it up once the app is in `/Applications`.
 
-Read-only for v1. Writes (lifecycle changes, in-place editing) are deferred.
+Read-only apart from starring tool calls, which writes to `starred_tool_uses` in `archives.db`. Writes (lifecycle changes, in-place editing) are deferred.
 
 ## Prerequisites
 

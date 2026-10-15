@@ -34,6 +34,7 @@ var (
 	hubProject string
 	hubLimit   int
 	hubLinks   bool
+	hubStarred bool
 )
 
 var sessToolsCmd = &cobra.Command{
@@ -131,10 +132,12 @@ var toolsCmd = &cobra.Command{
 }
 
 var toolsFindCmd = &cobra.Command{
-	Use:   "find <query>",
+	Use:   "find [query]",
 	Short: "FTS5 search over tool names, summaries, and inputs (e.g. Bash commands)",
-	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if len(args) == 0 && !hubStarred {
+			return fmt.Errorf("pass a query or --starred")
+		}
 		a, err := db.Open(archiveDBPath())
 		if err != nil {
 			return err
@@ -145,6 +148,7 @@ var toolsFindCmd = &cobra.Command{
 			Tool:    hubTool,
 			Project: hubProject,
 			Errors:  hubErrors,
+			Starred: hubStarred,
 			Limit:   hubLimit,
 		})
 		if err != nil {
@@ -176,6 +180,9 @@ func printToolUses(hits []hub.ToolUse, withSession bool) {
 		summary := h.Summary
 		if h.IsError {
 			summary = "[error] " + summary
+		}
+		if h.Starred {
+			summary = "[*] " + summary
 		}
 		if len(summary) > 140 {
 			summary = summary[:140] + "..."
@@ -223,6 +230,7 @@ func init() {
 	toolsFindCmd.Flags().IntVarP(&hubLimit, "limit", "n", 30, "max rows")
 	toolsFindCmd.Flags().BoolVar(&sessJSON, "json", false, "emit JSON")
 	toolsFindCmd.Flags().BoolVar(&hubLinks, "links", false, "add a giantmem:// link column")
+	toolsFindCmd.Flags().BoolVar(&hubStarred, "starred", false, "only calls starred in the GUI (query optional)")
 	sessionCmd.AddCommand(sessToolsCmd, sessFilesCmd, sessLinksCmd)
 	toolsCmd.AddCommand(toolsFindCmd)
 	rootCmd.AddCommand(toolsCmd)

@@ -76,6 +76,7 @@ Claude's scratchpad and background task output live under `/private/tmp`, which 
 | `giantmem tools find "glab mr" --tool Bash -p auth` | narrow by tool (SQL LIKE) and project |
 | `giantmem tools find splunk --tool 'mcp__%' --errors` | only calls that came back as errors |
 | `giantmem tools find "glab mr" --links` | add a `giantmem://tool/...` column that opens each call in the GUI |
+| `giantmem tools find --starred` | the calls you starred in the GUI, newest first (add a query to narrow them) |
 | `giantmem find "churn baseline" -s bundle` | search the archived scripts and drafts themselves |
 
 Set `[sessions] vault_root` in `config.toml` (or export `OBSIDIAN_VAULT`) so notes written into your vault show up as `vault` links. The MCP server exposes the same data as `find_tool_uses` and `get_session_bundle`. JSON output from both, and from `--json` on the CLI, carries a `link` on every tool call, bundle file, and bundle, so a handoff or doit item can point straight at it.

@@ -141,6 +141,21 @@ var archiveMigrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: 6,
+		Name:    "starred_tool_uses",
+		Apply: func(tx *sql.Tx) error {
+			// keyed by position, not tool_uses.id: ingest deletes and reinserts a transcript's calls
+			_, err := tx.Exec(`CREATE TABLE IF NOT EXISTS starred_tool_uses (
+                    session_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL DEFAULT '',
+                    seq INTEGER NOT NULL,
+                    starred_at TEXT NOT NULL,
+                    PRIMARY KEY (session_id, agent_id, seq)
+                )`)
+			return err
+		},
+	},
 }
 
 // liveMigrations is the canonical list for live.db.

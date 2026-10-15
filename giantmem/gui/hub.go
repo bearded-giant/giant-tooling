@@ -63,6 +63,13 @@ func (a *App) SessionToolCalls(sessionID, agent string) ([]hub.ToolUse, error) {
 	return hub.QueryToolUses(a.archive, hub.ToolQuery{SessionID: sessionID, Agent: agent, WithIO: true})
 }
 
+func (a *App) SetToolStar(sessionID, agentID string, seq int, on bool) error {
+	if a.archive == nil {
+		return fmt.Errorf("archives.db not open")
+	}
+	return hub.SetStar(a.archive, sessionID, agentID, seq, on)
+}
+
 // DaySessions lists sessions with tool activity on a local calendar day (YYYY-MM-DD).
 func (a *App) DaySessions(day string) ([]hub.DaySession, error) {
 	if a.archive == nil {
@@ -226,7 +233,7 @@ func (a *App) indexedToolUses(f ToolUseFilter) ([]ToolUseHit, bool, error) {
 	if a.archive.QueryRow(`SELECT COUNT(*) FROM (SELECT 1 FROM tool_uses LIMIT 1)`).Scan(&n) != nil || n == 0 {
 		return nil, false, nil
 	}
-	q := hub.ToolQuery{Match: f.Query, Tool: f.ToolName, Project: f.Project, Errors: f.ErrorsOnly, Limit: f.Limit, WithIO: true}
+	q := hub.ToolQuery{Match: f.Query, Tool: f.ToolName, Project: f.Project, Errors: f.ErrorsOnly, Starred: f.StarredOnly, Limit: f.Limit, WithIO: true}
 	if f.Since != "" {
 		t, err := search.ParseSince(f.Since)
 		if err != nil {
@@ -267,6 +274,7 @@ func (a *App) indexedToolUses(f ToolUseFilter) ([]ToolUseHit, bool, error) {
 			OutputClip:   clipText(r.ResultHead, 200),
 			IsError:      r.IsError,
 			Link:         r.Link,
+			Starred:      r.Starred,
 		})
 	}
 	return out, true, nil

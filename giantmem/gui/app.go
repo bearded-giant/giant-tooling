@@ -313,6 +313,7 @@ type ToolUseHit struct {
 	IsError      bool   `json:"isError,omitempty"`
 	AgentID      string `json:"agentId,omitempty"`
 	Link         string `json:"link,omitempty"`
+	Starred      bool   `json:"starred,omitempty"`
 }
 
 // ToolUseFilter scopes SearchToolUses. Query is a case-insensitive substring
@@ -326,8 +327,9 @@ type ToolUseFilter struct {
 	Since     string `json:"since,omitempty"`
 	Until     string `json:"until,omitempty"`
 	Limit     int    `json:"limit,omitempty"`
-	// ErrorsOnly is honored by the tool_uses index path only.
-	ErrorsOnly bool `json:"errorsOnly,omitempty"`
+	// ErrorsOnly and StarredOnly are honored by the tool_uses index path only.
+	ErrorsOnly  bool `json:"errorsOnly,omitempty"`
+	StarredOnly bool `json:"starredOnly,omitempty"`
 }
 
 // SearchToolUses scans session JSONL files for tool_use blocks that match the

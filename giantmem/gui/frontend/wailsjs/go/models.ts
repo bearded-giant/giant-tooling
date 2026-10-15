@@ -235,6 +235,7 @@ export namespace hub {
 	    input?: string;
 	    result_head?: string;
 	    is_error?: boolean;
+	    starred?: boolean;
 	    link: string;
 	
 	    static createFrom(source: any = {}) {
@@ -253,6 +254,7 @@ export namespace hub {
 	        this.input = source["input"];
 	        this.result_head = source["result_head"];
 	        this.is_error = source["is_error"];
+	        this.starred = source["starred"];
 	        this.link = source["link"];
 	    }
 	}
@@ -560,6 +562,7 @@ export namespace main {
 	    until?: string;
 	    limit?: number;
 	    errorsOnly?: boolean;
+	    starredOnly?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolUseFilter(source);
@@ -575,6 +578,7 @@ export namespace main {
 	        this.until = source["until"];
 	        this.limit = source["limit"];
 	        this.errorsOnly = source["errorsOnly"];
+	        this.starredOnly = source["starredOnly"];
 	    }
 	}
 	export class ToolUseHit {
@@ -591,6 +595,7 @@ export namespace main {
 	    isError?: boolean;
 	    agentId?: string;
 	    link?: string;
+	    starred?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolUseHit(source);
@@ -611,6 +616,7 @@ export namespace main {
 	        this.isError = source["isError"];
 	        this.agentId = source["agentId"];
 	        this.link = source["link"];
+	        this.starred = source["starred"];
 	    }
 	}
 
