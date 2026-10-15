@@ -142,6 +142,10 @@ export function TakePendingLink() {
   return window['go']['main']['App']['TakePendingLink']();
 }
 
+export function ToolMix(arg1) {
+  return window['go']['main']['App']['ToolMix'](arg1);
+}
+
 export function TranscriptForSession(arg1) {
   return window['go']['main']['App']['TranscriptForSession'](arg1);
 }

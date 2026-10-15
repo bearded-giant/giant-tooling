@@ -114,19 +114,8 @@ type ToolQuery struct {
 	WithIO    bool
 }
 
-func QueryToolUses(d *sql.DB, q ToolQuery) ([]ToolUse, error) {
-	from := "tool_uses t"
-	var conds []string
-	var args []any
-	if q.Match != "" {
-		from = "tool_uses_fts f JOIN tool_uses t ON t.id = f.rowid"
-		conds = append(conds, "tool_uses_fts MATCH ?")
-		args = append(args, search.SanitizeFTSQuery(q.Match))
-	}
-	from += " LEFT JOIN starred_tool_uses s ON s.session_id = t.session_id AND s.agent_id = t.agent_id AND s.seq = t.seq"
-	if q.Starred {
-		conds = append(conds, "s.seq IS NOT NULL")
-	}
+// toolWhere appends q's plain filters (on tool_uses aliased t) to conds/args.
+func toolWhere(q ToolQuery, conds []string, args []any) (string, []any) {
 	add := func(cond string, v any) {
 		conds = append(conds, cond)
 		args = append(args, v)
@@ -156,10 +145,26 @@ func QueryToolUses(d *sql.DB, q ToolQuery) ([]ToolUse, error) {
 	if q.Until != "" {
 		add("t.ts < ?", q.Until)
 	}
-	where := ""
-	if len(conds) > 0 {
-		where = "WHERE " + strings.Join(conds, " AND ")
+	if len(conds) == 0 {
+		return "", args
 	}
+	return "WHERE " + strings.Join(conds, " AND "), args
+}
+
+func QueryToolUses(d *sql.DB, q ToolQuery) ([]ToolUse, error) {
+	from := "tool_uses t"
+	var conds []string
+	var args []any
+	if q.Match != "" {
+		from = "tool_uses_fts f JOIN tool_uses t ON t.id = f.rowid"
+		conds = append(conds, "tool_uses_fts MATCH ?")
+		args = append(args, search.SanitizeFTSQuery(q.Match))
+	}
+	from += " LEFT JOIN starred_tool_uses s ON s.session_id = t.session_id AND s.agent_id = t.agent_id AND s.seq = t.seq"
+	if q.Starred {
+		conds = append(conds, "s.seq IS NOT NULL")
+	}
+	where, args := toolWhere(q, conds, args)
 	order := "t.ts DESC, t.seq DESC"
 	switch {
 	case q.SessionID != "":

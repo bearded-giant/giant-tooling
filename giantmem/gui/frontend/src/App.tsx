@@ -43,6 +43,7 @@ import {
   SetPref,
   SetToolStar,
   TakePendingLink,
+  ToolMix,
   TranscriptForSession,
   Version,
 } from "../wailsjs/go/main/App";
@@ -317,6 +318,7 @@ function App() {
   const [activityFilter, setActivityFilter] = useState("");
   const [sparklines, setSparklines] = useState<Record<string, main.SparklinePoint[]>>({});
   const [heatmap, setHeatmap] = useState<main.HeatmapCell[]>([]);
+  const [toolMix, setToolMix] = useState<hub.ToolCount[]>([]);
   const [version, setVersion] = useState<string>("");
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -396,6 +398,9 @@ function App() {
       .catch((e) => setErr(String(e)));
     ProjectHeatmap(14, 10)
       .then((cells) => setHeatmap(cells || []))
+      .catch((e) => setErr(String(e)));
+    ToolMix(7)
+      .then((m) => setToolMix(m || []))
       .catch((e) => setErr(String(e)));
   }, [reloadKey]);
 
@@ -1167,6 +1172,7 @@ function App() {
             filter={activityFilter}
             onFilter={setActivityFilter}
             heatmap={heatmap}
+            toolMix={toolMix}
             filterRef={activityFilterRef}
           />
         )}
@@ -2748,12 +2754,14 @@ function ActivitySidebar({
   filter,
   onFilter,
   heatmap,
+  toolMix,
   filterRef,
 }: {
   counts: main.ActivityCounts | null;
   filter: string;
   onFilter: (v: string) => void;
   heatmap: main.HeatmapCell[];
+  toolMix: hub.ToolCount[];
   filterRef?: React.RefObject<HTMLInputElement>;
 }) {
   return (
@@ -2783,7 +2791,60 @@ function ActivitySidebar({
         />
       </div>
       {heatmap.length > 0 && <HeatmapPanel cells={heatmap} />}
+      <ToolMixPanel counts={toolMix} />
     </>
+  );
+}
+
+function ToolMixPanel({ counts }: { counts: hub.ToolCount[] }) {
+  const total = counts.reduce((n, c) => n + c.calls, 0);
+  if (!total) return null;
+  const top = counts.slice(0, 8);
+  return (
+    <div style={{ padding: "8px 4px" }}>
+      <div
+        style={{
+          fontSize: 13,
+          color: "var(--fg-muted)",
+          marginBottom: 6,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+      >
+        tool calls · last 7 days · {total.toLocaleString()}
+      </div>
+      {top.map((c) => (
+        <div
+          key={c.tool}
+          title={`${c.tool}: ${c.calls.toLocaleString()} calls, ${c.errors} errors`}
+          style={{
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) 64px 34px",
+            gap: 6,
+            alignItems: "center",
+            fontSize: 12,
+            padding: "2px 0",
+          }}
+        >
+          <span style={{ color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            {c.tool.replace(/^mcp__/, "mcp:")}
+          </span>
+          <div style={{ height: 8 }}>
+            <div
+              style={{
+                height: 8,
+                width: `${Math.max(2, (100 * c.calls) / top[0].calls)}%`,
+                background: "var(--accent)",
+                borderRadius: "0 4px 4px 0",
+              }}
+            />
+          </div>
+          <span className="row-meta" style={{ textAlign: "right" }}>
+            {Math.round((100 * c.calls) / total)}%
+          </span>
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -3714,12 +3775,24 @@ function SessionToolsPanel({
     }
     return [...m.entries()];
   }, [calls, agent, q, errorsOnly]);
+  const mix = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of calls || []) m.set(c.tool, (m.get(c.tool) || 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [calls]);
   if (calls === null) return <div className="detail-empty">loading tool calls…</div>;
   if (calls.length === 0) {
     return <div className="detail-empty">no indexed tool calls (run `giantmem db ingest --sessions-only`)</div>;
   }
   return (
     <div className="hub-panel">
+      <div className="row-meta" style={{ marginBottom: 6 }} title={mix.map(([t, n]) => `${t} ${n}`).join("\n")}>
+        {mix
+          .slice(0, 6)
+          .map(([t, n]) => `${t.replace(/^mcp__/, "mcp:")} ${Math.round((100 * n) / calls.length)}%`)
+          .join(" · ")}
+        {mix.length > 6 && ` · +${mix.length - 6} more`}
+      </div>
       <div className="transcript-toolbar">
         <input type="search" placeholder="filter tool calls…" value={q} onChange={(e) => setQ(e.target.value)} />
         <select value={agent} onChange={(e) => setAgent(e.target.value)} title="thread">

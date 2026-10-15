@@ -224,6 +224,22 @@ export namespace hub {
 	        this.ts = source["ts"];
 	    }
 	}
+	export class ToolCount {
+	    tool: string;
+	    calls: number;
+	    errors: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolCount(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.tool = source["tool"];
+	        this.calls = source["calls"];
+	        this.errors = source["errors"];
+	    }
+	}
 	export class ToolUse {
 	    session_id: string;
 	    agent_id?: string;

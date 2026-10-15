@@ -76,6 +76,8 @@ Claude's scratchpad and background task output live under `/private/tmp`, which 
 | `giantmem tools find "glab mr" --tool Bash -p auth` | narrow by tool (SQL LIKE) and project |
 | `giantmem tools find splunk --tool 'mcp__%' --errors` | only calls that came back as errors |
 | `giantmem tools find "glab mr" --links` | add a `giantmem://tool/...` column that opens each call in the GUI |
+| `giantmem tools stats --since 7d --by-server` | rank tool calls by name with share and error rate; MCP tools fold to one row per server |
+| `giantmem tools stats -p remi --agent main` | one project's main-thread mix (`--session <id>` for one session, `--tool 'mcp__%'`, `--json`) |
 | `giantmem tools find --starred` | the calls you starred in the GUI, newest first (add a query to narrow them) |
 | `giantmem find "churn baseline" -s bundle` | search the archived scripts and drafts themselves |
 

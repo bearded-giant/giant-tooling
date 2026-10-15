@@ -63,6 +63,15 @@ func (a *App) SessionToolCalls(sessionID, agent string) ([]hub.ToolUse, error) {
 	return hub.QueryToolUses(a.archive, hub.ToolQuery{SessionID: sessionID, Agent: agent, WithIO: true})
 }
 
+// ToolMix ranks the last `days` days of tool calls, MCP tools folded per server.
+func (a *App) ToolMix(days int) ([]hub.ToolCount, error) {
+	if a.archive == nil {
+		return nil, nil
+	}
+	since := time.Now().AddDate(0, 0, -days).UTC().Format(time.RFC3339)
+	return hub.ToolCounts(a.archive, hub.ToolQuery{Since: since}, true)
+}
+
 func (a *App) KeepBundleFile(sessionID, rel string) (string, error) {
 	return hub.Keep(archiveBase(), sessionID, rel)
 }

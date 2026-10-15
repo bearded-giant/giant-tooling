@@ -77,6 +77,8 @@ export function SetToolStar(arg1:string,arg2:string,arg3:number,arg4:boolean):Pr
 
 export function TakePendingLink():Promise<main.DeepLink>;
 
+export function ToolMix(arg1:number):Promise<Array<hub.ToolCount>>;
+
 export function TranscriptForSession(arg1:string):Promise<string>;
 
 export function Version():Promise<string>;
