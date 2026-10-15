@@ -159,3 +159,34 @@ func TestSessionBundleSource_Incremental(t *testing.T) {
 		t.Fatalf("Force should re-emit")
 	}
 }
+
+func TestSessionBundleSource_SkipsRepoCopies(t *testing.T) {
+	base := t.TempDir()
+	writeBundle(t, base, "-proj-copy", "sid-copy",
+		map[string]any{"session_id": "uuid-copy"},
+		[]bundleFile{
+			{"scratchpad/tree/pyproject.toml", "data", []byte("[project]\n")},
+			{"scratchpad/tree/.gitignore", "other", []byte(".venv\n")},
+			{"scratchpad/tree/app/main.py", "script", []byte("print(1)\n")},
+			{"scratchpad/bisect/abc123/go.mod", "other", []byte("module x\n")},
+			{"scratchpad/bisect/abc123/.gitignore", "other", []byte("bin\n")},
+			{"scratchpad/bisect/abc123/main.go", "script", []byte("package main\n")},
+			// a harness with a package.json but no .gitignore is session work
+			{"scratchpad/verify/package.json", "data", []byte("{}\n")},
+			{"scratchpad/verify/v.js", "script", []byte("1\n")},
+			// the scratchpad root itself is never a copy
+			{"scratchpad/package.json", "data", []byte("{}\n")},
+			{"scratchpad/.gitignore", "other", []byte("x\n")},
+			{"scratchpad/probe.py", "script", []byte("2\n")},
+		})
+	docs := collectBundle(t, EmitOptions{ArchiveBase: base})
+	want := []string{"scratchpad/verify/package.json", "scratchpad/verify/v.js", "scratchpad/package.json", "scratchpad/probe.py"}
+	if len(docs) != len(want) {
+		t.Fatalf("docs = %d (%v), want %v", len(docs), docs, want)
+	}
+	for _, rel := range want {
+		if _, ok := docs[rel]; !ok {
+			t.Fatalf("missing %s", rel)
+		}
+	}
+}

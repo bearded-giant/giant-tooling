@@ -186,7 +186,7 @@ func printIngestStats(perSource map[string]sources.Stats) {
 
 func init() {
 	ingestCmd.Flags().StringVarP(&ingestProject, "project", "p", "", "ingest only this project")
-	ingestCmd.Flags().BoolVar(&ingestSessionsOnly, "sessions-only", false, "only index Claude session transcripts (alias for --source claude-jsonl)")
+	ingestCmd.Flags().BoolVar(&ingestSessionsOnly, "sessions-only", false, "only index Claude session transcripts and session bundles (alias for --source claude-jsonl,session-bundle)")
 	ingestCmd.Flags().BoolVar(&ingestWorkspacesOnly, "workspaces-only", false, "only index workspace archives (alias for --source workspace-md,domain-json)")
 	ingestCmd.Flags().BoolVar(&ingestForce, "force", false, "force full re-index (ignore mtime)")
 	ingestCmd.Flags().StringSliceVarP(&ingestSourceFilter, "source", "s", nil, "comma-separated source names to run (default: all enabled)")

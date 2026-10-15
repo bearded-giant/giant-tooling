@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -23,6 +24,43 @@ const (
 
 var bundleIndexedKinds = map[string]bool{
 	"script": true, "patch": true, "doc": true, "data": true, "log": true, "workflow": true,
+}
+
+var projectManifests = map[string]bool{
+	"go.mod": true, "package.json": true, "pyproject.toml": true, "Cargo.toml": true,
+}
+
+// a project manifest beside a .gitignore marks a repo copy; authored harnesses rarely carry a .gitignore
+func checkoutRoots(rels []string) []string {
+	manifest, ignore := map[string]bool{}, map[string]bool{}
+	for _, r := range rels {
+		dir, base := path.Split(r)
+		if !strings.HasPrefix(dir, "scratchpad/") || dir == "scratchpad/" {
+			continue
+		}
+		if projectManifests[base] {
+			manifest[dir] = true
+		}
+		if base == ".gitignore" {
+			ignore[dir] = true
+		}
+	}
+	var roots []string
+	for d := range manifest {
+		if ignore[d] {
+			roots = append(roots, d)
+		}
+	}
+	return roots
+}
+
+func underAny(rel string, dirs []string) bool {
+	for _, d := range dirs {
+		if strings.HasPrefix(rel, d) {
+			return true
+		}
+	}
+	return false
 }
 
 // sessionBundleSource ingests the per-session working files a hook archives
@@ -76,10 +114,16 @@ func (s *sessionBundleSource) Emit(ctx context.Context, opts EmitOptions) (<-cha
 			if sessionID == "" {
 				sessionID = filepath.Base(bundleDir)
 			}
+			rels := make([]string, len(m.Files))
+			for i, f := range m.Files {
+				rels[i] = filepath.ToSlash(f.Path)
+			}
+			copies := checkoutRoots(rels)
 			for _, f := range m.Files {
 				rel := filepath.ToSlash(f.Path)
 				// IsLocal keeps a crafted manifest from pulling in files outside the bundle
-				if !bundleIndexedKinds[f.Kind] || strings.HasPrefix(rel, "claude/subagents/") || !filepath.IsLocal(f.Path) {
+				if !bundleIndexedKinds[f.Kind] || strings.HasPrefix(rel, "claude/subagents/") || !filepath.IsLocal(f.Path) ||
+					underAny(rel, copies) {
 					continue
 				}
 				p := filepath.Join(bundleDir, f.Path)
