@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/hub"
 )
 
 func TestReadFileHead(t *testing.T) {
@@ -55,6 +57,21 @@ func TestOnURLOpenBeforeFrontend(t *testing.T) {
 		if got := a.TakePendingLink(); got != want {
 			t.Fatalf("%s = %+v, want %+v", raw, got, want)
 		}
+	}
+	for _, l := range []string{
+		hub.SessionLink("abc"),
+		hub.ToolLink("abc", "", 3),
+		hub.ToolLink("abc", "a1b2", 17),
+		hub.FileLink("abc", "scratchpad/my notes#1.md"),
+	} {
+		a.onURLOpen(l)
+		if got := a.TakePendingLink(); got.Kind == "" || got.SessionID != "abc" {
+			t.Fatalf("hub link %s did not round-trip: %+v", l, got)
+		}
+	}
+	a.onURLOpen(hub.FileLink("abc", "scratchpad/my notes#1.md"))
+	if got := a.TakePendingLink(); got.File != "scratchpad/my notes#1.md" {
+		t.Fatalf("file round-trip = %+v", got)
 	}
 	for _, bad := range []string{
 		"giantmem://tool/abc/main",

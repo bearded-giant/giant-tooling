@@ -59,7 +59,7 @@ func getSessionBundleHandler(ctx context.Context, _ mcp.CallToolRequest, args ge
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
-	out := map[string]any{"session_id": r.ID, "project": r.Project, "jsonl_path": r.JSONLPath, "links": links}
+	out := map[string]any{"session_id": r.ID, "project": r.Project, "jsonl_path": r.JSONLPath, "links": links, "link": hub.SessionLink(r.ID)}
 	m, err := hub.LoadBundle(archiveBasePath(), r.ID)
 	if err != nil {
 		out["bundle_error"] = err.Error()
@@ -70,7 +70,7 @@ func getSessionBundleHandler(ctx context.Context, _ mcp.CallToolRequest, args ge
 		if args.Kind != "" && f.Kind != args.Kind {
 			continue
 		}
-		files = append(files, map[string]any{"path": f.AbsPath, "kind": f.Kind, "size": f.Size})
+		files = append(files, map[string]any{"path": f.AbsPath, "kind": f.Kind, "size": f.Size, "link": f.Link})
 	}
 	out["bundle_dir"] = m.Dir
 	out["first_prompt"] = m.FirstPrompt

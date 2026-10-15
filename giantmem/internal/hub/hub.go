@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -26,6 +27,7 @@ type ToolUse struct {
 	Input      string `json:"input,omitempty"`
 	ResultHead string `json:"result_head,omitempty"`
 	IsError    bool   `json:"is_error,omitempty"`
+	Link       string `json:"link"`
 }
 
 type Link struct {
@@ -40,6 +42,22 @@ type BundleFile struct {
 	AbsPath string `json:"abs_path"`
 	Size    int64  `json:"size"`
 	Kind    string `json:"kind"`
+	Link    string `json:"link"`
+}
+
+func SessionLink(sessionID string) string {
+	return "giantmem://session/" + sessionID
+}
+
+func ToolLink(sessionID, agentID string, seq int) string {
+	if agentID == "" {
+		agentID = "main"
+	}
+	return fmt.Sprintf("giantmem://tool/%s/%s/%d", sessionID, agentID, seq)
+}
+
+func FileLink(sessionID, rel string) string {
+	return "giantmem://file/" + sessionID + "/" + (&url.URL{Path: filepath.ToSlash(rel)}).EscapedPath()
 }
 
 type Bundle struct {
@@ -51,6 +69,7 @@ type Bundle struct {
 	Resume      string       `json:"resume,omitempty"`
 	Files       []BundleFile `json:"files"`
 	Dir         string       `json:"dir"`
+	Link        string       `json:"link"`
 }
 
 type Agent struct {
@@ -164,6 +183,7 @@ func QueryToolUses(d *sql.DB, q ToolQuery) ([]ToolUse, error) {
 			return nil, err
 		}
 		r.IsError = isErr == 1
+		r.Link = ToolLink(r.SessionID, r.AgentID, r.Seq)
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -213,8 +233,10 @@ func LoadBundle(archiveBase, sessionID string) (*Bundle, error) {
 		return nil, fmt.Errorf("%s: %w", dir, err)
 	}
 	b.Dir = dir
+	b.Link = SessionLink(sessionID)
 	for i := range b.Files {
 		b.Files[i].AbsPath = filepath.Join(dir, b.Files[i].Path)
+		b.Files[i].Link = FileLink(sessionID, b.Files[i].Path)
 	}
 	return &b, nil
 }

@@ -56,8 +56,8 @@ The whole point of session search: stop hunting through `~/.claude/projects/**` 
 | `giantmem session find "hub and spoke"` | FTS5 over session transcripts |
 | `giantmem session show <id-prefix>` | metadata: project, cwd, topic, jsonl path |
 | `giantmem session resume <id-prefix>` | chdir to recorded cwd, then `exec claude --resume <uuid>` |
-| `giantmem session tools <id-prefix>` | every tool call the session made, subagents included, in order (`--tool Bash`, `--agent main`, `--errors`) |
-| `giantmem session files <id-prefix>` | the session's archived working files with absolute paths (`--kind script`) |
+| `giantmem session tools <id-prefix>` | every tool call the session made, subagents included, in order (`--tool Bash`, `--agent main`, `--errors`, `--links` for a `giantmem://` column) |
+| `giantmem session files <id-prefix>` | the session's archived working files with absolute paths (`--kind script`, `--links`) |
 | `giantmem session links <id-prefix>` | what it produced: claude.ai artifacts, vault notes, handoffs, doit items, MRs |
 | `giantmem session prune-orphans` | list `~/.claude/projects` dirs whose every recorded cwd is gone (merged feature, pruned worktree, deleted/renamed repo) |
 | `giantmem session prune-orphans --delete` | remove them (y/N prompt; add `--yes` to skip). A dir keeps if any one session points at a live cwd; dirs with no recorded cwd are never touched |
@@ -68,16 +68,17 @@ If the recorded cwd no longer exists (e.g. you converted a regular repo to a bar
 
 ## Tool calls and working files
 
-Claude's scratchpad and background task output live under `/private/tmp`, which macOS clears. The claude-code-config `session_bundle` hook copies them, plus subagent transcripts, workflow scripts, and the transcript itself, into `$GIANTMEM_ARCHIVE_BASE/bundles/<slug>/<session>/` with a `bundle.json` manifest. Ingest then indexes three things: every tool call (main thread and subagents) into `tool_uses`, what each session produced into `session_links`, and the bundle's scripts, patches, drafts, and logs as `bundle` docs that `giantmem find` searches like anything else.
+Claude's scratchpad and background task output live under `/private/tmp`, which macOS clears. The claude-code-config `session_bundle` hook copies them, plus subagent transcripts, workflow scripts, and the transcript itself, into `$GIANTMEM_ARCHIVE_BASE/bundles/<slug>/<session>/` with a `bundle.json` manifest. Ingest then indexes three things: every tool call (main thread and subagents) into `tool_uses`, what each session produced into `session_links`, and the bundle's scripts, patches, drafts, and logs as `bundle` docs that `giantmem find` searches like anything else. A scratchpad subdir holding a copied repo (a `go.mod`, `package.json`, `pyproject.toml`, or `Cargo.toml` beside a `.gitignore`) is archived but not indexed, so code searches land on the real repo.
 
 | Command | What it does |
 |---------|--------------|
 | `giantmem tools find "jq splunk"` | FTS5 over tool names, one-line summaries, and inputs across every session, best match first |
 | `giantmem tools find "glab mr" --tool Bash -p auth` | narrow by tool (SQL LIKE) and project |
 | `giantmem tools find splunk --tool 'mcp__%' --errors` | only calls that came back as errors |
+| `giantmem tools find "glab mr" --links` | add a `giantmem://tool/...` column that opens each call in the GUI |
 | `giantmem find "churn baseline" -s bundle` | search the archived scripts and drafts themselves |
 
-Set `[sessions] vault_root` in `config.toml` (or export `OBSIDIAN_VAULT`) so notes written into your vault show up as `vault` links. The MCP server exposes the same data as `find_tool_uses` and `get_session_bundle`.
+Set `[sessions] vault_root` in `config.toml` (or export `OBSIDIAN_VAULT`) so notes written into your vault show up as `vault` links. The MCP server exposes the same data as `find_tool_uses` and `get_session_bundle`. JSON output from both, and from `--json` on the CLI, carries a `link` on every tool call, bundle file, and bundle, so a handoff or doit item can point straight at it.
 
 ## Recent (cross-repo pickup)
 

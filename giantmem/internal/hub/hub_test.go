@@ -2,6 +2,7 @@ package hub
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -73,6 +74,10 @@ func TestQueryToolUses(t *testing.T) {
 	if all[0].AgentID != "" || all[len(all)-1].AgentID != "a1" || all[0].ResultHead != "out" {
 		t.Fatalf("order or io wrong: %+v", all)
 	}
+	if last := all[len(all)-1]; all[0].Link != fmt.Sprintf("giantmem://tool/%s/main/%d", sid, all[0].Seq) ||
+		last.Link != fmt.Sprintf("giantmem://tool/%s/a1/%d", sid, last.Seq) {
+		t.Fatalf("links = %q, %q", all[0].Link, last.Link)
+	}
 	main, _ := QueryToolUses(d, ToolQuery{SessionID: sid, Agent: "main"})
 	if len(main) != 3 || main[0].Input != "" {
 		t.Fatalf("main-only = %+v", main)
@@ -99,6 +104,12 @@ func TestBundleAgentsDayTranscript(t *testing.T) {
 	}
 	if b.Files[0].AbsPath != filepath.Join(b.Dir, "scratchpad/q.py") {
 		t.Fatalf("abs path = %s", b.Files[0].AbsPath)
+	}
+	if b.Link != "giantmem://session/"+sid || b.Files[0].Link != "giantmem://file/"+sid+"/scratchpad/q.py" {
+		t.Fatalf("links = %q, %q", b.Link, b.Files[0].Link)
+	}
+	if got := FileLink("s", "scratchpad/my notes#1.md"); got != "giantmem://file/s/scratchpad/my%20notes%231.md" {
+		t.Fatalf("escaped file link = %q", got)
 	}
 	if _, err := LoadBundle(base, "missing"); err == nil {
 		t.Fatal("missing bundle should error")

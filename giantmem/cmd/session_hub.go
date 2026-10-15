@@ -33,6 +33,7 @@ var (
 	hubKind    string
 	hubProject string
 	hubLimit   int
+	hubLinks   bool
 )
 
 var sessToolsCmd = &cobra.Command{
@@ -87,11 +88,12 @@ var sessFilesCmd = &cobra.Command{
 		if m.FirstPrompt != "" {
 			fmt.Printf("prompt  %s\n", m.FirstPrompt)
 		}
+		fmt.Printf("link    %s\n", m.Link)
 		fmt.Println()
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "KIND\tSIZE\tPATH")
+		fmt.Fprintln(w, "KIND\tSIZE\tPATH"+linkHeader())
 		for _, f := range m.Files {
-			fmt.Fprintf(w, "%s\t%d\t%s\n", f.Kind, f.Size, f.AbsPath)
+			fmt.Fprintf(w, "%s\t%d\t%s%s\n", f.Kind, f.Size, f.AbsPath, linkCell(f.Link))
 		}
 		return w.Flush()
 	},
@@ -159,9 +161,9 @@ var toolsFindCmd = &cobra.Command{
 func printToolUses(hits []hub.ToolUse, withSession bool) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if withSession {
-		fmt.Fprintln(w, "SESSION\tPROJECT\tAGENT\tTOOL\tSUMMARY")
+		fmt.Fprintln(w, "SESSION\tPROJECT\tAGENT\tTOOL\tSUMMARY"+linkHeader())
 	} else {
-		fmt.Fprintln(w, "SEQ\tAGENT\tTOOL\tSUMMARY")
+		fmt.Fprintln(w, "SEQ\tAGENT\tTOOL\tSUMMARY"+linkHeader())
 	}
 	for _, h := range hits {
 		agent := "main"
@@ -183,12 +185,26 @@ func printToolUses(hits []hub.ToolUse, withSession bool) {
 			if len(sid) > 8 {
 				sid = sid[:8]
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", sid, h.Project, agent, h.Tool, summary)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s%s\n", sid, h.Project, agent, h.Tool, summary, linkCell(h.Link))
 		} else {
-			fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", h.Seq, agent, h.Tool, summary)
+			fmt.Fprintf(w, "%d\t%s\t%s\t%s%s\n", h.Seq, agent, h.Tool, summary, linkCell(h.Link))
 		}
 	}
 	w.Flush()
+}
+
+func linkHeader() string {
+	if hubLinks {
+		return "\tLINK"
+	}
+	return ""
+}
+
+func linkCell(link string) string {
+	if hubLinks {
+		return "\t" + link
+	}
+	return ""
 }
 
 func init() {
@@ -196,14 +212,17 @@ func init() {
 	sessToolsCmd.Flags().StringVar(&hubAgent, "agent", "", "main = main thread only, or one subagent id")
 	sessToolsCmd.Flags().BoolVar(&hubErrors, "errors", false, "only calls whose result was an error")
 	sessToolsCmd.Flags().BoolVar(&sessJSON, "json", false, "emit JSON")
+	sessToolsCmd.Flags().BoolVar(&hubLinks, "links", false, "add a giantmem:// link column")
 	sessFilesCmd.Flags().StringVar(&hubKind, "kind", "", "only this kind: script, patch, doc, data, log, workflow, transcript")
 	sessFilesCmd.Flags().BoolVar(&sessJSON, "json", false, "emit JSON")
+	sessFilesCmd.Flags().BoolVar(&hubLinks, "links", false, "add a giantmem:// link column")
 	sessLinksCmd.Flags().BoolVar(&sessJSON, "json", false, "emit JSON")
 	toolsFindCmd.Flags().StringVar(&hubTool, "tool", "", "only this tool (SQL LIKE)")
 	toolsFindCmd.Flags().StringVarP(&hubProject, "project", "p", "", "project substring")
 	toolsFindCmd.Flags().BoolVar(&hubErrors, "errors", false, "only calls whose result was an error")
 	toolsFindCmd.Flags().IntVarP(&hubLimit, "limit", "n", 30, "max rows")
 	toolsFindCmd.Flags().BoolVar(&sessJSON, "json", false, "emit JSON")
+	toolsFindCmd.Flags().BoolVar(&hubLinks, "links", false, "add a giantmem:// link column")
 	sessionCmd.AddCommand(sessToolsCmd, sessFilesCmd, sessLinksCmd)
 	toolsCmd.AddCommand(toolsFindCmd)
 	rootCmd.AddCommand(toolsCmd)

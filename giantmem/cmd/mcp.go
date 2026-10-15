@@ -113,7 +113,7 @@ func registerExtraTools(s *server.MCPServer) {
 	s.AddTool(
 		mcp.NewTool("find_tool_uses",
 			append([]mcp.ToolOption{
-				mcp.WithDescription("Search tool calls across every past session and subagent: Bash commands, MCP calls, edits, fetches. Use it to find how a past session ran something (a jq over Splunk output, a glab call, a migration script) before reinventing it. Returns session id, project, agent, tool, and a one-line summary."),
+				mcp.WithDescription("Search tool calls across every past session and subagent: Bash commands, MCP calls, edits, fetches. Use it to find how a past session ran something (a jq over Splunk output, a glab call, a migration script) before reinventing it. Returns session id, project, agent, tool, a one-line summary, and a giantmem:// link that opens the call in the Giantmem app; put the link in handoffs, doit items, and reports instead of building one."),
 				mcp.WithString("query",
 					mcp.Description("FTS5 text over tool name, summary, and input (e.g. 'jq splunk', 'glab mr view')")),
 				mcp.WithString("session_id",
@@ -135,7 +135,7 @@ func registerExtraTools(s *server.MCPServer) {
 	s.AddTool(
 		mcp.NewTool("get_session_bundle",
 			append([]mcp.ToolOption{
-				mcp.WithDescription("Return a past session's archived working files (scratchpad scripts, patches, drafts, background task output, subagent transcripts, workflow scripts) with absolute paths, plus what it produced: claude.ai artifacts, vault notes, handoffs, doit items, MRs."),
+				mcp.WithDescription("Return a past session's archived working files (scratchpad scripts, patches, drafts, background task output, subagent transcripts, workflow scripts) with absolute paths, plus what it produced: claude.ai artifacts, vault notes, handoffs, doit items, MRs. The session and each file carry a giantmem:// link that opens them in the Giantmem app."),
 				mcp.WithString("id_prefix",
 					mcp.Required(),
 					mcp.Description("session id or any unique prefix")),
