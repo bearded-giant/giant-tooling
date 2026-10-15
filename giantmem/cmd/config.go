@@ -30,20 +30,20 @@ var configCmd = &cobra.Command{
 }
 
 type configReport struct {
-	Binary           string         `json:"binary"`
-	Version          string         `json:"version"`
-	Commit           string         `json:"commit"`
-	BuildDate        string         `json:"build_date"`
-	ArchiveBase      string         `json:"archive_base"`
-	ArchiveBaseSrc   string         `json:"archive_base_source"`
-	ArchiveDB        dbInfo         `json:"archives_db"`
-	LiveDB           dbInfo         `json:"live_db"`
-	CacheDir         string         `json:"cache_dir"`
-	ConfigFile       fileInfo       `json:"config_file"`
-	Hooks            []hookInfo     `json:"hooks"`
-	MCP              mcpInfo        `json:"mcp"`
-	WorktreeCore     fileInfo       `json:"worktree_core"`
-	WorkspaceLib     fileInfo       `json:"workspace_lib"`
+	Binary         string     `json:"binary"`
+	Version        string     `json:"version"`
+	Commit         string     `json:"commit"`
+	BuildDate      string     `json:"build_date"`
+	ArchiveBase    string     `json:"archive_base"`
+	ArchiveBaseSrc string     `json:"archive_base_source"`
+	ArchiveDB      dbInfo     `json:"archives_db"`
+	LiveDB         dbInfo     `json:"live_db"`
+	CacheDir       string     `json:"cache_dir"`
+	ConfigFile     fileInfo   `json:"config_file"`
+	Hooks          []hookInfo `json:"hooks"`
+	MCP            mcpInfo    `json:"mcp"`
+	WorktreeCore   fileInfo   `json:"worktree_core"`
+	WorkspaceLib   fileInfo   `json:"workspace_lib"`
 }
 
 type dbInfo struct {
@@ -61,10 +61,10 @@ type fileInfo struct {
 }
 
 type hookInfo struct {
-	Event   string `json:"event"`
-	Script  string `json:"script"`
-	Wired   bool   `json:"wired"`
-	OnDisk  bool   `json:"on_disk"`
+	Event  string `json:"event"`
+	Script string `json:"script"`
+	Wired  bool   `json:"wired"`
+	OnDisk bool   `json:"on_disk"`
 }
 
 type mcpInfo struct {

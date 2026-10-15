@@ -27,14 +27,14 @@ type ToolUse struct {
 
 // Transcript is the parsed transcript of a session.
 type Transcript struct {
-	SessionID    string
-	Cwd          string
-	StartedAt    time.Time
-	EndedAt      time.Time
-	Turns        []Turn
-	FilesTouched []string
-	BashCount    int
-	UserMsgs     int
+	SessionID     string
+	Cwd           string
+	StartedAt     time.Time
+	EndedAt       time.Time
+	Turns         []Turn
+	FilesTouched  []string
+	BashCount     int
+	UserMsgs      int
 	AssistantMsgs int
 }
 

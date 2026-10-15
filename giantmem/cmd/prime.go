@@ -13,10 +13,10 @@ import (
 )
 
 var (
-	primeJSON       bool
-	primeRecentN    int
-	primeSessionsN  int
-	primeHistoryN   int
+	primeJSON      bool
+	primeRecentN   int
+	primeSessionsN int
+	primeHistoryN  int
 )
 
 var primeCmd = &cobra.Command{
@@ -45,13 +45,13 @@ log if present.`,
 }
 
 type primePayload struct {
-	Cwd            string             `json:"cwd"`
-	Project        string             `json:"project"`
-	WorktreePath   string             `json:"worktree_path"`
-	ActiveFeature  string             `json:"active_feature,omitempty"`
-	RecentDocs     []primeDoc         `json:"recent_docs"`
-	RecentSessions []primeSess        `json:"recent_sessions"`
-	HistoryTail    []string           `json:"history_tail,omitempty"`
+	Cwd            string      `json:"cwd"`
+	Project        string      `json:"project"`
+	WorktreePath   string      `json:"worktree_path"`
+	ActiveFeature  string      `json:"active_feature,omitempty"`
+	RecentDocs     []primeDoc  `json:"recent_docs"`
+	RecentSessions []primeSess `json:"recent_sessions"`
+	HistoryTail    []string    `json:"history_tail,omitempty"`
 }
 
 type primeDoc struct {
@@ -71,9 +71,9 @@ type primeSess struct {
 func buildPrime(cwd string) (*primePayload, error) {
 	info := project.Detect(cwd, archiveBasePath())
 	p := &primePayload{
-		Cwd:          cwd,
-		Project:      info.Project,
-		WorktreePath: info.WorktreePath,
+		Cwd:           cwd,
+		Project:       info.Project,
+		WorktreePath:  info.WorktreePath,
 		ActiveFeature: project.FeatureFromGiantmem(info.WorktreePath),
 	}
 

@@ -13,8 +13,8 @@ import (
 )
 
 var (
-	systemReminderRe   = regexp.MustCompile(`<system-reminder>`)
-	claudeProjectRe    = regexp.MustCompile(`^-Users-[^-]+-`)
+	systemReminderRe = regexp.MustCompile(`<system-reminder>`)
+	claudeProjectRe  = regexp.MustCompile(`^-Users-[^-]+-`)
 )
 
 // SessionExtract is the result of parsing a single JSONL session file.

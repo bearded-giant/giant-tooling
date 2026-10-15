@@ -11,13 +11,13 @@ import (
 )
 
 var (
-	doctorJSON       bool
-	doctorRoots      []string
-	doctorStaleDays  int
-	doctorFix        bool
-	doctorFixCats    []string
-	doctorFixAuto    bool
-	doctorFixDryRun  bool
+	doctorJSON      bool
+	doctorRoots     []string
+	doctorStaleDays int
+	doctorFix       bool
+	doctorFixCats   []string
+	doctorFixAuto   bool
+	doctorFixDryRun bool
 )
 
 var doctorCmd = &cobra.Command{
@@ -54,7 +54,7 @@ any error-severity finding.`,
 			})
 			if doctorJSON {
 				return output.JSON(map[string]any{
-					"findings": findings,
+					"findings":    findings,
 					"fix_results": results,
 				})
 			}

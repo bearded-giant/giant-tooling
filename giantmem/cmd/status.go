@@ -61,14 +61,14 @@ func jsonMarshalIndent(v any) ([]byte, error) {
 }
 
 type statusPayload struct {
-	Project          string `json:"project"`
-	WorktreePath     string `json:"worktree_path,omitempty"`
-	ActiveFeature    string `json:"active_feature,omitempty"`
-	LiveDocsToday    int    `json:"live_docs_today"`
-	LiveDocsTotal    int    `json:"live_docs_total"`
-	StaleWorkspaces  int    `json:"stale_workspaces"`
-	LastIndexedAt    string `json:"last_indexed_at,omitempty"`
-	LastLiveWriteAt  string `json:"last_live_write_at,omitempty"`
+	Project         string `json:"project"`
+	WorktreePath    string `json:"worktree_path,omitempty"`
+	ActiveFeature   string `json:"active_feature,omitempty"`
+	LiveDocsToday   int    `json:"live_docs_today"`
+	LiveDocsTotal   int    `json:"live_docs_total"`
+	StaleWorkspaces int    `json:"stale_workspaces"`
+	LastIndexedAt   string `json:"last_indexed_at,omitempty"`
+	LastLiveWriteAt string `json:"last_live_write_at,omitempty"`
 }
 
 func buildStatus(cwd string) statusPayload {

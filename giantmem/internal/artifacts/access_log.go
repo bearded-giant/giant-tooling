@@ -20,8 +20,8 @@ func LogAccess(db *sql.DB, artifactID, query string, rank int) error {
 	}
 	now := time.Now().UTC().Format(time.RFC3339)
 	var (
-		qArg  any
-		rArg  any
+		qArg any
+		rArg any
 	)
 	if query == "" {
 		qArg = nil

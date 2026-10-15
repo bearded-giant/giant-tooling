@@ -10,9 +10,10 @@ import (
 )
 
 // Fixer applies a remediation for a single Finding. Returns:
-//   ok=true if the issue was resolved
-//   skipped=true if not applicable (e.g. requires interactive prompt and --auto wasn't set)
-//   err on actual failure
+//
+//	ok=true if the issue was resolved
+//	skipped=true if not applicable (e.g. requires interactive prompt and --auto wasn't set)
+//	err on actual failure
 type FixResult struct {
 	Category string
 	Path     string

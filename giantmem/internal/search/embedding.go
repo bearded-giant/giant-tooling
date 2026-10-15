@@ -105,7 +105,7 @@ func (s *stubEmbedder) Embed(text string) ([]float32, error) {
 		// Spread the 32-byte digest across `dim` floats with a tiny
 		// linear-congruential walk seeded from the digest.
 		b := seed[i%len(seed)]
-		x := math.Sin(float64(i+1)*float64(b)*0.01) // -1..1
+		x := math.Sin(float64(i+1) * float64(b) * 0.01) // -1..1
 		out[i] = float32(x)
 	}
 	return normalize(out), nil

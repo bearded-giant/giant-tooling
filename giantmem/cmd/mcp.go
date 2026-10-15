@@ -18,12 +18,12 @@ import (
 
 var mcpCmd = &cobra.Command{
 	Use:   "mcp",
-	Short: "MCP server: expose archive search to Claude over stdio",
+	Short: "MCP server: expose archive search, artifacts, sessions, and tool calls to Claude over stdio",
 }
 
 var mcpServeCmd = &cobra.Command{
 	Use:   "serve",
-	Short: "Run the giantmem MCP stdio server (single tool: search_archive)",
+	Short: "Run the giantmem MCP stdio server (search, artifacts, features, sessions, tool calls)",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		s := server.NewMCPServer(
 			"giantmem-search",
@@ -415,11 +415,11 @@ func searchHandler(ctx context.Context, req mcp.CallToolRequest, args searchArgs
 	}
 
 	return jsonResult(map[string]any{
-		"results":           out,
-		"total":             len(out),
-		"per_line":          true,
-		"applied_filters":   map[string]any{"tools": tools, "exts": exts, "include_read": args.IncludeRead},
-		"sanitized_query":   sanitized,
+		"results":         out,
+		"total":           len(out),
+		"per_line":        true,
+		"applied_filters": map[string]any{"tools": tools, "exts": exts, "include_read": args.IncludeRead},
+		"sanitized_query": sanitized,
 	})
 }
 

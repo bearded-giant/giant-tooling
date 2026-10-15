@@ -109,7 +109,6 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 		return st, nil
 	}
 
-
 	rows, err := live.Query(
 		`SELECT path, content, project, worktree_path, COALESCE(canonical_project,''), mtime
          FROM live_docs WHERE instr(path, ?) > 0`, giantmemMarker)

@@ -79,14 +79,14 @@ type getSessionSummaryArgs struct {
 }
 
 type sessionSummary struct {
-	SessionID  string `json:"session_id"`
-	Project    string `json:"project"`
-	Cwd        string `json:"cwd,omitempty"`
-	Topic      string `json:"topic,omitempty"`
-	Timestamp  string `json:"timestamp"`
-	Filepath   string `json:"jsonl_path"`
-	IndexedAt  string `json:"indexed_at,omitempty"`
-	FileSize   int64  `json:"file_size_bytes"`
+	SessionID string `json:"session_id"`
+	Project   string `json:"project"`
+	Cwd       string `json:"cwd,omitempty"`
+	Topic     string `json:"topic,omitempty"`
+	Timestamp string `json:"timestamp"`
+	Filepath  string `json:"jsonl_path"`
+	IndexedAt string `json:"indexed_at,omitempty"`
+	FileSize  int64  `json:"file_size_bytes"`
 }
 
 func getSessionSummaryHandler(ctx context.Context, _ mcp.CallToolRequest, args getSessionSummaryArgs) (*mcp.CallToolResult, error) {
@@ -146,14 +146,14 @@ type recentWritesArgs struct {
 }
 
 type liveDocRow struct {
-	Path        string `json:"path"`
-	Project     string `json:"project"`
-	Feature     string `json:"feature,omitempty"`
-	DirType     string `json:"dir_type,omitempty"`
-	SessionID   string `json:"session_id,omitempty"`
-	Mtime       int64  `json:"mtime"`
-	IngestedAt  string `json:"ingested_at"`
-	GitSHA      string `json:"git_sha,omitempty"`
+	Path       string `json:"path"`
+	Project    string `json:"project"`
+	Feature    string `json:"feature,omitempty"`
+	DirType    string `json:"dir_type,omitempty"`
+	SessionID  string `json:"session_id,omitempty"`
+	Mtime      int64  `json:"mtime"`
+	IngestedAt string `json:"ingested_at"`
+	GitSHA     string `json:"git_sha,omitempty"`
 }
 
 func recentWritesHandler(ctx context.Context, _ mcp.CallToolRequest, args recentWritesArgs) (*mcp.CallToolResult, error) {
@@ -217,9 +217,9 @@ type featureStatusArgs struct {
 }
 
 type projectFeatures struct {
-	Project      string                   `json:"project"`
-	WorktreePath string                   `json:"worktree_path"`
-	Features     []map[string]any         `json:"features"`
+	Project      string           `json:"project"`
+	WorktreePath string           `json:"worktree_path"`
+	Features     []map[string]any `json:"features"`
 }
 
 func featureStatusHandler(ctx context.Context, _ mcp.CallToolRequest, args featureStatusArgs) (*mcp.CallToolResult, error) {

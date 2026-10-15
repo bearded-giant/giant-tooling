@@ -90,13 +90,13 @@ Defaults to all projects. Filter with --project (LIKE) or --feature.`,
 }
 
 type tailRow struct {
-	Path      string
-	Project   string
-	Feature   string
-	DirType   string
-	Mtime     int64
+	Path       string
+	Project    string
+	Feature    string
+	DirType    string
+	Mtime      int64
 	IngestedAt string
-	Content   string
+	Content    string
 }
 
 func init() {
