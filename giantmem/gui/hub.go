@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/hub"
@@ -141,30 +144,78 @@ func (a *App) OpenPath(path string, reveal bool) error {
 	return exec.Command("open", args...).Run()
 }
 
-// pendingSession holds a giantmem://session/<id> link that arrived before the
-// frontend was listening (cold launch from a click in the daily note).
-var pendingSession string
+type DeepLink struct {
+	Kind      string `json:"kind"`
+	SessionID string `json:"sessionId,omitempty"`
+	Day       string `json:"day,omitempty"`
+	Agent     string `json:"agent,omitempty"`
+	Seq       int    `json:"seq"`
+	File      string `json:"file,omitempty"`
+}
 
-func (a *App) onURLOpen(url string) {
-	id := strings.TrimPrefix(url, "giantmem://session/")
-	id = strings.Trim(id, "/")
-	if id == "" || id == url {
+func parseLink(raw string) (DeepLink, bool) {
+	rest, ok := strings.CutPrefix(raw, "giantmem://")
+	if !ok {
+		return DeepLink{}, false
+	}
+	kind, arg, _ := strings.Cut(strings.Trim(rest, "/"), "/")
+	switch kind {
+	case "session":
+		if arg != "" && !strings.Contains(arg, "/") {
+			return DeepLink{Kind: kind, SessionID: arg}, true
+		}
+	case "day":
+		if _, err := time.Parse("2006-01-02", arg); err == nil {
+			return DeepLink{Kind: kind, Day: arg}, true
+		}
+	case "tool":
+		p := strings.Split(arg, "/")
+		if len(p) != 3 || p[0] == "" || p[1] == "" {
+			break
+		}
+		if seq, err := strconv.Atoi(p[2]); err == nil && seq >= 0 {
+			return DeepLink{Kind: kind, SessionID: p[0], Agent: p[1], Seq: seq}, true
+		}
+	case "file":
+		sid, rel, _ := strings.Cut(arg, "/")
+		file, err := url.PathUnescape(rel)
+		if err == nil && sid != "" && file != "" {
+			return DeepLink{Kind: kind, SessionID: sid, File: file}, true
+		}
+	}
+	return DeepLink{}, false
+}
+
+// pendingLink holds a giantmem:// link that arrived before the frontend was
+// listening (cold launch from a click in the daily note). onURLOpen runs on the
+// main thread, bound methods do not, hence the mutex.
+var (
+	pendingMu   sync.Mutex
+	pendingLink DeepLink
+)
+
+func (a *App) onURLOpen(raw string) {
+	l, ok := parseLink(raw)
+	if !ok {
 		return
 	}
+	pendingMu.Lock()
+	pendingLink = l
+	pendingMu.Unlock()
 	if a.ctx == nil {
-		pendingSession = id
 		return
 	}
-	pendingSession = id
-	runtime.EventsEmit(a.ctx, "open-session", id)
+	runtime.EventsEmit(a.ctx, "open-link", l)
 	runtime.WindowShow(a.ctx)
 }
 
-// TakePendingSession hands the frontend a deep link that arrived before it mounted.
-func (a *App) TakePendingSession() string {
-	id := pendingSession
-	pendingSession = ""
-	return id
+// TakePendingLink hands the frontend a deep link that arrived before it mounted.
+func (a *App) TakePendingLink() DeepLink {
+	pendingMu.Lock()
+	defer pendingMu.Unlock()
+	l := pendingLink
+	pendingLink = DeepLink{}
+	return l
 }
 
 // indexedToolUses answers the tools tab from the tool_uses index (subagents and

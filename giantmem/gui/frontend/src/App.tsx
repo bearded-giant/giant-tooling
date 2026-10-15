@@ -40,7 +40,7 @@ import {
   SessionPathByID,
   SessionToolCalls,
   SetPref,
-  TakePendingSession,
+  TakePendingLink,
   TranscriptForSession,
   Version,
 } from "../wailsjs/go/main/App";
@@ -132,7 +132,7 @@ function rowMatchesFilter(r: main.BrowseRow, f: SidebarFilter): boolean {
 type Selection =
   | { kind: "artifact"; id: string }
   | { kind: "file"; path: string }
-  | { kind: "session"; path: string }
+  | { kind: "session"; path: string; focus?: main.DeepLink }
   | null;
 
 function App() {
@@ -709,19 +709,28 @@ function App() {
     }
   }, [selection, hybridRows, browseRows, reloadKey]);
 
-  // giantmem://session/<id> from the vault daily note or a doit item
+  // giantmem:// links from the vault daily note or a doit item
   useEffect(() => {
-    const open = (id: string) => {
-      if (!id) return;
-      TranscriptForSession(id)
-        .then((path: string) => {
-          setTab("sessions");
-          setSelection({ kind: "session", path });
-        })
-        .catch((e: unknown) => setErr(String(e)));
+    const open = (l: main.DeepLink) => {
+      if (l?.kind === "day" && l.day) {
+        setTab("day");
+        setSelection(null);
+        setDay(l.day);
+      } else if (l?.sessionId) {
+        TranscriptForSession(l.sessionId)
+          .then((path: string) => {
+            setTab("sessions");
+            setSelection({ kind: "session", path, focus: l });
+          })
+          .catch((e: unknown) => setErr(String(e)));
+      }
     };
-    TakePendingSession().then(open);
-    return EventsOn("open-session", open);
+    TakePendingLink().then(open);
+    return EventsOn("open-link", (l: main.DeepLink) => {
+      open(l);
+      // drain so a later remount does not replay a link already opened
+      TakePendingLink();
+    });
   }, []);
 
   const clearFacets = () => {
@@ -1403,6 +1412,7 @@ function App() {
           <SessionDetail
             path={selection.path}
             sessionId={sessionIDFromPath(selection.path)}
+            focus={selection.focus}
             turns={sessionLines}
             filter={turnFilter}
             onFilterChange={setTurnFilter}
@@ -3100,6 +3110,7 @@ function clip(s: string, n: number): string {
 function SessionDetail({
   path,
   sessionId,
+  focus,
   turns,
   filter,
   onFilterChange,
@@ -3114,6 +3125,7 @@ function SessionDetail({
 }: {
   path: string;
   sessionId: string;
+  focus?: main.DeepLink;
   turns: SessionTurn[] | null;
   filter: string;
   onFilterChange: (s: string) => void;
@@ -3138,6 +3150,10 @@ function SessionDetail({
     [turns],
   );
   const [sub, setSub] = useState<"transcript" | "tools" | "files" | "links">("transcript");
+  useEffect(() => {
+    if (focus?.kind === "tool") setSub("tools");
+    else if (focus?.kind === "file") setSub("files");
+  }, [focus]);
   const [hubData, setHubData] = useState<main.SessionHubData | null>(null);
   useEffect(() => {
     setHubData(null);
@@ -3179,8 +3195,8 @@ function SessionDetail({
           links ({linkCount})
         </button>
       </div>
-      {sub === "tools" && <SessionToolsPanel sessionId={sessionId} agents={hubData?.agents || []} />}
-      {sub === "files" && <SessionFilesPanel bundle={hubData?.bundle} error={hubData?.bundleError} />}
+      {sub === "tools" && <SessionToolsPanel sessionId={sessionId} agents={hubData?.agents || []} focus={focus} />}
+      {sub === "files" && <SessionFilesPanel bundle={hubData?.bundle} error={hubData?.bundleError} focus={focus} />}
       {sub === "links" && <SessionLinksPanel links={hubData?.links || []} />}
       {sub === "transcript" && (
       <>
@@ -3583,7 +3599,15 @@ function SessionHubHeader({ data }: { data: main.SessionHubData | null }) {
   );
 }
 
-function SessionToolsPanel({ sessionId, agents }: { sessionId: string; agents: hub.Agent[] }) {
+function SessionToolsPanel({
+  sessionId,
+  agents,
+  focus,
+}: {
+  sessionId: string;
+  agents: hub.Agent[];
+  focus?: main.DeepLink;
+}) {
   const [calls, setCalls] = useState<hub.ToolUse[] | null>(null);
   const [agent, setAgent] = useState("");
   const [q, setQ] = useState("");
@@ -3595,6 +3619,12 @@ function SessionToolsPanel({ sessionId, agents }: { sessionId: string; agents: h
       .then((r) => setCalls(r || []))
       .catch(() => setCalls([]));
   }, [sessionId]);
+  useEffect(() => {
+    if (focus?.kind !== "tool" || !calls) return;
+    const key = `${focus.agent === "main" ? "" : focus.agent}:${focus.seq}`;
+    setOpen(key);
+    requestAnimationFrame(() => document.getElementById(`call-${key}`)?.scrollIntoView({ block: "center" }));
+  }, [focus, calls]);
   const label = (id: string) => {
     const a = agents.find((x) => x.agent_id === id);
     if (!a) return `subagent ${id}`;
@@ -3645,7 +3675,7 @@ function SessionToolsPanel({ sessionId, agents }: { sessionId: string; agents: h
           {list.map((c) => {
             const key = `${id}:${c.seq}`;
             return (
-              <div key={key}>
+              <div key={key} id={`call-${key}`}>
                 <div className={`hub-row ${open === key ? "selected" : ""}`} onClick={() => setOpen(open === key ? null : key)}>
                   <span className="row-meta hub-seq">#{c.seq}</span>
                   <span className={`chip tool ${c.is_error ? "err" : ""}`}>{c.tool}</span>
@@ -3679,11 +3709,23 @@ function SessionToolsPanel({ sessionId, agents }: { sessionId: string; agents: h
 
 const KIND_ORDER = ["script", "workflow", "patch", "doc", "data", "log", "transcript", "other"];
 
-function SessionFilesPanel({ bundle, error }: { bundle?: hub.Bundle; error?: string }) {
+function SessionFilesPanel({
+  bundle,
+  error,
+  focus,
+}: {
+  bundle?: hub.Bundle;
+  error?: string;
+  focus?: main.DeepLink;
+}) {
   const [kind, setKind] = useState("");
   const [sel, setSel] = useState<hub.BundleFile | null>(null);
   const [head, setHead] = useState<main.FileHead | null>(null);
-  useEffect(() => setSel(null), [bundle?.dir]);
+  useEffect(() => {
+    const f = focus?.kind === "file" ? bundle?.files?.find((x) => x.path === focus.file) : undefined;
+    setSel(f || null);
+    if (f) requestAnimationFrame(() => document.getElementById(`file-${f.path}`)?.scrollIntoView({ block: "nearest" }));
+  }, [bundle?.dir, focus]);
   useEffect(() => {
     setHead(null);
     if (!sel) return;
@@ -3716,6 +3758,7 @@ function SessionFilesPanel({ bundle, error }: { bundle?: hub.Bundle; error?: str
         {files.map((f) => (
           <div
             key={f.path}
+            id={`file-${f.path}`}
             className={`hub-row ${sel?.path === f.path ? "selected" : ""}`}
             onClick={() => setSel(sel?.path === f.path ? null : f)}
             title={f.abs_path}

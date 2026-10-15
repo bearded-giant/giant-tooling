@@ -315,6 +315,28 @@ export namespace main {
 	        this.wal = source["wal"];
 	    }
 	}
+	export class DeepLink {
+	    kind: string;
+	    sessionId?: string;
+	    day?: string;
+	    agent?: string;
+	    seq: number;
+	    file?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new DeepLink(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.sessionId = source["sessionId"];
+	        this.day = source["day"];
+	        this.agent = source["agent"];
+	        this.seq = source["seq"];
+	        this.file = source["file"];
+	    }
+	}
 	export class FacetCountsResult {
 	    byType: Record<string, number>;
 	    byLifecycle: Record<string, number>;

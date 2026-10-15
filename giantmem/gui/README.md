@@ -10,7 +10,16 @@ Five tabs:
 4. **artifacts** — hybrid search (FTS + vector + recency + access) and faceted browse over the typed `artifacts` projection in `live.db`. Filter by type, status, lifecycle, feature, and repo. Detail pane renders the markdown body.
 5. **tools** — search tool calls across every session and subagent. Pick `Bash`, `Edit`, `WebFetch`, etc. (or `any tool`), type some words, tick **errors only** if you're hunting failures, and jump from any hit into its session.
 
-`giantmem://session/<id>` opens the app straight onto a session, which is how the vault daily note and doit items link back here. The scheme is declared in `wails.json` and macOS picks it up once the app is in `/Applications`.
+Deep links open the app straight onto what they name, which is how the vault daily note and doit items link back here:
+
+| Link | Opens |
+|---|---|
+| `giantmem://session/<id>` | the session |
+| `giantmem://day/<YYYY-MM-DD>` | the day tab on that date |
+| `giantmem://tool/<id>/<main or agent id>/<seq>` | the session's tools view with that call expanded |
+| `giantmem://file/<id>/<path in bundle>` | the session's files view with that file open (percent-encode spaces) |
+
+The scheme is declared in `wails.json` and macOS picks it up once the app is in `/Applications`.
 
 Read-only for v1. Writes (lifecycle changes, in-place editing) are deferred.
 

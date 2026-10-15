@@ -71,7 +71,7 @@ export function SessionToolCalls(arg1:string,arg2:string):Promise<Array<hub.Tool
 
 export function SetPref(arg1:string,arg2:string):Promise<void>;
 
-export function TakePendingSession():Promise<string>;
+export function TakePendingLink():Promise<main.DeepLink>;
 
 export function TranscriptForSession(arg1:string):Promise<string>;
 

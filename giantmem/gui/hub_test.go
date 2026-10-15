@@ -35,15 +35,45 @@ func TestReadFileHead(t *testing.T) {
 func TestOnURLOpenBeforeFrontend(t *testing.T) {
 	a := &App{}
 	a.onURLOpen("giantmem://session/32f0acaa-3fea/")
-	if got := a.TakePendingSession(); got != "32f0acaa-3fea" {
-		t.Fatalf("pending = %q", got)
+	if got := a.TakePendingLink(); got != (DeepLink{Kind: "session", SessionID: "32f0acaa-3fea"}) {
+		t.Fatalf("pending = %+v", got)
 	}
-	if got := a.TakePendingSession(); got != "" {
-		t.Fatalf("pending not cleared: %q", got)
+	if got := a.TakePendingLink(); got != (DeepLink{}) {
+		t.Fatalf("pending not cleared: %+v", got)
 	}
-	a.onURLOpen("https://example.com/session/x")
-	a.onURLOpen("giantmem://session/")
-	if got := a.TakePendingSession(); got != "" {
-		t.Fatalf("non-session urls should be ignored, got %q", got)
+	a.onURLOpen("giantmem://day/2026-10-14")
+	if got := a.TakePendingLink(); got != (DeepLink{Kind: "day", Day: "2026-10-14"}) {
+		t.Fatalf("day pending = %+v", got)
+	}
+	for raw, want := range map[string]DeepLink{
+		"giantmem://tool/abc/main/0":                   {Kind: "tool", SessionID: "abc", Agent: "main", Seq: 0},
+		"giantmem://tool/abc/a1b2/17":                  {Kind: "tool", SessionID: "abc", Agent: "a1b2", Seq: 17},
+		"giantmem://file/abc/scratchpad/cdp.mjs":       {Kind: "file", SessionID: "abc", File: "scratchpad/cdp.mjs"},
+		"giantmem://file/abc/scratchpad/my%20notes.md": {Kind: "file", SessionID: "abc", File: "scratchpad/my notes.md"},
+	} {
+		a.onURLOpen(raw)
+		if got := a.TakePendingLink(); got != want {
+			t.Fatalf("%s = %+v, want %+v", raw, got, want)
+		}
+	}
+	for _, bad := range []string{
+		"giantmem://tool/abc/main",
+		"giantmem://tool/abc/main/x",
+		"giantmem://tool/abc/main/-1",
+		"giantmem://tool//main/3",
+		"giantmem://file/abc",
+		"giantmem://file/abc/%zz",
+		"https://example.com/session/x",
+		"giantmem://session/",
+		"giantmem://session/a/b",
+		"giantmem://day/",
+		"giantmem://day/2026-13-01",
+		"giantmem://day/today",
+		"giantmem://nope/x",
+	} {
+		a.onURLOpen(bad)
+		if got := a.TakePendingLink(); got != (DeepLink{}) {
+			t.Fatalf("%s should be ignored, got %+v", bad, got)
+		}
 	}
 }

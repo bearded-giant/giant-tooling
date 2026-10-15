@@ -130,8 +130,8 @@ export function SetPref(arg1, arg2) {
   return window['go']['main']['App']['SetPref'](arg1, arg2);
 }
 
-export function TakePendingSession() {
-  return window['go']['main']['App']['TakePendingSession']();
+export function TakePendingLink() {
+  return window['go']['main']['App']['TakePendingLink']();
 }
 
 export function TranscriptForSession(arg1) {
