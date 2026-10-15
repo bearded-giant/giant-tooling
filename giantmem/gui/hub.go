@@ -63,6 +63,10 @@ func (a *App) SessionToolCalls(sessionID, agent string) ([]hub.ToolUse, error) {
 	return hub.QueryToolUses(a.archive, hub.ToolQuery{SessionID: sessionID, Agent: agent, WithIO: true})
 }
 
+func (a *App) KeepBundleFile(sessionID, rel string) (string, error) {
+	return hub.Keep(archiveBase(), sessionID, rel)
+}
+
 func (a *App) SetToolStar(sessionID, agentID string, seq int, on bool) error {
 	if a.archive == nil {
 		return fmt.Errorf("archives.db not open")

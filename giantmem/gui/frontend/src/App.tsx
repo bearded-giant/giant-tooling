@@ -22,6 +22,7 @@ import {
   GetArtifactBody,
   GetLiveBody,
   GetPref,
+  KeepBundleFile,
   ListSessions,
   LiveMtime,
   OpenPath,
@@ -3265,7 +3266,7 @@ function SessionDetail({
         </button>
       </div>
       {sub === "tools" && <SessionToolsPanel sessionId={sessionId} agents={hubData?.agents || []} focus={focus} />}
-      {sub === "files" && <SessionFilesPanel bundle={hubData?.bundle} error={hubData?.bundleError} focus={focus} />}
+      {sub === "files" && <SessionFilesPanel sessionId={sessionId} bundle={hubData?.bundle} error={hubData?.bundleError} focus={focus} />}
       {sub === "links" && <SessionLinksPanel links={hubData?.links || []} />}
       {sub === "transcript" && (
       <>
@@ -3791,10 +3792,12 @@ function SessionToolsPanel({
 const KIND_ORDER = ["script", "workflow", "patch", "doc", "data", "log", "transcript", "other"];
 
 function SessionFilesPanel({
+  sessionId,
   bundle,
   error,
   focus,
 }: {
+  sessionId: string;
   bundle?: hub.Bundle;
   error?: string;
   focus?: main.DeepLink;
@@ -3802,6 +3805,7 @@ function SessionFilesPanel({
   const [kind, setKind] = useState("");
   const [sel, setSel] = useState<hub.BundleFile | null>(null);
   const [head, setHead] = useState<main.FileHead | null>(null);
+  const [kept, setKept] = useState("");
   useEffect(() => {
     const f = focus?.kind === "file" ? bundle?.files?.find((x) => x.path === focus.file) : undefined;
     setSel(f || null);
@@ -3809,6 +3813,7 @@ function SessionFilesPanel({
   }, [bundle?.dir, focus]);
   useEffect(() => {
     setHead(null);
+    setKept("");
     if (!sel) return;
     ReadFileHead(sel.abs_path, 512 * 1024)
       .then(setHead)
@@ -3862,6 +3867,23 @@ function SessionFilesPanel({
             <button className="mini-btn" onClick={() => OpenPath(sel.abs_path, true)}>
               reveal in Finder
             </button>
+            <button
+              className="mini-btn"
+              title="copy into the local snippets folder under the giantmem archive"
+              onClick={() =>
+                KeepBundleFile(sessionId, sel.path)
+                  .then(setKept)
+                  .catch((e: unknown) => setKept(`keep failed: ${e}`))
+              }
+            >
+              keep as snippet
+            </button>
+            {kept && (
+              <span className="row-meta">
+                {kept.startsWith("keep failed") ? kept : `kept: ${shortPath(kept)}`}
+                <CopyButton text={kept.startsWith("/") ? kept : ""} label="copy snippet path" />
+              </span>
+            )}
             {head?.truncated && <span className="row-meta">showing first 512 KB of {Math.round(head.size / 1024)} KB</span>}
           </div>
           {!head && <div className="detail-empty">loading…</div>}

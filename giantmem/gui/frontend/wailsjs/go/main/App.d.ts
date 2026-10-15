@@ -29,6 +29,8 @@ export function GetLiveBody(arg1:string):Promise<string>;
 
 export function GetPref(arg1:string):Promise<string>;
 
+export function KeepBundleFile(arg1:string,arg2:string):Promise<string>;
+
 export function ListArtifacts(arg1:artifacts.ListFilter,arg2:string,arg3:number,arg4:string,arg5:string):Promise<Array<artifacts.Artifact>>;
 
 export function ListSessions(arg1:main.SessionFilter,arg2:number):Promise<Array<search.Hit>>;

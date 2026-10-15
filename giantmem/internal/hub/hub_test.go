@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
@@ -186,5 +187,32 @@ func TestStarSurvivesReingest(t *testing.T) {
 	}
 	if starred, _ = QueryToolUses(d, ToolQuery{Starred: true}); len(starred) != 0 {
 		t.Fatalf("unstar left %+v", starred)
+	}
+}
+
+func TestKeep(t *testing.T) {
+	_, base, _ := fixture(t)
+	q := filepath.Join(base, "bundles", "-slug", sid, "scratchpad", "q.py")
+	mustWrite(t, q, "x=1")
+	dest, err := Keep(base, sid, "scratchpad/q.py")
+	if err != nil || dest != filepath.Join(base, "snippets", "q.py") {
+		t.Fatalf("keep = %q, %v", dest, err)
+	}
+	if again, _ := Keep(base, sid, "scratchpad/q.py"); again != dest {
+		t.Fatalf("same content should reuse %s, got %s", dest, again)
+	}
+	mustWrite(t, q, "x=2")
+	if other, _ := Keep(base, sid, "scratchpad/q.py"); other != filepath.Join(base, "snippets", "q-1.py") {
+		t.Fatalf("changed content should not overwrite, got %s", other)
+	}
+	raw, _ := os.ReadFile(filepath.Join(base, "snippets", "sources.tsv"))
+	lines := strings.Split(strings.TrimSpace(string(raw)), "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], "q.py\tgiantmem://file/"+sid+"/scratchpad/q.py\t") {
+		t.Fatalf("sources.tsv = %q", raw)
+	}
+	for _, bad := range []string{"scratchpad/nope.py", "../../etc/passwd"} {
+		if _, err := Keep(base, sid, bad); err == nil {
+			t.Fatalf("%s should be refused", bad)
+		}
 	}
 }

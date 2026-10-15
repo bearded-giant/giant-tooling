@@ -46,6 +46,10 @@ export function GetPref(arg1) {
   return window['go']['main']['App']['GetPref'](arg1);
 }
 
+export function KeepBundleFile(arg1, arg2) {
+  return window['go']['main']['App']['KeepBundleFile'](arg1, arg2);
+}
+
 export function ListArtifacts(arg1, arg2, arg3, arg4, arg5) {
   return window['go']['main']['App']['ListArtifacts'](arg1, arg2, arg3, arg4, arg5);
 }

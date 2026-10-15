@@ -4,6 +4,7 @@
 package hub
 
 import (
+	"bytes"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -257,6 +258,60 @@ func LoadBundle(archiveBase, sessionID string) (*Bundle, error) {
 		b.Files[i].Link = FileLink(sessionID, b.Files[i].Path)
 	}
 	return &b, nil
+}
+
+// Keep copies one bundle file into <archiveBase>/snippets. Local on purpose: session
+// scripts can carry tokens and the vault pushes to a remote.
+func Keep(archiveBase, sessionID, rel string) (string, error) {
+	b, err := LoadBundle(archiveBase, sessionID)
+	if err != nil {
+		return "", err
+	}
+	var src *BundleFile
+	for i := range b.Files {
+		if b.Files[i].Path == rel {
+			src = &b.Files[i]
+			break
+		}
+	}
+	if src == nil {
+		return "", fmt.Errorf("%s is not in the bundle for %s", rel, sessionID)
+	}
+	body, err := os.ReadFile(src.AbsPath)
+	if err != nil {
+		return "", err
+	}
+	st, err := os.Stat(src.AbsPath)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(archiveBase, "snippets")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	name := filepath.Base(rel)
+	ext := filepath.Ext(name)
+	dest := filepath.Join(dir, name)
+	for i := 1; ; i++ {
+		prev, err := os.ReadFile(dest)
+		if os.IsNotExist(err) {
+			break
+		}
+		if err == nil && bytes.Equal(prev, body) {
+			return dest, nil
+		}
+		dest = filepath.Join(dir, fmt.Sprintf("%s-%d%s", strings.TrimSuffix(name, ext), i, ext))
+	}
+	if err := os.WriteFile(dest, body, st.Mode().Perm()); err != nil {
+		return "", err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "sources.tsv"), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return dest, err
+	}
+	defer f.Close()
+	_, err = fmt.Fprintf(f, "%s\t%s\t%s\n", filepath.Base(dest), src.Link, time.Now().Format(time.RFC3339))
+	return dest, err
 }
 
 // Agents summarizes a session's subagents from tool_uses, labelled from the
