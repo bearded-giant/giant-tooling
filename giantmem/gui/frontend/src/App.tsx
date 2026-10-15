@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
@@ -38,6 +38,7 @@ import {
   SearchToolUses,
   SessionFacets,
   SessionHub,
+  SessionLengthStats,
   SessionPathByID,
   SessionToolCalls,
   SetPref,
@@ -319,6 +320,7 @@ function App() {
   const [sparklines, setSparklines] = useState<Record<string, main.SparklinePoint[]>>({});
   const [heatmap, setHeatmap] = useState<main.HeatmapCell[]>([]);
   const [toolMix, setToolMix] = useState<hub.ToolCount[]>([]);
+  const [lengths, setLengths] = useState<hub.LengthSummary[]>([]);
   const [version, setVersion] = useState<string>("");
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -401,6 +403,9 @@ function App() {
       .catch((e) => setErr(String(e)));
     ToolMix(7)
       .then((m) => setToolMix(m || []))
+      .catch((e) => setErr(String(e)));
+    SessionLengthStats(7)
+      .then((l) => setLengths(l || []))
       .catch((e) => setErr(String(e)));
   }, [reloadKey]);
 
@@ -1173,6 +1178,7 @@ function App() {
             onFilter={setActivityFilter}
             heatmap={heatmap}
             toolMix={toolMix}
+            lengths={lengths}
             filterRef={activityFilterRef}
           />
         )}
@@ -2755,6 +2761,7 @@ function ActivitySidebar({
   onFilter,
   heatmap,
   toolMix,
+  lengths,
   filterRef,
 }: {
   counts: main.ActivityCounts | null;
@@ -2762,6 +2769,7 @@ function ActivitySidebar({
   onFilter: (v: string) => void;
   heatmap: main.HeatmapCell[];
   toolMix: hub.ToolCount[];
+  lengths: hub.LengthSummary[];
   filterRef?: React.RefObject<HTMLInputElement>;
 }) {
   return (
@@ -2792,8 +2800,63 @@ function ActivitySidebar({
       </div>
       {heatmap.length > 0 && <HeatmapPanel cells={heatmap} />}
       <ToolMixPanel counts={toolMix} />
+      <SessionLengthPanel rows={lengths} />
     </>
   );
+}
+
+function SessionLengthPanel({ rows }: { rows: hub.LengthSummary[] }) {
+  if (!rows.length) return null;
+  return (
+    <div style={{ padding: "8px 4px" }}>
+      <div
+        style={{
+          fontSize: 13,
+          color: "var(--fg-muted)",
+          marginBottom: 6,
+          letterSpacing: "0.04em",
+          textTransform: "uppercase",
+        }}
+        title="active time: gaps between main-thread tool calls, each capped at 15 min"
+      >
+        session length · 7d
+      </div>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "minmax(0, 1fr) auto auto",
+          columnGap: 8,
+          rowGap: 3,
+          fontSize: 12,
+        }}
+      >
+        <span className="row-meta">project</span>
+        <span className="row-meta" style={{ textAlign: "right" }}>
+          sessions
+        </span>
+        <span className="row-meta" style={{ textAlign: "right" }}>
+          p50 active
+        </span>
+        {rows.slice(0, 8).map((r) => (
+          <Fragment key={r.project}>
+            <span
+              title={`${r.project}: p95 ${fmtSecs(r.active_p95_sec)}, avg ${fmtSecs(r.active_avg_sec)}, p50 span ${fmtSecs(r.span_p50_sec)}`}
+              style={{ color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+            >
+              {r.project.split("/").pop()}
+            </span>
+            <span style={{ color: "var(--fg)", textAlign: "right" }}>{r.sessions}</span>
+            <span style={{ color: "var(--fg)", textAlign: "right" }}>{fmtSecs(r.active_p50_sec)}</span>
+          </Fragment>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function fmtSecs(s: number): string {
+  const m = Math.floor(s / 60);
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, "0")}m`;
 }
 
 function ToolMixPanel({ counts }: { counts: hub.ToolCount[] }) {
@@ -2811,7 +2874,7 @@ function ToolMixPanel({ counts }: { counts: hub.ToolCount[] }) {
           textTransform: "uppercase",
         }}
       >
-        tool calls · last 7 days · {total.toLocaleString()}
+        tool calls · 7d · {total.toLocaleString()}
       </div>
       {top.map((c) => (
         <div
@@ -4026,6 +4089,7 @@ function DaySessionRow({ row, onClick }: { row: hub.DaySession; onClick: () => v
       <div className="row-meta">
         <strong>{row.project}</strong>
         {` · ${row.calls} calls`}
+        {row.active_sec > 0 && ` · active ${fmtSecs(row.active_sec)}`}
         {row.errors > 0 && <span style={{ color: "var(--danger)" }}>{` · ${row.errors} errors`}</span>}
         {` · ${row.files} files · ${row.links} links · `}
         <span style={{ fontFamily: "ui-monospace" }}>{row.session_id.slice(0, 8)}</span>

@@ -186,6 +186,7 @@ export namespace hub {
 	    links: number;
 	    first_prompt?: string;
 	    files: number;
+	    active_sec: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new DaySession(source);
@@ -204,6 +205,29 @@ export namespace hub {
 	        this.links = source["links"];
 	        this.first_prompt = source["first_prompt"];
 	        this.files = source["files"];
+	        this.active_sec = source["active_sec"];
+	    }
+	}
+	export class LengthSummary {
+	    project: string;
+	    sessions: number;
+	    active_p50_sec: number;
+	    active_p95_sec: number;
+	    active_avg_sec: number;
+	    span_p50_sec: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new LengthSummary(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.project = source["project"];
+	        this.sessions = source["sessions"];
+	        this.active_p50_sec = source["active_p50_sec"];
+	        this.active_p95_sec = source["active_p95_sec"];
+	        this.active_avg_sec = source["active_avg_sec"];
+	        this.span_p50_sec = source["span_p50_sec"];
 	    }
 	}
 	export class Link {

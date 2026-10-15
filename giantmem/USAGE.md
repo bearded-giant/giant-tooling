@@ -59,6 +59,8 @@ The whole point of session search: stop hunting through `~/.claude/projects/**` 
 | `giantmem session tools <id-prefix>` | every tool call the session made, subagents included, in order (`--tool Bash`, `--agent main`, `--errors`, `--links` for a `giantmem://` column) |
 | `giantmem session files <id-prefix>` | the session's archived working files with absolute paths (`--kind script`, `--links`) |
 | `giantmem session links <id-prefix>` | what it produced: claude.ai artifacts, vault notes, handoffs, doit items, MRs |
+| `giantmem session stats --since 7d` | per project: sessions, p50/p95/avg active time, p50 span. Active time sums the gaps between main-thread tool calls, each capped at 15 min, so a session resumed days later counts the work, not the days |
+| `giantmem session stats -p remi --sessions` | one row per session (`--idle 30m` changes the cap, `--json`) |
 | `giantmem session prune-orphans` | list `~/.claude/projects` dirs whose every recorded cwd is gone (merged feature, pruned worktree, deleted/renamed repo) |
 | `giantmem session prune-orphans --delete` | remove them (y/N prompt; add `--yes` to skip). A dir keeps if any one session points at a live cwd; dirs with no recorded cwd are never touched |
 

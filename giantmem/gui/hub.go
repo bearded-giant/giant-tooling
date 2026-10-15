@@ -72,6 +72,19 @@ func (a *App) ToolMix(days int) ([]hub.ToolCount, error) {
 	return hub.ToolCounts(a.archive, hub.ToolQuery{Since: since}, true)
 }
 
+// SessionLengthStats rolls up the last `days` days of session length per project.
+func (a *App) SessionLengthStats(days int) ([]hub.LengthSummary, error) {
+	if a.archive == nil {
+		return nil, nil
+	}
+	since := time.Now().AddDate(0, 0, -days).UTC().Format(time.RFC3339)
+	ls, err := hub.SessionLengths(a.archive, hub.ToolQuery{Since: since}, hub.DefaultIdleCap)
+	if err != nil {
+		return nil, err
+	}
+	return hub.SummarizeLengths(ls), nil
+}
+
 func (a *App) KeepBundleFile(sessionID, rel string) (string, error) {
 	return hub.Keep(archiveBase(), sessionID, rel)
 }

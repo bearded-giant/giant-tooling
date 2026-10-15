@@ -41,3 +41,36 @@ func sum(cs []ToolCount) int {
 	}
 	return n
 }
+
+func TestSessionLengths(t *testing.T) {
+	d, base, _ := fixture(t)
+	// fixture main thread: 2026-10-14T09:00, then 2026-10-15T12:00 and 12:05 (resumed a day later)
+	ls, err := SessionLengths(d, ToolQuery{}, DefaultIdleCap)
+	if err != nil || len(ls) != 1 {
+		t.Fatalf("lengths = %+v, %v", ls, err)
+	}
+	l := ls[0]
+	if l.Calls != 3 || l.SpanSec != 27*3600+5*60 || l.ActiveSec != 15*60+5*60 {
+		t.Fatalf("resumed session = %+v, want span 27h05m, active 20m", l)
+	}
+	win, _ := SessionLengths(d, ToolQuery{Since: "2026-10-15T00:00:00Z"}, DefaultIdleCap)
+	if len(win) != 1 || win[0].SpanSec != 300 || win[0].ActiveSec != 300 || win[0].Calls != 2 {
+		t.Fatalf("windowed = %+v", win)
+	}
+
+	days, err := Day(d, base, "2026-10-15T00:00:00Z", "2026-10-16T00:00:00Z")
+	if err != nil || len(days) != 1 || days[0].ActiveSec != 300 {
+		t.Fatalf("day active = %+v, %v", days, err)
+	}
+
+	sum := SummarizeLengths([]SessionLength{
+		{Project: "a", ActiveSec: 60, SpanSec: 100},
+		{Project: "a", ActiveSec: 120, SpanSec: 200},
+		{Project: "a", ActiveSec: 600, SpanSec: 900},
+		{Project: "b", ActiveSec: 30, SpanSec: 30},
+	})
+	if len(sum) != 2 || sum[0].Project != "a" || sum[0].Sessions != 3 || sum[0].ActiveP50 != 120 ||
+		sum[0].ActiveP95 != 600 || sum[0].ActiveAvg != 260 || sum[0].SpanP50 != 200 {
+		t.Fatalf("summary = %+v", sum)
+	}
+}

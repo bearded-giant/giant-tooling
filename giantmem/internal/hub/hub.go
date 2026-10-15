@@ -96,6 +96,7 @@ type DaySession struct {
 	Links       int    `json:"links"`
 	FirstPrompt string `json:"first_prompt,omitempty"`
 	Files       int    `json:"files"`
+	ActiveSec   int    `json:"active_sec"`
 }
 
 // ToolQuery scopes QueryToolUses. Agent: "" all, "main" main thread only, else
@@ -377,6 +378,12 @@ func Agents(d *sql.DB, archiveBase, sessionID string) ([]Agent, error) {
 
 // Day lists sessions with tool activity in [since, until), RFC3339 UTC bounds.
 func Day(d *sql.DB, archiveBase, since, until string) ([]DaySession, error) {
+	active := map[string]int{}
+	if ls, err := SessionLengths(d, ToolQuery{Since: since, Until: until}, DefaultIdleCap); err == nil {
+		for _, l := range ls {
+			active[l.SessionID] = l.ActiveSec
+		}
+	}
 	rows, err := d.Query(`
         SELECT t.session_id, MIN(t.ts), MAX(t.ts), COUNT(*), SUM(t.is_error),
                COALESCE(doc.project, MAX(t.project)), COALESCE(doc.topic,''), COALESCE(doc.filepath,''),
@@ -401,6 +408,7 @@ func Day(d *sql.DB, archiveBase, since, until string) ([]DaySession, error) {
 			s.Files = len(b.Files)
 		}
 		s.Transcript = TranscriptPath(archiveBase, s.Transcript, s.SessionID)
+		s.ActiveSec = active[s.SessionID]
 		out = append(out, s)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].FirstTS < out[j].FirstTS })

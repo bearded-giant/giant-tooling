@@ -122,6 +122,10 @@ export function SessionHub(arg1) {
   return window['go']['main']['App']['SessionHub'](arg1);
 }
 
+export function SessionLengthStats(arg1) {
+  return window['go']['main']['App']['SessionLengthStats'](arg1);
+}
+
 export function SessionPathByID(arg1) {
   return window['go']['main']['App']['SessionPathByID'](arg1);
 }

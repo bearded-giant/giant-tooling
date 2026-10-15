@@ -67,6 +67,8 @@ export function SessionFacets():Promise<main.SessionFacetCounts>;
 
 export function SessionHub(arg1:string):Promise<main.SessionHubData>;
 
+export function SessionLengthStats(arg1:number):Promise<Array<hub.LengthSummary>>;
+
 export function SessionPathByID(arg1:string):Promise<string>;
 
 export function SessionToolCalls(arg1:string,arg2:string):Promise<Array<hub.ToolUse>>;
