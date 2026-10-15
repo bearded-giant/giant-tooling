@@ -47,6 +47,8 @@ Single source of truth is `~/giantmem_archive/live.db` (SQLite). Two tables matt
 
 Claude session JSONLs live in `~/giantmem_archive/archives.db.documents` (source_type='session'), populated by `~/.claude/hooks/session_end_ingest.py` plus a 5-min launchd sweep (`giantmem/launchd/com.bryan.giantmem-session-sweep.plist`).
 
+Session ingest also fills `tool_uses` (every tool call, main thread + subagents, FTS-searchable) and `session_links` (artifacts, vault notes, handoffs, doit items, MRs). Subagent transcripts land as source_type='subagent'; archived session working files from `bundles/` land as source_type='bundle' (repo copies in a scratchpad subdir are skipped). The GUI writes one table itself, `starred_tool_uses`, keyed by (session_id, agent_id, seq) so stars survive re-ingest; kept snippets go to `$GIANTMEM_ARCHIVE_BASE/snippets/`, outside both DBs.
+
 Archiving is a live.db-verified delete, not a snapshot: `giantmem feature archive` (per-feature) and `giantmem workspace archive` (full wipe + reinit) verify every file is captured in `live.db` before removing the dir — rows are kept and stay searchable. No filesystem copy is made and no DB ingest happens. Pre-existing snapshot dirs under `~/giantmem_archive/{project}/{timestamp}/` are browsable via `giantmem archive list|open|dedup`; `archives.db` source_type='workspace' rows are no longer produced. `giantmem archive run`/`archive feature` remain as deprecated aliases.
 
 ## Key Paths and Environment
