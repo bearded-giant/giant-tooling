@@ -6,6 +6,7 @@ import "highlight.js/styles/github-dark.css";
 import {
   BrowserOpenURL,
   ClipboardSetText,
+  EventsOn,
   WindowGetPosition,
   WindowGetSize,
   WindowSetPosition,
@@ -15,6 +16,7 @@ import "./App.css";
 import {
   ActivityCounts,
   BrowseTree,
+  DaySessions,
   DeleteProject,
   FacetCounts,
   GetArtifactBody,
@@ -22,23 +24,30 @@ import {
   GetPref,
   ListSessions,
   LiveMtime,
+  OpenPath,
   ProjectHeatmap,
   ProjectSparkline,
   ReadFile,
+  ReadFileHead,
   RecentFiles,
   RecentRepos,
+  ResolveTranscript,
   SearchFTS,
   SearchHybrid,
   SearchToolUses,
   SessionFacets,
+  SessionHub,
   SessionPathByID,
+  SessionToolCalls,
   SetPref,
+  TakePendingSession,
+  TranscriptForSession,
   Version,
 } from "../wailsjs/go/main/App";
-import { artifacts, main, search } from "../wailsjs/go/models";
+import { artifacts, hub, main, search } from "../wailsjs/go/models";
 import PruneModal from "./PruneModal";
 
-type Tab = "artifacts" | "sessions" | "tools" | "activity";
+type Tab = "artifacts" | "sessions" | "tools" | "activity" | "day";
 
 const TOOL_NAMES = [
   "Bash",
@@ -230,7 +239,9 @@ function App() {
   const [toolNameFilter, setToolNameFilter] = useState<string>(
     () => localStorage.getItem("gm.toolNameFilter") || "any",
   );
-  const [toolUseFTSPre, setToolUseFTSPre] = useState(true);
+  const [toolErrorsOnly, setToolErrorsOnly] = useState(false);
+  const [day, setDay] = useState<string>(todayISO());
+  const [dayRows, setDayRows] = useState<hub.DaySession[]>([]);
   const [toolSelected, setToolSelected] = useState<main.ToolUseHit | null>(null);
   useEffect(() => {
     GetPref("toolNameFilter")
@@ -564,6 +575,7 @@ function App() {
       Branch: "",
       Feature: selFeature,
       Domain: "",
+      Published: false,
     }),
     [selFeature, selRepo],
   );
@@ -587,13 +599,16 @@ function App() {
             query: debouncedQuery,
             toolName: toolNameFilter === "any" ? "" : toolNameFilter,
             project: "",
-            useFTSPre: toolUseFTSPre,
+            useFTSPre: true,
+            errorsOnly: toolErrorsOnly,
             since,
             until,
             limit: 200,
           };
           const hits = (await SearchToolUses(f)) || [];
           setToolHits(hits);
+        } else if (tab === "day") {
+          setDayRows((await DaySessions(day)) || []);
         } else {
           let hits: search.Hit[];
           const sessionFilter: main.SessionFilter = {
@@ -649,7 +664,8 @@ function App() {
     since,
     until,
     toolNameFilter,
-    toolUseFTSPre,
+    toolErrorsOnly,
+    day,
     reloadKey,
   ]);
 
@@ -683,7 +699,8 @@ function App() {
       setDetailArt(null);
       setDetailFile(null);
       setDetailBody("");
-      ReadFile(selection.path)
+      ResolveTranscript(selection.path)
+        .then((p: string) => ReadFile(p))
         .then((raw: string) => setSessionLines(parseJSONL(raw)))
         .catch((e: unknown) => {
           setSessionLines(null);
@@ -691,6 +708,21 @@ function App() {
         });
     }
   }, [selection, hybridRows, browseRows, reloadKey]);
+
+  // giantmem://session/<id> from the vault daily note or a doit item
+  useEffect(() => {
+    const open = (id: string) => {
+      if (!id) return;
+      TranscriptForSession(id)
+        .then((path: string) => {
+          setTab("sessions");
+          setSelection({ kind: "session", path });
+        })
+        .catch((e: unknown) => setErr(String(e)));
+    };
+    TakePendingSession().then(open);
+    return EventsOn("open-session", open);
+  }, []);
 
   const clearFacets = () => {
     setSelFeature("");
@@ -711,7 +743,9 @@ function App() {
       ? hybridRows.length || browsePaths.length
       : tab === "tools"
         ? toolHits.length
-        : sessionHits.length;
+        : tab === "day"
+          ? dayRows.length
+          : sessionHits.length;
 
   const trimmedQuery = query.trim();
   const queryActive = trimmedQuery.length > 0;
@@ -790,6 +824,15 @@ function App() {
             )}
           </button>
           <button
+            className={tab === "day" ? "active" : ""}
+            onClick={() => {
+              setTab("day");
+              setSelection(null);
+            }}
+          >
+            day
+          </button>
+          <button
             className={tab === "artifacts" ? "active" : ""}
             onClick={() => {
               setTab("artifacts");
@@ -813,7 +856,19 @@ function App() {
             tools
           </button>
         </div>
-        <div className="search-wrap">
+        {tab === "day" && (
+          <div className="search-wrap day-pick">
+            <input
+              type="date"
+              value={day}
+              onChange={(e) => setDay(e.target.value || todayISO())}
+            />
+            <button onClick={() => setDay(shiftDay(day, -1))}>‹ prev</button>
+            <button onClick={() => setDay(todayISO())}>today</button>
+            <button onClick={() => setDay(shiftDay(day, 1))}>next ›</button>
+          </div>
+        )}
+        <div className="search-wrap" style={tab === "day" ? { display: "none" } : undefined}>
           <input
             ref={searchRef}
             type="search"
@@ -826,7 +881,7 @@ function App() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        {tab !== "activity" && (
+        {tab !== "activity" && tab !== "day" && (
           <div className="date-range" title="filter results by date range">
             <select
               value={dateRange.preset}
@@ -896,14 +951,14 @@ function App() {
                 alignItems: "center",
                 gap: 4,
               }}
-              title="when on, narrow candidate sessions via FTS first (fast). when off, scan every session."
+              title="only tool calls whose result came back as an error"
             >
               <input
                 type="checkbox"
-                checked={toolUseFTSPre}
-                onChange={(e) => setToolUseFTSPre(e.target.checked)}
+                checked={toolErrorsOnly}
+                onChange={(e) => setToolErrorsOnly(e.target.checked)}
               />
-              FTS pre-filter
+              errors only
             </label>
           </>
         )}
@@ -1213,6 +1268,20 @@ function App() {
               }
             />
           ))}
+        {tab === "day" && dayRows.length === 0 && !loading && (
+          <div className="detail-empty">no Claude sessions with tool activity on {day}</div>
+        )}
+        {tab === "day" &&
+          dayRows.map((r) => (
+            <DaySessionRow
+              key={r.session_id}
+              row={r}
+              onClick={() => {
+                setTab("sessions");
+                setSelection({ kind: "session", path: r.transcript });
+              }}
+            />
+          ))}
         {tab === "activity" && (
           <ActivityList
             repos={repoActivity.filter((r) =>
@@ -1333,6 +1402,7 @@ function App() {
         {selection?.kind === "session" && (
           <SessionDetail
             path={selection.path}
+            sessionId={sessionIDFromPath(selection.path)}
             turns={sessionLines}
             filter={turnFilter}
             onFilterChange={setTurnFilter}
@@ -1752,8 +1822,13 @@ function insertPath(root: TreeDir, segs: string[], row: main.BrowseRow) {
 }
 
 function sessionIDFromPath(p: string): string {
-  const stem = p.split("/").pop() || "";
-  return stem.replace(/\.jsonl$/, "");
+  const parts = p.split("/");
+  const stem = (parts.pop() || "").replace(/\.jsonl$/, "");
+  // bundle snapshot of a pruned transcript: bundles/<slug>/<sid>/claude/transcript.jsonl
+  if (stem === "transcript" && parts[parts.length - 1] === "claude") {
+    return parts[parts.length - 2] || stem;
+  }
+  return stem;
 }
 
 function TreeSidebar({
@@ -2358,7 +2433,8 @@ function ToolUseRow({
             </span>
           </>
         )}
-        {" · turn "}
+        {hit.agentId ? ` · subagent ${hit.agentId.slice(0, 8)}` : ""}
+        {" · #"}
         {hit.turnIndex}
         {hit.isError && <span style={{ color: "var(--danger)" }}> · error</span>}
         {" · "}
@@ -2429,7 +2505,7 @@ function ToolUseDetail({
         <ToolSection title="Input" body={inputText} mono />
         {hit.output !== undefined && hit.output !== "" && (
           <ToolSection
-            title="Output"
+            title={hit.output.length >= 500 ? "Output (first 500 chars, full result in the session)" : "Output"}
             body={hit.output}
             mono
             statusColor={hit.isError ? "danger" : "success"}
@@ -3023,6 +3099,7 @@ function clip(s: string, n: number): string {
 
 function SessionDetail({
   path,
+  sessionId,
   turns,
   filter,
   onFilterChange,
@@ -3036,6 +3113,7 @@ function SessionDetail({
   onCollapseAll,
 }: {
   path: string;
+  sessionId: string;
   turns: SessionTurn[] | null;
   filter: string;
   onFilterChange: (s: string) => void;
@@ -3059,6 +3137,17 @@ function SessionDetail({
     () => (turns || []).reduce((acc, t) => acc + t.toolCount, 0),
     [turns],
   );
+  const [sub, setSub] = useState<"transcript" | "tools" | "files" | "links">("transcript");
+  const [hubData, setHubData] = useState<main.SessionHubData | null>(null);
+  useEffect(() => {
+    setHubData(null);
+    if (!sessionId) return;
+    SessionHub(sessionId)
+      .then(setHubData)
+      .catch(() => setHubData(null));
+  }, [sessionId]);
+  const fileCount = hubData?.bundle?.files?.length || 0;
+  const linkCount = hubData?.links?.length || 0;
   return (
     <>
       <header className="detail-head">
@@ -3074,6 +3163,27 @@ function SessionDetail({
           )}
         </div>
       </header>
+      <SessionHubHeader data={hubData} />
+      <div className="subtabs">
+        <button className={sub === "transcript" ? "active" : ""} onClick={() => setSub("transcript")}>
+          transcript
+        </button>
+        <button className={sub === "tools" ? "active" : ""} onClick={() => setSub("tools")}>
+          tools{hubData ? ` (${hubData.calls})` : ""}
+          {hubData && hubData.errors > 0 && <span className="subtab-err"> {hubData.errors} err</span>}
+        </button>
+        <button className={sub === "files" ? "active" : ""} onClick={() => setSub("files")}>
+          files ({fileCount})
+        </button>
+        <button className={sub === "links" ? "active" : ""} onClick={() => setSub("links")}>
+          links ({linkCount})
+        </button>
+      </div>
+      {sub === "tools" && <SessionToolsPanel sessionId={sessionId} agents={hubData?.agents || []} />}
+      {sub === "files" && <SessionFilesPanel bundle={hubData?.bundle} error={hubData?.bundleError} />}
+      {sub === "links" && <SessionLinksPanel links={hubData?.links || []} />}
+      {sub === "transcript" && (
+      <>
       {files.length > 0 && (
         <div className="session-files">
           <div className="session-files-title">
@@ -3128,6 +3238,8 @@ function SessionDetail({
         ))}
       {filtered && filtered.length === 0 && (
         <div className="detail-empty">no turns match filter</div>
+      )}
+      </>
       )}
     </>
   );
@@ -3405,6 +3517,293 @@ function formatRelative(s?: string): string {
   if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
   if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
   return formatTime(s);
+}
+
+function todayISO(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function shiftDay(day: string, delta: number): string {
+  const [y, m, d] = day.split("-").map(Number);
+  const t = new Date(y, m - 1, d + delta);
+  return `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+}
+
+function clock(ts?: string): string {
+  if (!ts) return "";
+  const t = new Date(ts);
+  return isNaN(t.getTime()) ? "" : t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function prettyJSON(raw?: string): string {
+  if (!raw) return "";
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+const FENCE_LANG: Record<string, string> = {
+  py: "python", sh: "bash", bash: "bash", js: "javascript", mjs: "javascript", ts: "typescript",
+  go: "go", sql: "sql", json: "json", jsonl: "json", yaml: "yaml", yml: "yaml", md: "markdown",
+  lua: "lua", diff: "diff", patch: "diff", html: "xml", toml: "ini",
+};
+
+function fenced(path: string, body: string): string {
+  const ext = (path.split(".").pop() || "").toLowerCase();
+  const runs = body.match(/`+/g) || [];
+  const fence = "`".repeat(Math.max(3, ...runs.map((r) => r.length + 1)));
+  return `${fence}${FENCE_LANG[ext] || "plaintext"}\n${body}\n${fence}`;
+}
+
+function SessionHubHeader({ data }: { data: main.SessionHubData | null }) {
+  const b = data?.bundle;
+  if (!b) return null;
+  const resume = b.resume ? (b.cwd ? `cd ${b.cwd} && ${b.resume}` : b.resume) : "";
+  return (
+    <div className="hub-meta">
+      {b.first_prompt && <div className="hub-prompt">{b.first_prompt}</div>}
+      <div className="meta">
+        {b.branch && <span>branch: {b.branch}</span>}
+        <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{shortPath(b.dir)}</span>
+        <CopyButton text={b.dir} label="copy bundle path" />
+        <button className="mini-btn" onClick={() => OpenPath(b.dir, false)}>
+          open bundle
+        </button>
+        {resume && (
+          <>
+            <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{b.resume}</span>
+            <CopyButton text={resume} label="copy resume command" />
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SessionToolsPanel({ sessionId, agents }: { sessionId: string; agents: hub.Agent[] }) {
+  const [calls, setCalls] = useState<hub.ToolUse[] | null>(null);
+  const [agent, setAgent] = useState("");
+  const [q, setQ] = useState("");
+  const [errorsOnly, setErrorsOnly] = useState(false);
+  const [open, setOpen] = useState<string | null>(null);
+  useEffect(() => {
+    setCalls(null);
+    SessionToolCalls(sessionId, "")
+      .then((r) => setCalls(r || []))
+      .catch(() => setCalls([]));
+  }, [sessionId]);
+  const label = (id: string) => {
+    const a = agents.find((x) => x.agent_id === id);
+    if (!a) return `subagent ${id}`;
+    return `${a.agent_type || "subagent"}: ${a.description || id}`;
+  };
+  const groups = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const m = new Map<string, hub.ToolUse[]>();
+    for (const c of calls || []) {
+      const id = c.agent_id || "";
+      if (agent === "main" && id !== "") continue;
+      if (agent && agent !== "main" && id !== agent) continue;
+      if (errorsOnly && !c.is_error) continue;
+      if (needle && !`${c.tool} ${c.summary} ${c.input || ""}`.toLowerCase().includes(needle)) continue;
+      if (!m.has(id)) m.set(id, []);
+      m.get(id)!.push(c);
+    }
+    return [...m.entries()];
+  }, [calls, agent, q, errorsOnly]);
+  if (calls === null) return <div className="detail-empty">loading tool calls…</div>;
+  if (calls.length === 0) {
+    return <div className="detail-empty">no indexed tool calls (run `giantmem db ingest --sessions-only`)</div>;
+  }
+  return (
+    <div className="hub-panel">
+      <div className="transcript-toolbar">
+        <input type="search" placeholder="filter tool calls…" value={q} onChange={(e) => setQ(e.target.value)} />
+        <select value={agent} onChange={(e) => setAgent(e.target.value)} title="thread">
+          <option value="">all threads</option>
+          <option value="main">main thread</option>
+          {agents.map((a) => (
+            <option key={a.agent_id} value={a.agent_id}>
+              {label(a.agent_id)} ({a.calls})
+            </option>
+          ))}
+        </select>
+        <label className="hub-check">
+          <input type="checkbox" checked={errorsOnly} onChange={(e) => setErrorsOnly(e.target.checked)} />
+          errors only
+        </label>
+      </div>
+      {groups.length === 0 && <div className="detail-empty">no tool calls match</div>}
+      {groups.map(([id, list]) => (
+        <div key={id || "main"} className="hub-group">
+          <div className="hub-group-title">
+            {id ? label(id) : "main thread"} · {list.length}
+          </div>
+          {list.map((c) => {
+            const key = `${id}:${c.seq}`;
+            return (
+              <div key={key}>
+                <div className={`hub-row ${open === key ? "selected" : ""}`} onClick={() => setOpen(open === key ? null : key)}>
+                  <span className="row-meta hub-seq">#{c.seq}</span>
+                  <span className={`chip tool ${c.is_error ? "err" : ""}`}>{c.tool}</span>
+                  <span className="hub-summary" title={c.summary}>
+                    {c.summary}
+                  </span>
+                  {c.ts && <span className="row-meta">{clock(c.ts)}</span>}
+                </div>
+                {open === key && (
+                  <div className="tool-body">
+                    <ToolSection title="Input" body={prettyJSON(c.input)} mono />
+                    {c.result_head && (
+                      <ToolSection
+                        title={c.result_head.length >= 500 ? "Result (first 500 chars)" : "Result"}
+                        body={c.result_head}
+                        mono
+                        statusColor={c.is_error ? "danger" : "success"}
+                      />
+                    )}
+                    <CopyButton text={c.summary} label="copy summary (command / path)" />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const KIND_ORDER = ["script", "workflow", "patch", "doc", "data", "log", "transcript", "other"];
+
+function SessionFilesPanel({ bundle, error }: { bundle?: hub.Bundle; error?: string }) {
+  const [kind, setKind] = useState("");
+  const [sel, setSel] = useState<hub.BundleFile | null>(null);
+  const [head, setHead] = useState<main.FileHead | null>(null);
+  useEffect(() => setSel(null), [bundle?.dir]);
+  useEffect(() => {
+    setHead(null);
+    if (!sel) return;
+    ReadFileHead(sel.abs_path, 512 * 1024)
+      .then(setHead)
+      .catch((e: unknown) => setHead({ content: String(e), size: 0, truncated: false, binary: false }));
+  }, [sel]);
+  if (!bundle) {
+    return <div className="detail-empty">{error ? `no archived files: ${error}` : "no archived files for this session"}</div>;
+  }
+  const counts = new Map<string, number>();
+  for (const f of bundle.files || []) counts.set(f.kind, (counts.get(f.kind) || 0) + 1);
+  const kinds = KIND_ORDER.filter((k) => counts.has(k));
+  const files = (bundle.files || [])
+    .filter((f) => !kind || f.kind === kind)
+    .sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.path.localeCompare(b.path));
+  return (
+    <div className="hub-panel">
+      <div className="subtabs">
+        <button className={kind === "" ? "active" : ""} onClick={() => setKind("")}>
+          all ({bundle.files?.length || 0})
+        </button>
+        {kinds.map((k) => (
+          <button key={k} className={kind === k ? "active" : ""} onClick={() => setKind(k)}>
+            {k} ({counts.get(k)})
+          </button>
+        ))}
+      </div>
+      <div className="hub-files">
+        {files.map((f) => (
+          <div
+            key={f.path}
+            className={`hub-row ${sel?.path === f.path ? "selected" : ""}`}
+            onClick={() => setSel(sel?.path === f.path ? null : f)}
+            title={f.abs_path}
+          >
+            <span className="chip">{f.kind}</span>
+            <span className="hub-summary">{f.path}</span>
+            <span className="row-meta">{f.size >= 1024 ? `${Math.round(f.size / 1024)} KB` : `${f.size} B`}</span>
+          </div>
+        ))}
+      </div>
+      {sel && (
+        <div className="hub-viewer">
+          <div className="meta">
+            <strong>{sel.path}</strong>
+            <CopyButton text={sel.abs_path} label="copy absolute path" />
+            <button className="mini-btn" onClick={() => OpenPath(sel.abs_path, false)}>
+              open
+            </button>
+            <button className="mini-btn" onClick={() => OpenPath(sel.abs_path, true)}>
+              reveal in Finder
+            </button>
+            {head?.truncated && <span className="row-meta">showing first 512 KB of {Math.round(head.size / 1024)} KB</span>}
+          </div>
+          {!head && <div className="detail-empty">loading…</div>}
+          {head?.binary && <div className="detail-empty">binary file</div>}
+          {head && !head.binary && head.content.length > 150000 && <pre className="hub-pre">{head.content}</pre>}
+          {head && !head.binary && head.content.length <= 150000 && (
+            <ReactMarkdown rehypePlugins={[rehypeHighlight as any]}>{fenced(sel.path, head.content)}</ReactMarkdown>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const LINK_ORDER = ["artifact", "vault", "handoff", "mr", "doit"];
+
+function SessionLinksPanel({ links }: { links: hub.Link[] }) {
+  if (links.length === 0) return <div className="detail-empty">nothing recorded for this session</div>;
+  const sorted = [...links].sort(
+    (a, b) => LINK_ORDER.indexOf(a.kind) - LINK_ORDER.indexOf(b.kind) || (a.ts || "").localeCompare(b.ts || ""),
+  );
+  return (
+    <div className="hub-panel">
+      {sorted.map((l) => {
+        const isURL = l.target.startsWith("http");
+        const isPath = l.target.startsWith("/");
+        return (
+          <div key={`${l.kind}:${l.target}`} className="hub-row" title={l.target}>
+            <span className={`chip link-${l.kind}`}>{l.kind}</span>
+            <span className="hub-summary">{l.label || l.target}</span>
+            {l.ts && <span className="row-meta">{formatTime(l.ts)}</span>}
+            {isURL && (
+              <button className="mini-btn" onClick={() => BrowserOpenURL(l.target)}>
+                open
+              </button>
+            )}
+            {isPath && (
+              <button className="mini-btn" onClick={() => OpenPath(l.target, false)}>
+                open
+              </button>
+            )}
+            <CopyButton text={l.target} label={l.kind === "doit" ? "copy doit id" : "copy"} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function DaySessionRow({ row, onClick }: { row: hub.DaySession; onClick: () => void }) {
+  return (
+    <div className="result-row" onClick={onClick}>
+      <div className="row-head">
+        <span className="row-meta">
+          {clock(row.first_ts)}–{clock(row.last_ts)}
+        </span>
+        <span className="row-title">{row.first_prompt || row.topic || row.session_id.slice(0, 8)}</span>
+      </div>
+      <div className="row-meta">
+        <strong>{row.project}</strong>
+        {` · ${row.calls} calls`}
+        {row.errors > 0 && <span style={{ color: "var(--danger)" }}>{` · ${row.errors} errors`}</span>}
+        {` · ${row.files} files · ${row.links} links · `}
+        <span style={{ fontFamily: "ui-monospace" }}>{row.session_id.slice(0, 8)}</span>
+      </div>
+    </div>
+  );
 }
 
 export default App;

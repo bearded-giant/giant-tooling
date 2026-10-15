@@ -352,7 +352,9 @@
   padding-bottom: 10px;
   border-bottom: 1px solid var(--border);
 }
-.detail-head .meta {
+.detail-head .meta,
+.hub-meta .meta,
+.hub-viewer .meta {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -1295,4 +1297,105 @@
 }
 .prune-reclaim-btn {
   margin-right: auto;
+}
+
+/* session hub: subtabs, tool calls, archived files, links, day view */
+.subtabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 10px 0;
+}
+.subtabs button {
+  font-size: 13px;
+  padding: 3px 10px;
+}
+.subtab-err {
+  color: var(--danger);
+}
+.hub-meta {
+  margin: 6px 0 0;
+}
+.hub-prompt {
+  font-size: 14px;
+  color: var(--fg);
+  margin-bottom: 4px;
+  max-height: 4.5em;
+  overflow: hidden;
+}
+.hub-group {
+  margin-bottom: 12px;
+}
+.hub-group-title {
+  font-size: 13px;
+  color: var(--fg-muted);
+  margin: 8px 0 4px;
+  text-transform: none;
+}
+.hub-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.hub-row:hover,
+.hub-row.selected {
+  background: rgba(255, 255, 255, 0.06);
+}
+.hub-seq {
+  min-width: 36px;
+  text-align: right;
+}
+.hub-summary {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, monospace;
+}
+.hub-files {
+  max-height: 40vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px;
+}
+.hub-viewer {
+  margin-top: 10px;
+}
+.hub-pre {
+  white-space: pre;
+  overflow: auto;
+  font-size: 12px;
+  max-height: 70vh;
+}
+.hub-check {
+  font-size: 13px;
+  color: var(--fg-muted);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.mini-btn {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+.day-pick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.day-pick input[type="date"] {
+  width: auto;
+}
+.transcript-toolbar select {
+  width: auto;
+  max-width: 45%;
+}
+.hub-check {
+  white-space: nowrap;
 }

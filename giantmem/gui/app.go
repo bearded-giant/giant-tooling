@@ -311,6 +311,7 @@ type ToolUseHit struct {
 	Output       string `json:"output,omitempty"`
 	OutputClip   string `json:"outputClip,omitempty"`
 	IsError      bool   `json:"isError,omitempty"`
+	AgentID      string `json:"agentId,omitempty"`
 }
 
 // ToolUseFilter scopes SearchToolUses. Query is a case-insensitive substring
@@ -324,6 +325,8 @@ type ToolUseFilter struct {
 	Since     string `json:"since,omitempty"`
 	Until     string `json:"until,omitempty"`
 	Limit     int    `json:"limit,omitempty"`
+	// ErrorsOnly is honored by the tool_uses index path only.
+	ErrorsOnly bool `json:"errorsOnly,omitempty"`
 }
 
 // SearchToolUses scans session JSONL files for tool_use blocks that match the
@@ -338,6 +341,9 @@ func (a *App) SearchToolUses(filter ToolUseFilter) ([]ToolUseHit, error) {
 	}
 	if filter.Limit <= 0 {
 		filter.Limit = 200
+	}
+	if hits, ok, err := a.indexedToolUses(filter); ok {
+		return hits, err
 	}
 	type row struct {
 		path, sessionID, project, timestamp string

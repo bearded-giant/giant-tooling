@@ -2,168 +2,16 @@ package cmd
 
 import (
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/hub"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
-	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 	"github.com/spf13/cobra"
 )
-
-type toolUseRow struct {
-	SessionID string `json:"session_id"`
-	AgentID   string `json:"agent_id,omitempty"`
-	Project   string `json:"project"`
-	Seq       int    `json:"seq"`
-	TS        string `json:"ts,omitempty"`
-	Tool      string `json:"tool"`
-	Summary   string `json:"summary"`
-	IsError   bool   `json:"is_error,omitempty"`
-}
-
-type linkRow struct {
-	Kind   string `json:"kind"`
-	Target string `json:"target"`
-	Label  string `json:"label,omitempty"`
-	TS     string `json:"ts,omitempty"`
-}
-
-type bundleFile struct {
-	Path string `json:"path"`
-	Size int64  `json:"size"`
-	Kind string `json:"kind"`
-}
-
-type bundleManifest struct {
-	SessionID   string       `json:"session_id"`
-	Cwd         string       `json:"cwd,omitempty"`
-	Branch      string       `json:"branch,omitempty"`
-	FirstPrompt string       `json:"first_prompt,omitempty"`
-	Updated     string       `json:"updated,omitempty"`
-	Resume      string       `json:"resume,omitempty"`
-	Files       []bundleFile `json:"files"`
-	Dir         string       `json:"dir"`
-}
-
-type toolQuery struct {
-	SessionID string
-	Match     string
-	Tool      string
-	Project   string
-	Agent     string // "" all, "main" main thread only, else one agent id
-	Errors    bool
-	Limit     int
-}
-
-func queryToolUses(d *sql.DB, q toolQuery) ([]toolUseRow, error) {
-	from := "tool_uses t"
-	var conds []string
-	var args []any
-	if q.Match != "" {
-		from = "tool_uses_fts f JOIN tool_uses t ON t.id = f.rowid"
-		conds = append(conds, "tool_uses_fts MATCH ?")
-		args = append(args, search.SanitizeFTSQuery(q.Match))
-	}
-	if q.SessionID != "" {
-		conds = append(conds, "t.session_id = ?")
-		args = append(args, q.SessionID)
-	}
-	if q.Tool != "" {
-		conds = append(conds, "t.tool LIKE ?")
-		args = append(args, q.Tool)
-	}
-	if q.Project != "" {
-		conds = append(conds, "t.project LIKE ?")
-		args = append(args, "%"+q.Project+"%")
-	}
-	switch q.Agent {
-	case "":
-	case "main":
-		conds = append(conds, "t.agent_id = ''")
-	default:
-		conds = append(conds, "t.agent_id = ?")
-		args = append(args, q.Agent)
-	}
-	if q.Errors {
-		conds = append(conds, "t.is_error = 1")
-	}
-	where := ""
-	if len(conds) > 0 {
-		where = "WHERE " + strings.Join(conds, " AND ")
-	}
-	order := "t.ts DESC, t.seq DESC"
-	switch {
-	case q.SessionID != "":
-		order = "t.agent_id, t.seq"
-	case q.Match != "":
-		order = "bm25(tool_uses_fts), t.ts DESC"
-	}
-	sqlq := fmt.Sprintf(`SELECT t.session_id, t.agent_id, t.project, t.seq, COALESCE(t.ts,''),
-                                t.tool, t.summary, t.is_error
-                           FROM %s %s ORDER BY %s`, from, where, order)
-	if q.Limit > 0 {
-		sqlq += " LIMIT ?"
-		args = append(args, q.Limit)
-	}
-	rows, err := d.Query(sqlq, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []toolUseRow
-	for rows.Next() {
-		var r toolUseRow
-		var isErr int
-		if err := rows.Scan(&r.SessionID, &r.AgentID, &r.Project, &r.Seq, &r.TS, &r.Tool, &r.Summary, &isErr); err != nil {
-			return nil, err
-		}
-		r.IsError = isErr == 1
-		out = append(out, r)
-	}
-	return out, rows.Err()
-}
-
-func queryLinks(d *sql.DB, sessionID string) ([]linkRow, error) {
-	rows, err := d.Query(`SELECT kind, target, COALESCE(label,''), COALESCE(ts,'')
-                            FROM session_links WHERE session_id = ? ORDER BY ts, kind`, sessionID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var out []linkRow
-	for rows.Next() {
-		var r linkRow
-		if err := rows.Scan(&r.Kind, &r.Target, &r.Label, &r.TS); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
-	}
-	return out, rows.Err()
-}
-
-// loadBundle finds <archive>/bundles/<slug>/<sid>/bundle.json; the slug is not
-// stored with the session row, so glob for it.
-func loadBundle(sessionID string) (*bundleManifest, error) {
-	matches, _ := filepath.Glob(filepath.Join(archiveBasePath(), "bundles", "*", sessionID, "bundle.json"))
-	if len(matches) == 0 {
-		return nil, fmt.Errorf("no bundle for session %s", sessionID)
-	}
-	raw, err := os.ReadFile(matches[0])
-	if err != nil {
-		return nil, err
-	}
-	var m bundleManifest
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil, fmt.Errorf("%s: %w", matches[0], err)
-	}
-	m.Dir = filepath.Dir(matches[0])
-	return &m, nil
-}
 
 func openArchiveSession(prefix string) (*sql.DB, sessRow, error) {
 	a, err := db.Open(archiveDBPath())
@@ -197,7 +45,7 @@ var sessToolsCmd = &cobra.Command{
 			return err
 		}
 		defer a.Close()
-		hits, err := queryToolUses(a, toolQuery{SessionID: r.ID, Tool: hubTool, Agent: hubAgent, Errors: hubErrors})
+		hits, err := hub.QueryToolUses(a, hub.ToolQuery{SessionID: r.ID, Tool: hubTool, Agent: hubAgent, Errors: hubErrors})
 		if err != nil {
 			return err
 		}
@@ -219,12 +67,12 @@ var sessFilesCmd = &cobra.Command{
 			return err
 		}
 		a.Close()
-		m, err := loadBundle(r.ID)
+		m, err := hub.LoadBundle(archiveBasePath(), r.ID)
 		if err != nil {
 			return err
 		}
 		if hubKind != "" {
-			var keep []bundleFile
+			var keep []hub.BundleFile
 			for _, f := range m.Files {
 				if f.Kind == hubKind {
 					keep = append(keep, f)
@@ -243,7 +91,7 @@ var sessFilesCmd = &cobra.Command{
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintln(w, "KIND\tSIZE\tPATH")
 		for _, f := range m.Files {
-			fmt.Fprintf(w, "%s\t%d\t%s\n", f.Kind, f.Size, filepath.Join(m.Dir, f.Path))
+			fmt.Fprintf(w, "%s\t%d\t%s\n", f.Kind, f.Size, f.AbsPath)
 		}
 		return w.Flush()
 	},
@@ -259,7 +107,7 @@ var sessLinksCmd = &cobra.Command{
 			return err
 		}
 		defer a.Close()
-		links, err := queryLinks(a, r.ID)
+		links, err := hub.QueryLinks(a, r.ID)
 		if err != nil {
 			return err
 		}
@@ -290,7 +138,7 @@ var toolsFindCmd = &cobra.Command{
 			return err
 		}
 		defer a.Close()
-		hits, err := queryToolUses(a, toolQuery{
+		hits, err := hub.QueryToolUses(a, hub.ToolQuery{
 			Match:   strings.Join(args, " "),
 			Tool:    hubTool,
 			Project: hubProject,
@@ -308,7 +156,7 @@ var toolsFindCmd = &cobra.Command{
 	},
 }
 
-func printToolUses(hits []toolUseRow, withSession bool) {
+func printToolUses(hits []hub.ToolUse, withSession bool) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	if withSession {
 		fmt.Fprintln(w, "SESSION\tPROJECT\tAGENT\tTOOL\tSUMMARY")

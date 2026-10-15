@@ -2,9 +2,9 @@ package cmd
 
 import (
 	"context"
-	"path/filepath"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/hub"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -30,7 +30,7 @@ func findToolUsesHandler(ctx context.Context, _ mcp.CallToolRequest, args findTo
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	defer d.Close()
-	hits, err := queryToolUses(d, toolQuery{
+	hits, err := hub.QueryToolUses(d, hub.ToolQuery{
 		SessionID: args.SessionID,
 		Match:     args.Query,
 		Tool:      args.Tool,
@@ -55,12 +55,12 @@ func getSessionBundleHandler(ctx context.Context, _ mcp.CallToolRequest, args ge
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	defer d.Close()
-	links, err := queryLinks(d, r.ID)
+	links, err := hub.QueryLinks(d, r.ID)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 	out := map[string]any{"session_id": r.ID, "project": r.Project, "jsonl_path": r.JSONLPath, "links": links}
-	m, err := loadBundle(r.ID)
+	m, err := hub.LoadBundle(archiveBasePath(), r.ID)
 	if err != nil {
 		out["bundle_error"] = err.Error()
 		return jsonResult(out)
@@ -70,7 +70,7 @@ func getSessionBundleHandler(ctx context.Context, _ mcp.CallToolRequest, args ge
 		if args.Kind != "" && f.Kind != args.Kind {
 			continue
 		}
-		files = append(files, map[string]any{"path": filepath.Join(m.Dir, f.Path), "kind": f.Kind, "size": f.Size})
+		files = append(files, map[string]any{"path": f.AbsPath, "kind": f.Kind, "size": f.Size})
 	}
 	out["bundle_dir"] = m.Dir
 	out["first_prompt"] = m.FirstPrompt

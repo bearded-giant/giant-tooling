@@ -14,6 +14,10 @@ export function DBSizes(arg1) {
   return window['go']['main']['App']['DBSizes'](arg1);
 }
 
+export function DaySessions(arg1) {
+  return window['go']['main']['App']['DaySessions'](arg1);
+}
+
 export function DeleteProject(arg1, arg2) {
   return window['go']['main']['App']['DeleteProject'](arg1, arg2);
 }
@@ -54,6 +58,10 @@ export function LiveMtime() {
   return window['go']['main']['App']['LiveMtime']();
 }
 
+export function OpenPath(arg1, arg2) {
+  return window['go']['main']['App']['OpenPath'](arg1, arg2);
+}
+
 export function ProjectHeatmap(arg1, arg2) {
   return window['go']['main']['App']['ProjectHeatmap'](arg1, arg2);
 }
@@ -74,12 +82,20 @@ export function ReadFile(arg1) {
   return window['go']['main']['App']['ReadFile'](arg1);
 }
 
+export function ReadFileHead(arg1, arg2) {
+  return window['go']['main']['App']['ReadFileHead'](arg1, arg2);
+}
+
 export function RecentFiles(arg1, arg2) {
   return window['go']['main']['App']['RecentFiles'](arg1, arg2);
 }
 
 export function RecentRepos(arg1) {
   return window['go']['main']['App']['RecentRepos'](arg1);
+}
+
+export function ResolveTranscript(arg1) {
+  return window['go']['main']['App']['ResolveTranscript'](arg1);
 }
 
 export function SearchFTS(arg1) {
@@ -98,12 +114,28 @@ export function SessionFacets() {
   return window['go']['main']['App']['SessionFacets']();
 }
 
+export function SessionHub(arg1) {
+  return window['go']['main']['App']['SessionHub'](arg1);
+}
+
 export function SessionPathByID(arg1) {
   return window['go']['main']['App']['SessionPathByID'](arg1);
 }
 
+export function SessionToolCalls(arg1, arg2) {
+  return window['go']['main']['App']['SessionToolCalls'](arg1, arg2);
+}
+
 export function SetPref(arg1, arg2) {
   return window['go']['main']['App']['SetPref'](arg1, arg2);
+}
+
+export function TakePendingSession() {
+  return window['go']['main']['App']['TakePendingSession']();
+}
+
+export function TranscriptForSession(arg1) {
+  return window['go']['main']['App']['TranscriptForSession'](arg1);
 }
 
 export function Version() {

@@ -19,6 +19,7 @@ export namespace artifacts {
 	    lifecycle?: string;
 	    notion?: string;
 	    notion_synced?: string;
+	    notion_row?: string;
 	    access_count?: number;
 	    has_vec?: boolean;
 	
@@ -46,6 +47,7 @@ export namespace artifacts {
 	        this.lifecycle = source["lifecycle"];
 	        this.notion = source["notion"];
 	        this.notion_synced = source["notion_synced"];
+	        this.notion_row = source["notion_row"];
 	        this.access_count = source["access_count"];
 	        this.has_vec = source["has_vec"];
 	    }
@@ -59,6 +61,7 @@ export namespace artifacts {
 	    Branch: string;
 	    Feature: string;
 	    Domain: string;
+	    Published: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ListFilter(source);
@@ -74,6 +77,177 @@ export namespace artifacts {
 	        this.Branch = source["Branch"];
 	        this.Feature = source["Feature"];
 	        this.Domain = source["Domain"];
+	        this.Published = source["Published"];
+	    }
+	}
+
+}
+
+export namespace hub {
+	
+	export class Agent {
+	    agent_id: string;
+	    agent_type?: string;
+	    description?: string;
+	    calls: number;
+	    errors: number;
+	    first_ts?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Agent(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.agent_id = source["agent_id"];
+	        this.agent_type = source["agent_type"];
+	        this.description = source["description"];
+	        this.calls = source["calls"];
+	        this.errors = source["errors"];
+	        this.first_ts = source["first_ts"];
+	    }
+	}
+	export class BundleFile {
+	    path: string;
+	    abs_path: string;
+	    size: number;
+	    kind: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new BundleFile(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.path = source["path"];
+	        this.abs_path = source["abs_path"];
+	        this.size = source["size"];
+	        this.kind = source["kind"];
+	    }
+	}
+	export class Bundle {
+	    session_id: string;
+	    cwd?: string;
+	    branch?: string;
+	    first_prompt?: string;
+	    updated?: string;
+	    resume?: string;
+	    files: BundleFile[];
+	    dir: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Bundle(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session_id = source["session_id"];
+	        this.cwd = source["cwd"];
+	        this.branch = source["branch"];
+	        this.first_prompt = source["first_prompt"];
+	        this.updated = source["updated"];
+	        this.resume = source["resume"];
+	        this.files = this.convertValues(source["files"], BundleFile);
+	        this.dir = source["dir"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
+	
+	export class DaySession {
+	    session_id: string;
+	    project: string;
+	    topic?: string;
+	    transcript: string;
+	    first_ts: string;
+	    last_ts: string;
+	    calls: number;
+	    errors: number;
+	    links: number;
+	    first_prompt?: string;
+	    files: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DaySession(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session_id = source["session_id"];
+	        this.project = source["project"];
+	        this.topic = source["topic"];
+	        this.transcript = source["transcript"];
+	        this.first_ts = source["first_ts"];
+	        this.last_ts = source["last_ts"];
+	        this.calls = source["calls"];
+	        this.errors = source["errors"];
+	        this.links = source["links"];
+	        this.first_prompt = source["first_prompt"];
+	        this.files = source["files"];
+	    }
+	}
+	export class Link {
+	    kind: string;
+	    target: string;
+	    label?: string;
+	    ts?: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new Link(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.kind = source["kind"];
+	        this.target = source["target"];
+	        this.label = source["label"];
+	        this.ts = source["ts"];
+	    }
+	}
+	export class ToolUse {
+	    session_id: string;
+	    agent_id?: string;
+	    project: string;
+	    seq: number;
+	    ts?: string;
+	    tool: string;
+	    summary: string;
+	    input?: string;
+	    result_head?: string;
+	    is_error?: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new ToolUse(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.session_id = source["session_id"];
+	        this.agent_id = source["agent_id"];
+	        this.project = source["project"];
+	        this.seq = source["seq"];
+	        this.ts = source["ts"];
+	        this.tool = source["tool"];
+	        this.summary = source["summary"];
+	        this.input = source["input"];
+	        this.result_head = source["result_head"];
+	        this.is_error = source["is_error"];
 	    }
 	}
 
@@ -199,6 +373,24 @@ export namespace main {
 	        this.mtime = source["mtime"];
 	    }
 	}
+	export class FileHead {
+	    content: string;
+	    size: number;
+	    truncated: boolean;
+	    binary: boolean;
+	
+	    static createFrom(source: any = {}) {
+	        return new FileHead(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.content = source["content"];
+	        this.size = source["size"];
+	        this.truncated = source["truncated"];
+	        this.binary = source["binary"];
+	    }
+	}
 	export class HeatmapCell {
 	    worktreePath: string;
 	    project: string;
@@ -273,6 +465,48 @@ export namespace main {
 	        this.until = source["until"];
 	    }
 	}
+	export class SessionHubData {
+	    sessionId: string;
+	    bundle?: hub.Bundle;
+	    bundleError?: string;
+	    links: hub.Link[];
+	    agents: hub.Agent[];
+	    calls: number;
+	    errors: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new SessionHubData(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.sessionId = source["sessionId"];
+	        this.bundle = this.convertValues(source["bundle"], hub.Bundle);
+	        this.bundleError = source["bundleError"];
+	        this.links = this.convertValues(source["links"], hub.Link);
+	        this.agents = this.convertValues(source["agents"], hub.Agent);
+	        this.calls = source["calls"];
+	        this.errors = source["errors"];
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 	export class SparklinePoint {
 	    day: string;
 	    count: number;
@@ -295,6 +529,7 @@ export namespace main {
 	    since?: string;
 	    until?: string;
 	    limit?: number;
+	    errorsOnly?: boolean;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolUseFilter(source);
@@ -309,6 +544,7 @@ export namespace main {
 	        this.since = source["since"];
 	        this.until = source["until"];
 	        this.limit = source["limit"];
+	        this.errorsOnly = source["errorsOnly"];
 	    }
 	}
 	export class ToolUseHit {
@@ -323,6 +559,7 @@ export namespace main {
 	    output?: string;
 	    outputClip?: string;
 	    isError?: boolean;
+	    agentId?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolUseHit(source);
@@ -341,6 +578,7 @@ export namespace main {
 	        this.output = source["output"];
 	        this.outputClip = source["outputClip"];
 	        this.isError = source["isError"];
+	        this.agentId = source["agentId"];
 	    }
 	}
 
@@ -497,6 +735,8 @@ export namespace search {
 	    vector_score: number;
 	    recency_score: number;
 	    access_score: number;
+	    chunk_ord: number;
+	    passage?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new HybridResult(source);
@@ -510,6 +750,8 @@ export namespace search {
 	        this.vector_score = source["vector_score"];
 	        this.recency_score = source["recency_score"];
 	        this.access_score = source["access_score"];
+	        this.chunk_ord = source["chunk_ord"];
+	        this.passage = source["passage"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {

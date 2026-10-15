@@ -2,11 +2,15 @@
 
 Desktop memory browser for your `giantmem` archive. It's a Wails app (Go backend, React+TS frontend) that binds the giantmem read layer directly — no IPC, no HTTP, no extra daemon. The same `internal/artifacts` and `internal/search` packages that power the CLI and MCP also power this window.
 
-Three tabs:
+Five tabs:
 
-1. **artifacts** — hybrid search (FTS + vector + recency + access) and faceted browse over the typed `artifacts` projection in `live.db`. Filter by type, status, lifecycle, feature, and repo. Detail pane renders the markdown body.
-2. **sessions** — search and browse Claude Code session transcripts indexed in `archives.db`. Pick a session and the right pane unpacks the JSONL into a devtools-style transcript: collapsible turns, paired tool_use ↔ tool_result blocks, expand-all / collapse-all, oldest-first or newest-first sort.
-3. **tools** — search every tool_use across every session. Pick `Bash`, `Edit`, `WebFetch`, etc. (or `any tool`), type a substring, and you get a hit per tool invocation with the input JSON, the paired tool_result body, and a one-click jump into the session viewer at that turn.
+1. **activity** — which repos and files moved recently, with per-project sparklines and a heatmap.
+2. **sessions** — search and browse Claude Code sessions indexed in `archives.db`. Pick one and the right pane has four views. **transcript** unpacks the JSONL into a devtools-style log: collapsible turns, paired tool_use ↔ tool_result blocks, expand-all / collapse-all, either sort order. **tools** lists every tool call the session made, grouped by thread, so each subagent shows up under its type and description; click a call for its input and the head of its result. **files** is the session's archived working set (scratchpad scripts, patches, drafts, background task output, workflow scripts) with a viewer, open, and reveal-in-Finder. **links** is what the session produced: claude.ai artifacts, vault notes, handoffs, doit items, MRs. The header carries the first prompt, the bundle folder, and a copyable resume command. A transcript Claude Code has already pruned loads from the bundle's snapshot instead.
+3. **day** — every session with tool activity on a given day, oldest first, with its first prompt, call and error counts, files, and links. Click one to open it.
+4. **artifacts** — hybrid search (FTS + vector + recency + access) and faceted browse over the typed `artifacts` projection in `live.db`. Filter by type, status, lifecycle, feature, and repo. Detail pane renders the markdown body.
+5. **tools** — search tool calls across every session and subagent. Pick `Bash`, `Edit`, `WebFetch`, etc. (or `any tool`), type some words, tick **errors only** if you're hunting failures, and jump from any hit into its session.
+
+`giantmem://session/<id>` opens the app straight onto a session, which is how the vault daily note and doit items link back here. The scheme is declared in `wails.json` and macOS picks it up once the app is in `/Applications`.
 
 Read-only for v1. Writes (lifecycle changes, in-place editing) are deferred.
 
@@ -73,4 +77,4 @@ The app reads `GIANTMEM_ARCHIVE_BASE` from the environment exactly like the CLI 
 
 ## Known limitations
 
-The archive FTS body keeps only the first 20 Bash commands per session, each clipped at 150 chars, and skips other tool inputs and every tool_result entirely. The tools tab works around that by stream-parsing the JSONL when you search. Toggle off **FTS pre-filter** in the topbar if you want it to scan every session jsonl (slower, but it'll find tool calls that aren't visible to FTS).
+Tool calls, files, and links come from what `giantmem db ingest` indexed, so a session still running shows its calls as of the last ingest (SessionEnd and the 5-minute sweep keep that close). Results are stored as their first 500 chars; the transcript view has the full body. With an empty `tool_uses` index the tools tab falls back to stream-parsing every session JSONL, which is slower and can't see subagents.
