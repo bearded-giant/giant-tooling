@@ -1253,6 +1253,7 @@ function App() {
               selected={
                 toolSelected !== null &&
                 toolSelected.sessionPath === h.sessionPath &&
+                toolSelected.agentId === h.agentId &&
                 toolSelected.turnIndex === h.turnIndex
               }
               onClick={() => setToolSelected(h)}
@@ -2494,7 +2495,7 @@ function ToolUseDetail({
               session: {hit.sessionId.slice(0, 12)}
             </span>
           )}
-          <span>turn {hit.turnIndex}</span>
+          <span>#{hit.turnIndex}</span>
           {hit.timestamp && <span>{formatTime(hit.timestamp)}</span>}
           <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>
             {hit.sessionPath}
