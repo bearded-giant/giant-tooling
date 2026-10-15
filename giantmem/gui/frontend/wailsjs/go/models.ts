@@ -112,6 +112,7 @@ export namespace hub {
 	    abs_path: string;
 	    size: number;
 	    kind: string;
+	    link: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new BundleFile(source);
@@ -123,6 +124,7 @@ export namespace hub {
 	        this.abs_path = source["abs_path"];
 	        this.size = source["size"];
 	        this.kind = source["kind"];
+	        this.link = source["link"];
 	    }
 	}
 	export class Bundle {
@@ -134,6 +136,7 @@ export namespace hub {
 	    resume?: string;
 	    files: BundleFile[];
 	    dir: string;
+	    link: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Bundle(source);
@@ -149,6 +152,7 @@ export namespace hub {
 	        this.resume = source["resume"];
 	        this.files = this.convertValues(source["files"], BundleFile);
 	        this.dir = source["dir"];
+	        this.link = source["link"];
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
@@ -231,6 +235,7 @@ export namespace hub {
 	    input?: string;
 	    result_head?: string;
 	    is_error?: boolean;
+	    link: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolUse(source);
@@ -248,6 +253,7 @@ export namespace hub {
 	        this.input = source["input"];
 	        this.result_head = source["result_head"];
 	        this.is_error = source["is_error"];
+	        this.link = source["link"];
 	    }
 	}
 
@@ -489,6 +495,7 @@ export namespace main {
 	}
 	export class SessionHubData {
 	    sessionId: string;
+	    link: string;
 	    bundle?: hub.Bundle;
 	    bundleError?: string;
 	    links: hub.Link[];
@@ -503,6 +510,7 @@ export namespace main {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.sessionId = source["sessionId"];
+	        this.link = source["link"];
 	        this.bundle = this.convertValues(source["bundle"], hub.Bundle);
 	        this.bundleError = source["bundleError"];
 	        this.links = this.convertValues(source["links"], hub.Link);
@@ -582,6 +590,7 @@ export namespace main {
 	    outputClip?: string;
 	    isError?: boolean;
 	    agentId?: string;
+	    link?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new ToolUseHit(source);
@@ -601,6 +610,7 @@ export namespace main {
 	        this.outputClip = source["outputClip"];
 	        this.isError = source["isError"];
 	        this.agentId = source["agentId"];
+	        this.link = source["link"];
 	    }
 	}
 

@@ -19,7 +19,7 @@ Deep links open the app straight onto what they name, which is how the vault dai
 | `giantmem://tool/<id>/<main or agent id>/<seq>` | the session's tools view with that call expanded |
 | `giantmem://file/<id>/<path in bundle>` | the session's files view with that file open (percent-encode spaces) |
 
-The scheme is declared in `wails.json` and macOS picks it up once the app is in `/Applications`.
+The session header, every tool call, and every archived file have a "copy deep link" button, and the CLI (`--links`, `--json`) and MCP tools hand out the same links. The scheme is declared in `wails.json` and macOS picks it up once the app is in `/Applications`.
 
 Read-only for v1. Writes (lifecycle changes, in-place editing) are deferred.
 

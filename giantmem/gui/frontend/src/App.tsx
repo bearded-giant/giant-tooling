@@ -2501,6 +2501,7 @@ function ToolUseDetail({
             {hit.sessionPath}
           </span>
           <CopyButton text={hit.sessionPath} label="copy session path" />
+          <CopyButton text={hit.link || ""} label="copy deep link" />
           <button
             onClick={onOpenSession}
             style={{
@@ -3172,6 +3173,7 @@ function SessionDetail({
         <div className="meta">
           <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{path}</span>
           <CopyButton text={path} label="copy file path" />
+          <CopyButton text={hubData?.link || ""} label="copy deep link" />
           {turns && (
             <span>
               {turns.length} turn{turns.length === 1 ? "" : "s"} ·{" "}
@@ -3697,6 +3699,7 @@ function SessionToolsPanel({
                       />
                     )}
                     <CopyButton text={c.summary} label="copy summary (command / path)" />
+                    <CopyButton text={c.link} label="copy deep link" />
                   </div>
                 )}
               </div>
@@ -3775,6 +3778,7 @@ function SessionFilesPanel({
           <div className="meta">
             <strong>{sel.path}</strong>
             <CopyButton text={sel.abs_path} label="copy absolute path" />
+            <CopyButton text={sel.link} label="copy deep link" />
             <button className="mini-btn" onClick={() => OpenPath(sel.abs_path, false)}>
               open
             </button>

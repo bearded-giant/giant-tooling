@@ -20,6 +20,7 @@ import (
 // SessionHubData is everything the session detail tabs need beyond the transcript.
 type SessionHubData struct {
 	SessionID   string      `json:"sessionId"`
+	Link        string      `json:"link"`
 	Bundle      *hub.Bundle `json:"bundle,omitempty"`
 	BundleError string      `json:"bundleError,omitempty"`
 	Links       []hub.Link  `json:"links"`
@@ -29,7 +30,7 @@ type SessionHubData struct {
 }
 
 func (a *App) SessionHub(sessionID string) (SessionHubData, error) {
-	out := SessionHubData{SessionID: sessionID}
+	out := SessionHubData{SessionID: sessionID, Link: hub.SessionLink(sessionID)}
 	if a.archive == nil || sessionID == "" {
 		return out, nil
 	}
@@ -265,6 +266,7 @@ func (a *App) indexedToolUses(f ToolUseFilter) ([]ToolUseHit, bool, error) {
 			Output:       r.ResultHead,
 			OutputClip:   clipText(r.ResultHead, 200),
 			IsError:      r.IsError,
+			Link:         r.Link,
 		})
 	}
 	return out, true, nil

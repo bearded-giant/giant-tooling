@@ -312,6 +312,7 @@ type ToolUseHit struct {
 	OutputClip   string `json:"outputClip,omitempty"`
 	IsError      bool   `json:"isError,omitempty"`
 	AgentID      string `json:"agentId,omitempty"`
+	Link         string `json:"link,omitempty"`
 }
 
 // ToolUseFilter scopes SearchToolUses. Query is a case-insensitive substring
