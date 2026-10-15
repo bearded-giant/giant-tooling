@@ -49,6 +49,7 @@ type EmitOptions struct {
 	Project        string // optional filter
 	Force          bool
 	DB             *sql.DB // some builtins need to query existing rows for incremental
+	VaultRoot      string  // notes vault; writes under it are recorded as session links
 }
 
 // Config maps to ~/.config/giantmem/sources.toml.
@@ -86,6 +87,7 @@ func DefaultConfig() *Config {
 			{Name: "claude-jsonl", Kind: "builtin", Enabled: true},
 			{Name: "domain-json", Kind: "builtin", Enabled: true},
 			{Name: "memory-md", Kind: "builtin", Enabled: true},
+			{Name: "session-bundle", Kind: "builtin", Enabled: true},
 		},
 	}
 }

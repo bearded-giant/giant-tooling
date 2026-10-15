@@ -113,3 +113,40 @@ func TestMigrateLive_V5AdditiveAndIdempotent(t *testing.T) {
 		t.Fatalf("live_docs rows = %d, want 1 (preserved across migrate)", docN)
 	}
 }
+
+func TestMigrateArchive_V5ToolUsesSearchable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "archives.db")
+	for _, name := range []string{"tool_uses", "tool_uses_fts", "tool_uses_ai", "tool_uses_ad", "session_links"} {
+		if !tableExists(t, path, name) {
+			t.Fatalf("%s missing after migrate", name)
+		}
+	}
+	d, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	if v, _ := SchemaVersion(d); v != latestVersion(archiveMigrations) {
+		t.Fatalf("user_version = %d, want %d", v, latestVersion(archiveMigrations))
+	}
+	if _, err := d.Exec(`INSERT INTO tool_uses (session_id, project, seq, tool, summary, input)
+        VALUES ('s1', 'p', 0, 'Bash', 'jq .hits splunk.json', '{"command":"jq .hits splunk.json"}')`); err != nil {
+		t.Fatal(err)
+	}
+	count := func() int {
+		var n int
+		if err := d.QueryRow(`SELECT COUNT(*) FROM tool_uses_fts WHERE tool_uses_fts MATCH 'splunk'`).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if count() != 1 {
+		t.Fatal("inserted tool use not searchable")
+	}
+	if _, err := d.Exec(`DELETE FROM tool_uses WHERE session_id = 's1'`); err != nil {
+		t.Fatal(err)
+	}
+	if count() != 0 {
+		t.Fatal("deleted tool use still searchable")
+	}
+}

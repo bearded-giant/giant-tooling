@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/sources"
@@ -58,7 +59,7 @@ durable in archives.db (the SessionStart hook runs it detached).
 
 		filter := ingestSourceFilter
 		if ingestSessionsOnly {
-			filter = append(filter, "claude-jsonl")
+			filter = append(filter, "claude-jsonl", "session-bundle")
 		}
 		if ingestWorkspacesOnly {
 			filter = append(filter, "workspace-md", "domain-json")
@@ -70,6 +71,7 @@ durable in archives.db (the SessionStart hook runs it detached).
 			Project:        ingestProject,
 			Force:          ingestForce,
 			DB:             d,
+			VaultRoot:      vaultRoot(home),
 		}
 
 		// rebuild non-session scope when running workspace builtins fresh:
@@ -145,6 +147,18 @@ func dropNonSessionRows(d *sql.DB, project string) error {
 		}
 	}
 	return tx.Commit()
+}
+
+// vaultRoot resolves the notes vault: OBSIDIAN_VAULT, else [sessions] vault_root.
+func vaultRoot(home string) string {
+	v := os.Getenv("OBSIDIAN_VAULT")
+	if v == "" {
+		v = loadUserConfig().Sessions.VaultRoot
+	}
+	if strings.HasPrefix(v, "~/") {
+		v = filepath.Join(home, v[2:])
+	}
+	return v
 }
 
 func printIngestStats(perSource map[string]sources.Stats) {

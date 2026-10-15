@@ -90,6 +90,57 @@ var archiveMigrations = []Migration{
 			return err
 		},
 	},
+	{
+		Version: 5,
+		Name:    "tool_uses + session_links",
+		Apply: func(tx *sql.Tx) error {
+			stmts := []string{
+				// agent_id '' is the main thread; a subagent's calls carry its agent id
+				`CREATE TABLE IF NOT EXISTS tool_uses (
+                    id INTEGER PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL DEFAULT '',
+                    project TEXT NOT NULL,
+                    seq INTEGER NOT NULL,
+                    ts TEXT,
+                    tool TEXT NOT NULL,
+                    summary TEXT NOT NULL,
+                    input TEXT NOT NULL,
+                    is_error INTEGER NOT NULL DEFAULT 0,
+                    result_head TEXT
+                )`,
+				`CREATE INDEX IF NOT EXISTS idx_tool_uses_session ON tool_uses(session_id, agent_id, seq)`,
+				`CREATE INDEX IF NOT EXISTS idx_tool_uses_tool ON tool_uses(tool)`,
+				`CREATE VIRTUAL TABLE IF NOT EXISTS tool_uses_fts USING fts5(
+                    tool, summary, input,
+                    tokenize='porter unicode61',
+                    content='tool_uses', content_rowid='id'
+                )`,
+				`CREATE TRIGGER IF NOT EXISTS tool_uses_ai AFTER INSERT ON tool_uses BEGIN
+                    INSERT INTO tool_uses_fts(rowid, tool, summary, input)
+                    VALUES (new.id, new.tool, new.summary, new.input);
+                END`,
+				`CREATE TRIGGER IF NOT EXISTS tool_uses_ad AFTER DELETE ON tool_uses BEGIN
+                    INSERT INTO tool_uses_fts(tool_uses_fts, rowid, tool, summary, input)
+                    VALUES ('delete', old.id, old.tool, old.summary, old.input);
+                END`,
+				`CREATE TABLE IF NOT EXISTS session_links (
+                    session_id TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    target TEXT NOT NULL,
+                    label TEXT,
+                    ts TEXT,
+                    PRIMARY KEY (session_id, kind, target)
+                )`,
+			}
+			for _, s := range stmts {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // liveMigrations is the canonical list for live.db.

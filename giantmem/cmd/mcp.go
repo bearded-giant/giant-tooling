@@ -109,6 +109,42 @@ func registerExtraTools(s *server.MCPServer) {
 		),
 		mcp.NewTypedToolHandler(getSessionSummaryHandler),
 	)
+	// find_tool_uses
+	s.AddTool(
+		mcp.NewTool("find_tool_uses",
+			append([]mcp.ToolOption{
+				mcp.WithDescription("Search tool calls across every past session and subagent: Bash commands, MCP calls, edits, fetches. Use it to find how a past session ran something (a jq over Splunk output, a glab call, a migration script) before reinventing it. Returns session id, project, agent, tool, and a one-line summary."),
+				mcp.WithString("query",
+					mcp.Description("FTS5 text over tool name, summary, and input (e.g. 'jq splunk', 'glab mr view')")),
+				mcp.WithString("session_id",
+					mcp.Description("limit to one session (full id); with no query, lists that session's calls in order")),
+				mcp.WithString("tool",
+					mcp.Description("tool name, SQL LIKE (e.g. Bash, mcp__doit__%)")),
+				mcp.WithString("project",
+					mcp.Description("project substring")),
+				mcp.WithBoolean("errors_only",
+					mcp.Description("only calls whose result was an error")),
+				mcp.WithNumber("limit",
+					mcp.Description("max rows (default 30)"),
+					mcp.Min(1), mcp.Max(500)),
+			}, readOnly...)...,
+		),
+		mcp.NewTypedToolHandler(findToolUsesHandler),
+	)
+	// get_session_bundle
+	s.AddTool(
+		mcp.NewTool("get_session_bundle",
+			append([]mcp.ToolOption{
+				mcp.WithDescription("Return a past session's archived working files (scratchpad scripts, patches, drafts, background task output, subagent transcripts, workflow scripts) with absolute paths, plus what it produced: claude.ai artifacts, vault notes, handoffs, doit items, MRs."),
+				mcp.WithString("id_prefix",
+					mcp.Required(),
+					mcp.Description("session id or any unique prefix")),
+				mcp.WithString("kind",
+					mcp.Description("only files of this kind: script, patch, doc, data, log, workflow, transcript")),
+			}, readOnly...)...,
+		),
+		mcp.NewTypedToolHandler(getSessionBundleHandler),
+	)
 	// recent_writes
 	s.AddTool(
 		mcp.NewTool("recent_writes",

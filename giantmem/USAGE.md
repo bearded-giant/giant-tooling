@@ -56,12 +56,28 @@ The whole point of session search: stop hunting through `~/.claude/projects/**` 
 | `giantmem session find "hub and spoke"` | FTS5 over session transcripts |
 | `giantmem session show <id-prefix>` | metadata: project, cwd, topic, jsonl path |
 | `giantmem session resume <id-prefix>` | chdir to recorded cwd, then `exec claude --resume <uuid>` |
+| `giantmem session tools <id-prefix>` | every tool call the session made, subagents included, in order (`--tool Bash`, `--agent main`, `--errors`) |
+| `giantmem session files <id-prefix>` | the session's archived working files with absolute paths (`--kind script`) |
+| `giantmem session links <id-prefix>` | what it produced: claude.ai artifacts, vault notes, handoffs, doit items, MRs |
 | `giantmem session prune-orphans` | list `~/.claude/projects` dirs whose every recorded cwd is gone (merged feature, pruned worktree, deleted/renamed repo) |
 | `giantmem session prune-orphans --delete` | remove them (y/N prompt; add `--yes` to skip). A dir keeps if any one session points at a live cwd; dirs with no recorded cwd are never touched |
 
 `<id-prefix>` is any unique prefix of the session UUID (e.g. `40503b40`). Ambiguous prefixes print all candidates and exit.
 
 If the recorded cwd no longer exists (e.g. you converted a regular repo to a bare-with-worktrees layout), `giantmem session resume` falls back to `<cwd>-wt/main` then `<cwd>-wt/master` automatically.
+
+## Tool calls and working files
+
+Claude's scratchpad and background task output live under `/private/tmp`, which macOS clears. The claude-code-config `session_bundle` hook copies them, plus subagent transcripts, workflow scripts, and the transcript itself, into `$GIANTMEM_ARCHIVE_BASE/bundles/<slug>/<session>/` with a `bundle.json` manifest. Ingest then indexes three things: every tool call (main thread and subagents) into `tool_uses`, what each session produced into `session_links`, and the bundle's scripts, patches, drafts, and logs as `bundle` docs that `giantmem find` searches like anything else.
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem tools find "jq splunk"` | FTS5 over tool names, one-line summaries, and inputs across every session, best match first |
+| `giantmem tools find "glab mr" --tool Bash -p auth` | narrow by tool (SQL LIKE) and project |
+| `giantmem tools find splunk --tool 'mcp__%' --errors` | only calls that came back as errors |
+| `giantmem find "churn baseline" -s bundle` | search the archived scripts and drafts themselves |
+
+Set `[sessions] vault_root` in `config.toml` (or export `OBSIDIAN_VAULT`) so notes written into your vault show up as `vault` links. The MCP server exposes the same data as `find_tool_uses` and `get_session_bundle`.
 
 ## Recent (cross-repo pickup)
 
@@ -246,13 +262,13 @@ You should rarely need this; the live indexing hook handles ongoing writes and t
 | `giantmem db ingest` | full re-index of archives.db across all enabled sources |
 | `giantmem db ingest -p foo` | re-index a single project |
 | `giantmem db ingest -s claude-jsonl` | run only the named source (repeatable / comma-separated) |
-| `giantmem db ingest --sessions-only` | shortcut for `-s claude-jsonl` |
+| `giantmem db ingest --sessions-only` | shortcut for `-s claude-jsonl,session-bundle` |
 | `giantmem db ingest --workspaces-only` | shortcut for `-s workspace-md,domain-json` |
 | `giantmem db ingest --force` | force full session re-ingest, ignoring mtime |
 
 `db` also holds the rest of the plumbing: `db embed`, `db backup`, `db access`, `db tail`, `db watch` — same flags as their old top-level forms.
 
-Sources are configured at `~/.config/giantmem/sources.toml`. Without that file the three builtins (`workspace-md`, `claude-jsonl`, `domain-json`) are used. Add an `[[source]]` block with `kind = "external"`, `ingest_cmd = "..."`, and a `mapping` table to plug in any subprocess that emits JSONL on stdout — see `PLAN-2.md` §12.
+Sources are configured at `~/.config/giantmem/sources.toml`. Without that file the builtins (`workspace-md`, `claude-jsonl`, `domain-json`, `memory-md`, `session-bundle`) are used. `claude-jsonl` also indexes subagent transcripts (as `source_type='subagent'`) and fills `tool_uses` and `session_links`. Add an `[[source]]` block with `kind = "external"`, `ingest_cmd = "..."`, and a `mapping` table to plug in any subprocess that emits JSONL on stdout — see `PLAN-2.md` §12.
 
 ## Daemon mode
 
@@ -551,6 +567,8 @@ Match priority: exact basename, project, branch, then substring of `project/bran
 |------|---------|
 | `search_archive` | FTS5 over archived workspaces + Claude session JSONL + domain knowledge. **Per-line decoded results** when `tool_filter` or `ext_filter` set. |
 | `list_sessions` | recent Claude sessions, newest first |
+| `find_tool_uses` | search past tool calls (Bash commands, MCP calls, edits) across sessions and subagents |
+| `get_session_bundle` | a session's archived working files with absolute paths, plus its artifacts, vault notes, handoffs, doit items, and MRs |
 | `get_session_summary` | metadata for one session by id-prefix |
 | `recent_writes` | live `.giantmem/*.md` writes in a time window (`24h`, `7d`, ...) |
 | `feature_status` | `features.json` per project |

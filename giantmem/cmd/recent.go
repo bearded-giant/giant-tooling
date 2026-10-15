@@ -497,7 +497,13 @@ func jsonStdout(v any) error {
 // userConfig maps to ~/.config/giantmem/config.toml. Umbrella for general
 // user prefs; today only [recent] is honored.
 type userConfig struct {
-	Recent recentConfig `toml:"recent"`
+	Recent   recentConfig   `toml:"recent"`
+	Sessions sessionsConfig `toml:"sessions"`
+}
+
+type sessionsConfig struct {
+	// VaultRoot is the notes vault; session writes under it become session_links.
+	VaultRoot string `toml:"vault_root"`
 }
 
 type recentConfig struct {

@@ -41,7 +41,7 @@ func (s *claudeJSONLSource) Emit(ctx context.Context, opts EmitOptions) (<-chan 
 		// build mtime cache for incremental skip
 		existing := map[string]time.Time{}
 		if !opts.Force && opts.DB != nil {
-			rows, err := opts.DB.Query("SELECT filepath, indexed_at FROM documents WHERE source_type = 'session'")
+			rows, err := opts.DB.Query("SELECT filepath, indexed_at FROM documents WHERE source_type IN ('session', 'subagent')")
 			if err == nil {
 				for rows.Next() {
 					var fp, ia string
@@ -62,9 +62,7 @@ func (s *claudeJSONLSource) Emit(ctx context.Context, opts EmitOptions) (<-chan 
 			if !strings.HasSuffix(p, ".jsonl") {
 				return nil
 			}
-			if strings.Contains(p, "subagents") {
-				return nil
-			}
+			parentID, agentID := subagentOf(opts.ClaudeProjects, p)
 			projectName := ingest.SessionProjectName(p, opts.ClaudeProjects)
 			if opts.Project != "" && !strings.Contains(strings.ToLower(projectName), strings.ToLower(opts.Project)) {
 				return nil
@@ -97,6 +95,12 @@ func (s *claudeJSONLSource) Emit(ctx context.Context, opts EmitOptions) (<-chan 
 				Cwd:        extract.Cwd,
 				Content:    extract.Text,
 			}
+			if agentID != "" {
+				// kept out of 'session' rows so session lists and lookups never see a subagent
+				doc.SourceType = "subagent"
+				doc.SessionID = parentID
+				doc.Metadata = map[string]string{"agent_id": agentID}
+			}
 			select {
 			case docCh <- doc:
 			case <-ctx.Done():
@@ -106,4 +110,18 @@ func (s *claudeJSONLSource) Emit(ctx context.Context, opts EmitOptions) (<-chan 
 		})
 	}()
 	return docCh, errCh
+}
+
+// subagentOf returns the parent session id and agent id for a transcript under
+// <projects>/<slug>/<session>/subagents/, including workflow agents nested deeper.
+func subagentOf(projectsDir, p string) (string, string) {
+	rel, err := filepath.Rel(projectsDir, p)
+	if err != nil {
+		return "", ""
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	if len(parts) < 4 || parts[2] != "subagents" {
+		return "", ""
+	}
+	return parts[1], strings.TrimSuffix(strings.TrimPrefix(filepath.Base(p), "agent-"), ".jsonl")
 }

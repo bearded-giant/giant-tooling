@@ -77,8 +77,13 @@ func Run(ctx context.Context, db *sql.DB, src Source, opts EmitOptions) (Stats, 
 			}
 			if err := Upsert(db, d); err != nil {
 				st.Errs++
-			} else {
-				st.Count++
+				continue
+			}
+			st.Count++
+			if d.SourceType == "session" || d.SourceType == "subagent" {
+				if err := IndexToolCalls(db, d, opts.VaultRoot); err != nil {
+					st.Errs++
+				}
 			}
 		case e, ok := <-errCh:
 			if !ok {
