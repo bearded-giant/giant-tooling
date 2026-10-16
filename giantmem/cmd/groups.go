@@ -35,7 +35,7 @@ func setupCommandTree() {
 		}
 	}
 	assign(groupWorkflow, featureCmd, workspaceCmd, artifactCmd, sessionCmd, captureCmd, planCmd)
-	assign(groupSearch, findCmd, toolsCmd, recentCmd, primeCmd, statusCmd, statsCmd, timelineCmd, entityCmd, suggestDomainCmd, cdCmd, recallCmd)
+	assign(groupSearch, findCmd, toolsCmd, recentCmd, primeCmd, statusCmd, statsCmd, timelineCmd, mrCmd, entityCmd, suggestDomainCmd, cdCmd, recallCmd)
 	assign(groupInfra, worktreeCmd, projectCmd, scopeCmd, archiveCmd, daemonCmd, mcpCmd, doctorCmd, configCmd, versionCmd)
 	assign(groupPlumbing, dbCmd)
 
