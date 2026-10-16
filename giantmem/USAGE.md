@@ -85,6 +85,24 @@ Claude's scratchpad and background task output live under `/private/tmp`, which 
 
 Set `[sessions] vault_root` in `config.toml` (or export `OBSIDIAN_VAULT`) so notes written into your vault show up as `vault` links. The MCP server exposes the same data as `find_tool_uses` and `get_session_bundle`. JSON output from both, and from `--json` on the CLI, carries a `link` on every tool call, bundle file, and bundle, so a handoff or doit item can point straight at it.
 
+## MRs and PRs
+
+Work spans repos and worktrees, so an MR is easy to lose: which session opened it, where that session ran, and where its branch is checked out now. Claude Code writes a `pr-link` record into the transcript whenever a session creates, updates, or pushes to an MR or PR. Ingest turns each one into an `mr` link with a role: `opened` when the session ran `glab mr create` or `gh pr create` and got that URL back, `touched` otherwise. A create call with no `pr-link` (older transcripts) still counts as `opened`. A URL that only shows up in some tool output (`glab mr list`, a pasted link) becomes an `mr_ref` link instead, so it never passes for an MR the session worked on.
+
+Repos share MR numbers (`recharge-auth!62` and `investigator-agent!62` can both exist), so refs always carry the repo.
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem mr whose recharge-auth!63` | the opener session, every session that touched it, each one's launch dir (plus where its shell was, when that differs), a resume line, the source branch, and local worktrees on that branch |
+| `giantmem mr whose '!62'` | a bare number lists every repo with that MR number instead of guessing |
+| `giantmem mr whose <url>` / `repo#N` | full URL, or a GitHub PR |
+| `giantmem mr list` | open MRs/PRs that sessions linked in the last 30 days: state, title, branch, opener, dir, URL |
+| `giantmem mr list -p recharge-auth --since 7d` | narrow to a repo name or session project; `--since ''` for all time |
+| `giantmem mr list --all` | include merged and closed |
+| `giantmem mr list --json` / `--no-status` | JSON (with checkouts), or skip the live read and use cached state |
+
+State comes from `glab api` or `gh api` at read time, with the same verdicts as the claude-code-config statusline (`conflicts`, `pipe:failed`, `rebase`, `pipe:running`, `approval`, `threads`, `GREEN`, ...). Results land in the `mr_state` table. Merged and closed MRs are served from there and never fetched again. In the table, `*` marks a cached state and `!` a failed read. An opener shown as `~sid` means no create call was seen, so it is the first session that touched the MR. Checkouts come from `git worktree list` in every repo a session ran in whose origin matches the MR's project.
+
 ## Recent (cross-repo pickup)
 
 `giantmem recent` ranks live workspaces by mtime. Built for jumping back into the doc/repo you last touched in another tmux pane without copying paths around. Pairs with the `/recent-docs` slash command (loads doc + auto-pairs the repo).
@@ -535,6 +553,9 @@ Claude is auto-primed with workspace context on every session start. `~/.claude/
 | `giantmem prime` | preview the primer in plain text |
 | `giantmem prime --json` | JSON form (used by the hook) |
 | `giantmem prime <path>` | prime for a path other than `cwd` |
+| `giantmem prime --mrs 8 --mr-days 30` | cap the open-MR block: at most N MRs that this project's sessions linked in the last N days |
+
+The primer also lists open MRs that this project's sessions opened or touched. It reads their state live under a 3 second deadline and falls back to the cached state, which the block marks as cached.
 
 ## Fuzzy worktree jump
 
@@ -575,6 +596,7 @@ Match priority: exact basename, project, branch, then substring of `project/bran
 | `list_sessions` | recent Claude sessions, newest first |
 | `find_tool_uses` | search past tool calls (Bash commands, MCP calls, edits) across sessions and subagents |
 | `get_session_bundle` | a session's archived working files with absolute paths, plus its artifacts, vault notes, handoffs, doit items, and MRs |
+| `find_mr` | the session and worktree behind an MR/PR (`ref`: URL, `repo!N`, `repo#N`, bare `!N`), or a list of open ones (`project`, `since`, `include_closed`); `live` defaults to true |
 | `get_session_summary` | metadata for one session by id-prefix |
 | `recent_writes` | live `.giantmem/*.md` writes in a time window (`24h`, `7d`, ...) |
 | `feature_status` | `features.json` per project |
