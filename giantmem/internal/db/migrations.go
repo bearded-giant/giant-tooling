@@ -156,6 +156,43 @@ var archiveMigrations = []Migration{
 			return err
 		},
 	},
+	{
+		Version: 7,
+		Name:    "mr links: role + cwd, mr_state",
+		Apply: func(tx *sql.Tx) error {
+			cols, err := txTableColumns(tx, "session_links")
+			if err != nil {
+				return err
+			}
+			for _, c := range []string{"role", "cwd"} {
+				if _, has := cols[c]; !has {
+					if _, err := tx.Exec(`ALTER TABLE session_links ADD COLUMN ` + c + ` TEXT`); err != nil {
+						return err
+					}
+				}
+			}
+			stmts := []string{
+				// old 'mr' rows were every URL a tool result mentioned; keep them as mentions, re-ingest rebuilds 'mr'
+				`UPDATE session_links SET kind = 'mr_ref' WHERE kind = 'mr' AND role IS NULL`,
+				`CREATE INDEX IF NOT EXISTS idx_session_links_kind ON session_links(kind, target)`,
+				`CREATE TABLE IF NOT EXISTS mr_state (
+                    url TEXT PRIMARY KEY,
+                    title TEXT,
+                    state TEXT NOT NULL,
+                    verdict TEXT,
+                    level TEXT,
+                    source_branch TEXT,
+                    checked_at TEXT NOT NULL
+                )`,
+			}
+			for _, s := range stmts {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // liveMigrations is the canonical list for live.db.

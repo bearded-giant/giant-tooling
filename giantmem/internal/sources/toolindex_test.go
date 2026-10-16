@@ -123,3 +123,47 @@ func TestRun_IndexesToolUsesForSessionsAndSubagents(t *testing.T) {
 		t.Fatalf("after re-run tool_uses = %d rows, want 3", len(again))
 	}
 }
+
+func TestIndexToolCalls_MRLinkUpsert(t *testing.T) {
+	const u = "https://gitlab.rechargeapps.net/identity/recharge-auth/-/merge_requests/63"
+	dir := t.TempDir()
+	p := filepath.Join(dir, hubSID+".jsonl")
+	d, err := db.Open(filepath.Join(dir, "archives.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	doc := Doc{Filepath: p, Project: "dev/proj", SessionID: hubSID}
+	index := func(lines ...string) {
+		t.Helper()
+		writeJSONL(t, p, lines...)
+		if err := IndexToolCalls(d, doc, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func() (role, cwd, label string) {
+		t.Helper()
+		if err := d.QueryRow(`SELECT role, cwd, label FROM session_links WHERE session_id = ? AND kind = 'mr' AND target = ?`, hubSID, u).Scan(&role, &cwd, &label); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+
+	push := `{"type":"pr-link","prUrl":"` + u + `","timestamp":"2026-10-16T01:00:00Z"}`
+	index(`{"type":"user","cwd":"/wt/a","timestamp":"2026-10-16T00:59:00Z","message":{"content":"go"}}`, push)
+	if role, cwd, label := read(); role != "touched" || cwd != "/wt/a" || label != "recharge-auth!63" {
+		t.Fatalf("first index = %s %s %s", role, cwd, label)
+	}
+
+	// a later transcript (subagent, or the same one re-read) with the create call upgrades the role, never downgrades it
+	index(`{"type":"user","cwd":"/wt/b","timestamp":"2026-10-16T01:01:00Z","message":{"content":"go"}}`,
+		`{"type":"assistant","timestamp":"2026-10-16T01:01:01Z","message":{"content":[{"type":"tool_use","id":"c","name":"Bash","input":{"command":"glab mr create --fill"}}]}}`,
+		`{"type":"user","timestamp":"2026-10-16T01:01:02Z","message":{"content":[{"type":"tool_result","tool_use_id":"c","content":"`+u+`"}]}}`)
+	if role, cwd, _ := read(); role != "opened" || cwd != "/wt/a" {
+		t.Fatalf("after create = %s %s, want opened /wt/a", role, cwd)
+	}
+	index(push)
+	if role, _, _ := read(); role != "opened" {
+		t.Fatalf("role downgraded to %s", role)
+	}
+}

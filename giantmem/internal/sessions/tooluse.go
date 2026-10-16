@@ -6,6 +6,7 @@ import (
 	"cmp"
 	"encoding/json"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -25,15 +26,18 @@ type ToolCall struct {
 
 // Link is something a session produced that outlives it.
 type Link struct {
-	Kind   string // artifact | vault | handoff | doit | mr
+	Kind   string // artifact | vault | handoff | doit | mr | mr_ref
 	Target string
 	Label  string
 	TS     string
+	Role   string // mr only: opened | touched
+	Cwd    string // mr only: session cwd when linked
 }
 
 var (
 	artifactURLRe = regexp.MustCompile(`https://claude\.ai/[\w./-]*artifact/[\w-]+`)
 	mrURLRe       = regexp.MustCompile(`https://gitlab\.[\w.-]+/[\w./-]+/-/merge_requests/\d+|https://github\.com/[\w.-]+/[\w.-]+/pull/\d+`)
+	mrCreateRe    = regexp.MustCompile(`\b(?:glab\s+mr|gh\s+pr)\s+create\b`)
 	doitIDRe      = regexp.MustCompile(`\[id:([^\]\s]+)\]`)
 )
 
@@ -53,9 +57,11 @@ type pendingCall struct {
 }
 
 type linkSet struct {
-	root  string
-	seen  map[string]bool
-	links []Link
+	root   string
+	seen   map[string]bool
+	links  []Link
+	cwd    string
+	opened map[string]bool
 }
 
 // ExtractToolCalls streams a transcript and returns its tool calls in file order plus the links they produced.
@@ -66,7 +72,7 @@ func ExtractToolCalls(jsonlPath, vaultRoot string) ([]ToolCall, []Link, error) {
 	}
 	defer f.Close()
 
-	ls := &linkSet{seen: map[string]bool{}}
+	ls := &linkSet{seen: map[string]bool{}, opened: map[string]bool{}}
 	if vaultRoot != "" {
 		if ls.root, err = filepath.Abs(vaultRoot); err != nil {
 			return nil, nil, err
@@ -81,11 +87,21 @@ func ExtractToolCalls(jsonlPath, vaultRoot string) ([]ToolCall, []Link, error) {
 		var rec struct {
 			Type      string `json:"type"`
 			Timestamp string `json:"timestamp"`
+			Cwd       string `json:"cwd"`
+			PrURL     string `json:"prUrl"`
 			Message   struct {
 				Content json.RawMessage `json:"content"`
 			} `json:"message"`
 		}
 		if json.Unmarshal(sc.Bytes(), &rec) != nil {
+			continue
+		}
+		if rec.Cwd != "" {
+			ls.cwd = rec.Cwd
+		}
+		// the harness writes pr-link when a session creates, updates, or pushes to an MR/PR
+		if rec.Type == "pr-link" {
+			ls.addMR(rec.PrURL, rec.Timestamp)
 			continue
 		}
 		var blocks []json.RawMessage
@@ -115,24 +131,51 @@ func ExtractToolCalls(jsonlPath, vaultRoot string) ([]ToolCall, []Link, error) {
 					delete(pending, b.ToolUseID)
 					calls[p.idx].IsError = b.IsError
 					calls[p.idx].ResultHead = clip(text, 500)
-					ls.fromResult(calls[p.idx].Tool, p.input, text, ts)
+					ls.fromResult(calls[p.idx].Tool, p.input, text, ts, b.IsError)
 				}
 				for _, u := range mrURLRe.FindAllString(text, -1) {
-					ls.add("mr", u, mrLabel(u), ts)
+					ls.add("mr_ref", u, mrLabel(u), ts)
 				}
 			}
 		}
 	}
-	return calls, ls.links, sc.Err()
+	return calls, ls.finish(), sc.Err()
 }
 
-func (s *linkSet) add(kind, target, label, ts string) {
+func (s *linkSet) add(kind, target, label, ts string) bool {
 	key := kind + "\x00" + target
 	if s.seen[key] {
-		return
+		return false
 	}
 	s.seen[key] = true
 	s.links = append(s.links, Link{Kind: kind, Target: target, Label: label, TS: ts})
+	return true
+}
+
+func (s *linkSet) addMR(u, ts string) {
+	if u != "" && s.add("mr", u, mrLabel(u), ts) {
+		s.links[len(s.links)-1].Cwd = s.cwd
+	}
+}
+
+// finish sets mr roles once the whole transcript is read and drops mentions of MRs the session wrote to.
+func (s *linkSet) finish() []Link {
+	out := s.links[:0]
+	for _, l := range s.links {
+		switch l.Kind {
+		case "mr":
+			l.Role = "touched"
+			if s.opened[l.Target] {
+				l.Role = "opened"
+			}
+		case "mr_ref":
+			if s.seen["mr\x00"+l.Target] {
+				continue
+			}
+		}
+		out = append(out, l)
+	}
+	return out
 }
 
 func (s *linkSet) fromInput(tool string, in map[string]any, ts string) {
@@ -147,7 +190,7 @@ func (s *linkSet) fromInput(tool string, in map[string]any, ts string) {
 	}
 }
 
-func (s *linkSet) fromResult(tool string, in map[string]any, text, ts string) {
+func (s *linkSet) fromResult(tool string, in map[string]any, text, ts string, isErr bool) {
 	switch tool {
 	case "Artifact":
 		if a := str(in, "action"); (a != "" && a != "publish") || in["asset"] == true {
@@ -162,6 +205,13 @@ func (s *linkSet) fromResult(tool string, in map[string]any, text, ts string) {
 		}
 	case "Bash":
 		cmd := str(in, "command")
+		if !isErr && mrCreateRe.MatchString(cmd) {
+			// create prints the new URL first; later URLs in a chained command are other MRs
+			if u := mrURLRe.FindString(text); u != "" {
+				s.opened[u] = true
+				s.addMR(u, ts)
+			}
+		}
 		if !strings.Contains(cmd, "note.py") || !strings.Contains(cmd, " new") {
 			return
 		}
@@ -234,12 +284,17 @@ func compactJSON(raw json.RawMessage) string {
 	return buf.String()
 }
 
+// mrLabel names the repo because iids collide across repos.
 func mrLabel(u string) string {
-	n := u[strings.LastIndexByte(u, '/')+1:]
-	if strings.HasPrefix(u, "https://github.com/") {
-		return "#" + n
+	i := strings.LastIndexByte(u, '/')
+	if i < 0 {
+		return u
 	}
-	return "!" + n
+	repo, n := u[:i], u[i+1:]
+	if strings.HasPrefix(u, "https://github.com/") {
+		return path.Base(strings.TrimSuffix(repo, "/pull")) + "#" + n
+	}
+	return path.Base(strings.TrimSuffix(repo, "/-/merge_requests")) + "!" + n
 }
 
 func noteStem(p string) string {

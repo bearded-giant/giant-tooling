@@ -36,9 +36,14 @@ func IndexToolCalls(db *sql.DB, d Doc, vaultRoot string) error {
 		}
 	}
 	for _, l := range links {
+		// a session's main thread and subagents share its links, so merge instead of replace
 		if _, err := tx.Exec(
-			`INSERT OR IGNORE INTO session_links (session_id, kind, target, label, ts) VALUES (?, ?, ?, ?, ?)`,
-			d.SessionID, l.Kind, l.Target, nilIfEmpty(l.Label), nilIfEmpty(l.TS),
+			`INSERT INTO session_links (session_id, kind, target, label, ts, role, cwd) VALUES (?, ?, ?, ?, ?, ?, ?)
+             ON CONFLICT(session_id, kind, target) DO UPDATE SET
+                 label = excluded.label,
+                 role = CASE WHEN excluded.role = 'opened' THEN 'opened' ELSE COALESCE(session_links.role, excluded.role) END,
+                 cwd = COALESCE(session_links.cwd, excluded.cwd)`,
+			d.SessionID, l.Kind, l.Target, nilIfEmpty(l.Label), nilIfEmpty(l.TS), nilIfEmpty(l.Role), nilIfEmpty(l.Cwd),
 		); err != nil {
 			return err
 		}

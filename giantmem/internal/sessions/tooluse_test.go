@@ -133,13 +133,13 @@ func TestExtractToolCalls(t *testing.T) {
 	}
 
 	wantLinks := []Link{
-		{"vault", "/v/root/areas/eng/note-a.md", "note-a", "2026-10-15T10:00:00Z"},
-		{"doit", "abc123", "Added todo: x [id:abc123]", "2026-10-15T10:00:04Z"},
-		{"handoff", "/repo/.giantmem/handoff.md", "handoff", "2026-10-15T10:00:05Z"},
-		{"artifact", "https://claude.ai/code/artifact/abc-123", "report.html", "2026-10-15T10:00:07Z"},
-		{"vault", "/v/root/areas/eng/note-b.md", "note-b", "2026-10-15T10:00:13Z"},
-		{"mr", "https://gitlab.rechargeapps.net/grp/proj/-/merge_requests/812", "!812", "2026-10-15T10:00:15Z"},
-		{"mr", "https://github.com/o/r/pull/45", "#45", "2026-10-15T10:00:15Z"},
+		{Kind: "vault", Target: "/v/root/areas/eng/note-a.md", Label: "note-a", TS: "2026-10-15T10:00:00Z"},
+		{Kind: "doit", Target: "abc123", Label: "Added todo: x [id:abc123]", TS: "2026-10-15T10:00:04Z"},
+		{Kind: "handoff", Target: "/repo/.giantmem/handoff.md", Label: "handoff", TS: "2026-10-15T10:00:05Z"},
+		{Kind: "artifact", Target: "https://claude.ai/code/artifact/abc-123", Label: "report.html", TS: "2026-10-15T10:00:07Z"},
+		{Kind: "vault", Target: "/v/root/areas/eng/note-b.md", Label: "note-b", TS: "2026-10-15T10:00:13Z"},
+		{Kind: "mr_ref", Target: "https://gitlab.rechargeapps.net/grp/proj/-/merge_requests/812", Label: "proj!812", TS: "2026-10-15T10:00:15Z"},
+		{Kind: "mr_ref", Target: "https://github.com/o/r/pull/45", Label: "r#45", TS: "2026-10-15T10:00:15Z"},
 	}
 	if len(links) != len(wantLinks) {
 		t.Fatalf("got %d links %+v, want %d", len(links), links, len(wantLinks))
@@ -161,5 +161,58 @@ func TestExtractToolCallsNoVaultRoot(t *testing.T) {
 	}
 	if len(calls) != 1 || calls[0].TS != "" || len(links) != 0 {
 		t.Fatalf("calls=%+v links=%+v", calls, links)
+	}
+}
+
+func TestExtractMRLinks(t *testing.T) {
+	const (
+		created  = "https://gitlab.rechargeapps.net/identity/recharge-auth/-/merge_requests/63"
+		pushed   = "https://gitlab.rechargeapps.net/ai-tooling/investigator-agent/-/merge_requests/62"
+		other    = "https://gitlab.rechargeapps.net/identity/recharge-auth/-/merge_requests/62"
+		mention  = "https://github.com/o/r/pull/7"
+		failedPR = "https://github.com/o/r/pull/8"
+	)
+	withCwd := func(rec map[string]any, cwd string) map[string]any {
+		rec["cwd"] = cwd
+		return rec
+	}
+	prLink := func(ts, u string) map[string]any {
+		return map[string]any{"type": "pr-link", "sessionId": "s", "prNumber": 1, "prUrl": u, "timestamp": ts}
+	}
+	path := writeFixture(t,
+		withCwd(record("assistant", "2026-10-16T01:00:00Z",
+			use("c1", "Bash", map[string]any{"command": "D=$(cat d.md) && glab mr create --title x --description \"$D\" && glab mr list"}),
+		), "/wt/better-redis-search"),
+		withCwd(record("user", "2026-10-16T01:00:01Z",
+			result("c1", false, "Creating merge request for b into main in identity/recharge-auth\n\n"+created+"\n"+other),
+		), "/wt/better-redis-search"),
+		prLink("2026-10-16T01:00:02Z", created),
+		withCwd(record("assistant", "2026-10-16T01:00:03Z", use("c2", "Bash", map[string]any{"command": "git push"})), "/wt/main"),
+		withCwd(record("user", "2026-10-16T01:00:04Z", result("c2", false, "View merge request: "+pushed)), "/wt/main"),
+		prLink("2026-10-16T01:00:05Z", pushed),
+		record("assistant", "2026-10-16T01:00:06Z", use("c3", "Bash", map[string]any{"command": "gh pr create --fill"})),
+		record("user", "2026-10-16T01:00:07Z", result("c3", true, "pull request already exists: "+failedPR)),
+		record("assistant", "2026-10-16T01:00:08Z", use("c4", "Bash", map[string]any{"command": "glab mr view"})),
+		record("user", "2026-10-16T01:00:09Z", result("c4", false, "see "+mention)),
+		prLink("2026-10-16T01:00:10Z", created),
+	)
+	_, links, err := ExtractToolCalls(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Link{
+		{Kind: "mr", Target: created, Label: "recharge-auth!63", TS: "2026-10-16T01:00:01Z", Role: "opened", Cwd: "/wt/better-redis-search"},
+		{Kind: "mr_ref", Target: other, Label: "recharge-auth!62", TS: "2026-10-16T01:00:01Z"},
+		{Kind: "mr", Target: pushed, Label: "investigator-agent!62", TS: "2026-10-16T01:00:05Z", Role: "touched", Cwd: "/wt/main"},
+		{Kind: "mr_ref", Target: failedPR, Label: "r#8", TS: "2026-10-16T01:00:07Z"},
+		{Kind: "mr_ref", Target: mention, Label: "r#7", TS: "2026-10-16T01:00:09Z"},
+	}
+	if len(links) != len(want) {
+		t.Fatalf("got %d links %+v, want %d", len(links), links, len(want))
+	}
+	for i := range want {
+		if links[i] != want[i] {
+			t.Errorf("link %d = %+v, want %+v", i, links[i], want[i])
+		}
 	}
 }
