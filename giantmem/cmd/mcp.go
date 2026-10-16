@@ -131,6 +131,25 @@ func registerExtraTools(s *server.MCPServer) {
 		),
 		mcp.NewTypedToolHandler(findToolUsesHandler),
 	)
+	// find_mr
+	s.AddTool(
+		mcp.NewTool("find_mr",
+			append([]mcp.ToolOption{
+				mcp.WithDescription("Find the Claude session and worktree behind an MR/PR, or list MRs/PRs that sessions opened or touched, with live glab/gh status. Use it instead of grepping transcripts. Repos share MR numbers, so pass a URL or repo!N; a bare !N returns every repo with that number. Each MR carries its opener (role opened = a create call was seen, touched = first session that pushed or updated it), every linked session with cwd and a resume line, the source branch, and local checkouts of that branch."),
+				mcp.WithString("ref",
+					mcp.Description("MR/PR URL, repo!N, group/repo!N, repo#N (GitHub), or bare !N; empty lists")),
+				mcp.WithString("project",
+					mcp.Description("repo name or session project substring")),
+				mcp.WithString("since",
+					mcp.Description(`only MRs a session linked since this: duration ("30d") or date`)),
+				mcp.WithBoolean("include_closed",
+					mcp.Description("listing only: include merged and closed (default false)")),
+				mcp.WithBoolean("live",
+					mcp.Description("read live status via glab/gh (default true); false uses cached state")),
+			}, append(readOnly[:len(readOnly):len(readOnly)], mcp.WithOpenWorldHintAnnotation(true))...)...,
+		),
+		mcp.NewTypedToolHandler(findMRHandler),
+	)
 	// get_session_bundle
 	s.AddTool(
 		mcp.NewTool("get_session_bundle",
