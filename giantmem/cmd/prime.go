@@ -1,12 +1,16 @@
 package cmd
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/mrs"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 	"github.com/spf13/cobra"
@@ -17,6 +21,8 @@ var (
 	primeRecentN   int
 	primeSessionsN int
 	primeHistoryN  int
+	primeMRsN      int
+	primeMRDays    int
 )
 
 var primeCmd = &cobra.Command{
@@ -52,6 +58,18 @@ type primePayload struct {
 	RecentDocs     []primeDoc  `json:"recent_docs"`
 	RecentSessions []primeSess `json:"recent_sessions"`
 	HistoryTail    []string    `json:"history_tail,omitempty"`
+	OpenMRs        []primeMR   `json:"open_mrs,omitempty"`
+}
+
+type primeMR struct {
+	Label  string `json:"label"`
+	URL    string `json:"url"`
+	State  string `json:"state"`
+	Level  string `json:"level,omitempty"`
+	Title  string `json:"title,omitempty"`
+	Opener string `json:"opener"`
+	Role   string `json:"role"`
+	Cached bool   `json:"cached,omitempty"`
 }
 
 type primeDoc struct {
@@ -121,6 +139,11 @@ func buildPrime(cwd string) (*primePayload, error) {
 		}
 	}
 
+	if arc, err := db.Open(archiveDBPath()); err == nil {
+		p.OpenMRs = primeOpenMRs(arc, info.Project)
+		arc.Close()
+	}
+
 	// history tail
 	histPath := filepath.Join(info.WorktreePath, ".giantmem", "history", "sessions.md")
 	if raw, err := os.ReadFile(histPath); err == nil {
@@ -136,6 +159,33 @@ func buildPrime(cwd string) (*primePayload, error) {
 	}
 
 	return p, nil
+}
+
+// primeOpenMRs reads live status under a short deadline because prime runs in a SessionStart hook.
+func primeOpenMRs(arc *sql.DB, project string) []primeMR {
+	if project == "" {
+		return nil
+	}
+	since := time.Now().AddDate(0, 0, -primeMRDays).UTC().Format(time.RFC3339)
+	list, err := mrs.Find(arc, mrs.Filter{Project: project, Since: since})
+	if err != nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	mrs.Refresh(ctx, arc, list, true)
+	var out []primeMR
+	for _, m := range list {
+		if m.Status.Terminal() || len(out) == primeMRsN {
+			continue
+		}
+		pm := primeMR{Label: m.Label, URL: m.URL, State: m.Status.Show(), Opener: m.Opener.SessionID[:min(8, len(m.Opener.SessionID))], Role: m.Opener.Role}
+		if m.Status != nil {
+			pm.Level, pm.Title, pm.Cached = m.Status.Level, m.Status.Title, m.Status.Cached || m.Status.Error != ""
+		}
+		out = append(out, pm)
+	}
+	return out
 }
 
 func splitLines(s string) []string {
@@ -173,6 +223,12 @@ func printPrimeText(p *primePayload) {
 			fmt.Printf("  %s  %s  %s\n", s.SessionID[:8], s.Topic, s.Timestamp)
 		}
 	}
+	if len(p.OpenMRs) > 0 {
+		fmt.Println("\nopen MRs from this project's sessions:")
+		for _, m := range p.OpenMRs {
+			fmt.Printf("  %s  %s  %s  %s\n", m.Label, m.State, m.Opener, m.URL)
+		}
+	}
 	if len(p.HistoryTail) > 0 {
 		fmt.Println("\nhistory tail:")
 		for _, l := range p.HistoryTail {
@@ -189,6 +245,8 @@ func init() {
 	primeCmd.Flags().IntVar(&primeRecentN, "recent", 3, "max recent live docs")
 	primeCmd.Flags().IntVar(&primeSessionsN, "sessions", 2, "max recent sessions")
 	primeCmd.Flags().IntVar(&primeHistoryN, "history", 5, "max history.md tail lines")
+	primeCmd.Flags().IntVar(&primeMRsN, "mrs", 8, "max open MRs")
+	primeCmd.Flags().IntVar(&primeMRDays, "mr-days", 30, "open MRs a session linked in the last N days")
 	rootCmd.AddCommand(primeCmd)
 }
 
