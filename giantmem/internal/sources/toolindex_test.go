@@ -149,10 +149,21 @@ func TestIndexToolCalls_MRLinkUpsert(t *testing.T) {
 		return
 	}
 
+	// an older binary wrote every mentioned URL as a role-less 'mr' row
+	stale := "https://gitlab.rechargeapps.net/identity/recharge-auth/-/merge_requests/45"
+	if _, err := d.Exec(`INSERT INTO session_links (session_id, kind, target, label, ts) VALUES (?, 'mr', ?, '!45', 'x')`, hubSID, stale); err != nil {
+		t.Fatal(err)
+	}
+
 	push := `{"type":"pr-link","prUrl":"` + u + `","timestamp":"2026-10-16T01:00:00Z"}`
 	index(`{"type":"user","cwd":"/wt/a","timestamp":"2026-10-16T00:59:00Z","message":{"content":"go"}}`, push)
 	if role, cwd, label := read(); role != "touched" || cwd != "/wt/a" || label != "recharge-auth!63" {
 		t.Fatalf("first index = %s %s %s", role, cwd, label)
+	}
+	var n int
+	d.QueryRow(`SELECT COUNT(*) FROM session_links WHERE kind = 'mr' AND role IS NULL`).Scan(&n)
+	if n != 0 {
+		t.Fatalf("%d role-less mr rows survived re-index", n)
 	}
 
 	// a later transcript (subagent, or the same one re-read) with the create call upgrades the role, never downgrades it

@@ -35,6 +35,10 @@ func IndexToolCalls(db *sql.DB, d Doc, vaultRoot string) error {
 			return err
 		}
 	}
+	// role-less 'mr' rows come from a pre-v7 binary that logged every mentioned URL; this ingest re-derives them
+	if _, err := tx.Exec(`DELETE FROM session_links WHERE session_id = ? AND kind = 'mr' AND role IS NULL`, d.SessionID); err != nil {
+		return err
+	}
 	for _, l := range links {
 		// a session's main thread and subagents share its links, so merge instead of replace
 		if _, err := tx.Exec(
