@@ -50,6 +50,7 @@ import {
 } from "../wailsjs/go/main/App";
 import { artifacts, hub, main, search } from "../wailsjs/go/models";
 import PruneModal from "./PruneModal";
+import giantImg from "./assets/images/giant.jpg";
 
 type Tab = "artifacts" | "sessions" | "tools" | "activity" | "day";
 
@@ -822,7 +823,10 @@ function App() {
       }}
     >
       <div className="topbar" ref={topbarRef}>
-        <div className="brand">giantmem</div>
+        <div className="brand">
+          <img src={giantImg} alt="" className="brand-mark" />
+          giantmem
+        </div>
         <div className="tabs">
           <button
             className={tab === "activity" ? "active" : ""}
@@ -1741,7 +1745,13 @@ function SettingsModal({
         >
           ×
         </button>
-        <h2 className="settings-title">Settings</h2>
+        <div className="settings-head">
+          <img src={giantImg} alt="" className="settings-mark" />
+          <div>
+            <h2 className="settings-title">Settings</h2>
+            <div className="settings-brand">giantmem</div>
+          </div>
+        </div>
 
         <div className="settings-section">Appearance</div>
         <div className="settings-row">
@@ -1810,7 +1820,7 @@ function AboutModal({
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
-        aria-label="About Giantmem"
+        aria-label="About giantmem"
       >
         <button
           type="button"
@@ -1820,7 +1830,8 @@ function AboutModal({
         >
           ×
         </button>
-        <h1 className="about-title">Giantmem</h1>
+        <img src={giantImg} alt="" className="about-mark" />
+        <h1 className="about-title">giantmem</h1>
         {version && <div className="about-version">v{version}</div>}
         <div className="about-tagline">Built by Bearded Giant</div>
         <div className="about-links">

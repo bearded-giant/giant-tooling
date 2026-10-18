@@ -54,9 +54,18 @@
 }
 
 .topbar .brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-weight: 700;
   letter-spacing: 0.02em;
   margin-right: 8px;
+}
+.brand-mark {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
 }
 .topbar .tabs {
   display: flex;
@@ -729,6 +738,14 @@
 .about-modal {
   text-align: center;
 }
+.about-mark {
+  display: block;
+  width: 128px;
+  height: 128px;
+  margin: 0 auto 16px;
+  border-radius: 24px;
+  border: 1px solid var(--border);
+}
 .about-title {
   margin: 0;
   font-size: 28px;
@@ -947,9 +964,29 @@
   padding: 28px 32px 24px;
   text-align: left;
 }
+.settings-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 6px;
+}
+.settings-mark {
+  width: 56px;
+  height: 56px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+}
 .settings-title {
   margin: 0 0 6px;
   font-size: 22px;
+}
+.settings-head .settings-title {
+  margin: 0;
+}
+.settings-brand {
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 13px;
+  color: var(--fg-muted);
 }
 .settings-section {
   margin: 22px 0 4px;
