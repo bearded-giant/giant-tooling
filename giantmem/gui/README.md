@@ -61,10 +61,14 @@ If you'd rather poke at the bindings from a browser, `wails dev` also exposes th
 
 `wails build -skipbindings` is useful when you want to skip the parser pass (it's a sanity check more than a real shortcut — bindings regenerate quickly).
 
-The output binary is `Giantmem` (set in `wails.json` as `outputfilename`). The `.app` bundle uses `build/appicon.png`, which is rendered from `build/appicon.svg` if you want to swap the logo:
+The output binary is `Giantmem` (set in `wails.json` as `outputfilename`). The `.app` bundle uses `build/appicon.png`, which is rendered from `build/appicon-src.png` (any square image works) into a rounded 896px tile on a transparent 1024 canvas. To swap the logo, replace the source and run:
 
 ```bash
-rsvg-convert -w 1024 -h 1024 build/appicon.svg -o build/appicon.png
+magick build/appicon-src.png -resize 896x896 \
+  \( -size 896x896 xc:none -fill white -draw "roundrectangle 0,0,895,895,200,200" \) \
+  -alpha set -compose DstIn -composite \
+  -compose Over -fill none -stroke '#30363d' -strokewidth 6 -draw "roundrectangle 3,3,892,892,197,197" \
+  -background none -gravity center -extent 1024x1024 build/appicon.png
 ```
 
 ## Module layout
