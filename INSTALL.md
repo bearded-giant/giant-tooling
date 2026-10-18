@@ -31,7 +31,7 @@ export PATH="$HOME/.local/bin:$PATH"
 
 1. **check-prereqs** — verifies the four tools above.
 2. **cli** — `make -C giantmem install` → `~/.local/bin/giantmem`.
-3. **gui** — `make -C giantmem/gui install` → `/Applications/Giantmem.app`.
+3. **gui** — `make -C giantmem/gui install` → `/Applications/giantmem.app`.
 4. **daemon-install** — `giantmem daemon install` → registers `~/Library/LaunchAgents/com.giantmem.daemon.plist`, starts the daemon. Daemon runs the artifacts-projection reconciler + serves the `embed` RPC + does a startup filesystem backfill. Once installed, `giantmem daemon start|stop|restart` drive launchd (`kickstart` / `bootout`) instead of spawning their own process. Export `GIANTMEM_EMBED_PYTHON=/path/to/python3` first if the `sentence-transformers` env is not the `python3` on the plist PATH.
 5. **session-sweep** — installs `~/Library/LaunchAgents/com.giantmem-session-sweep.plist` (5-min `giantmem db ingest --sessions-only`). Path-rewritten from the bundled template so it works for any user.
 6. **first-run** — `giantmem db index backfill` (fills `live.db` from every `.giantmem/` under `$GIANTMEM_DEV_ROOTS`) plus `giantmem db ingest --sessions-only` (one-shot session sweep).
@@ -69,7 +69,7 @@ stow -t ~/.claude -d . claude   # or whatever the repo's stow target is
 giantmem doctor                  # health check
 giantmem daemon status           # daemon should say "running"
 launchctl list | grep giantmem   # should list giantmemd + session-sweep
-open /Applications/Giantmem.app  # GUI launches; activity tab populated
+open /Applications/giantmem.app  # GUI launches; activity tab populated
 ```
 
 ## Uninstall
@@ -78,7 +78,7 @@ open /Applications/Giantmem.app  # GUI launches; activity tab populated
 make uninstall-session-sweep        # remove the 5-min agent
 giantmem daemon uninstall           # remove giantmemd LaunchAgent
 rm ~/.local/bin/giantmem
-rm -rf /Applications/Giantmem.app
+rm -rf /Applications/giantmem.app
 # live.db / archives.db are untouched — back them up before removing
 # ~/giantmem_archive yourself if you don't want the data.
 ```

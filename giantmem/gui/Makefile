@@ -1,4 +1,5 @@
-APP        := Giantmem
+APP        := giantmem
+BIN        := Giantmem
 BUILD_BIN  := build/bin/$(APP).app
 INSTALL_TO ?= /Applications/$(APP).app
 
@@ -61,13 +62,13 @@ install-dev: build-dev
 	@echo "installed $(APP) $(DEV_VERSION) -> $(INSTALL_TO)"
 
 reinstall: install
-	@pkill -x $(APP) 2>/dev/null || true
+	@pkill -x $(BIN) 2>/dev/null || true
 	@sleep 0.3
 	open $(INSTALL_TO)
 	@echo "relaunched $(APP) $(VERSION_BASE)"
 
 reinstall-dev: install-dev
-	@pkill -x $(APP) 2>/dev/null || true
+	@pkill -x $(BIN) 2>/dev/null || true
 	@sleep 0.3
 	open $(INSTALL_TO)
 	@echo "relaunched $(APP) $(DEV_VERSION)"

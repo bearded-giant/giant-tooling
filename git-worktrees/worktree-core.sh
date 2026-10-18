@@ -1295,7 +1295,7 @@ __wt_workspace_backup() {
 __wt_workspace_open() {
     local prefix="$1"
     echo "${prefix}so: snapshot directories are deprecated."
-    echo "Use the Giantmem GUI or 'giantmem artifact list' to browse workspace content."
+    echo "Use the giantmem GUI or 'giantmem artifact list' to browse workspace content."
 }
 
 # ---------------------------------------------------------------------------

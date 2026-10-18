@@ -60,7 +60,7 @@ Piecemeal targets (`make help` lists them) are there if you want to skip parts:
 
 ```bash
 make cli              # just ~/.local/bin/giantmem
-make gui              # just /Applications/Giantmem.app
+make gui              # just /Applications/giantmem.app
 make daemon-install   # giantmemd LaunchAgent
 make session-sweep    # 5-min sessions ingest LaunchAgent
 make first-run        # populate live.db + archives.db

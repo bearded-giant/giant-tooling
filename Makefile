@@ -24,7 +24,7 @@ help:
 	@echo "Piecemeal:"
 	@echo "  make check-prereqs     verify go / node / wails / sqlite on PATH"
 	@echo "  make cli               build + install giantmem CLI -> ~/.local/bin/giantmem"
-	@echo "  make gui               build + install Giantmem.app -> /Applications/"
+	@echo "  make gui               build + install giantmem.app -> /Applications/"
 	@echo "  make daemon-install    register giantmemd LaunchAgent + start"
 	@echo "  make session-sweep     install + load 5-min session-ingest LaunchAgent"
 	@echo "  make first-run         backfill live.db + ingest existing session JSONLs"

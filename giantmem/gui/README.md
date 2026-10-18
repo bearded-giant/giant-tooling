@@ -1,4 +1,4 @@
-# Giantmem
+# giantmem
 
 Desktop memory browser for your `giantmem` archive. It's a Wails app (Go backend, React+TS frontend) that binds the giantmem read layer directly — no IPC, no HTTP, no extra daemon. The same `internal/artifacts` and `internal/search` packages that power the CLI and MCP also power this window.
 
@@ -48,12 +48,12 @@ If the daemon's down hybrid will silently fall back to FTS + recency + access (v
 ```bash
 cd giantmem/gui
 make dev             # wails dev — live reload, opens a window
-make build           # wails build — writes build/bin/Giantmem.app
-make install         # build + rsync into /Applications/Giantmem.app
+make build           # wails build — writes build/bin/giantmem.app
+make install         # build + rsync into /Applications/giantmem.app
 make reinstall       # install + kill running app + relaunch
 ```
 
-Override install location: `make install INSTALL_TO=$HOME/Applications/Giantmem.app`.
+Override install location: `make install INSTALL_TO=$HOME/Applications/giantmem.app`.
 
 For a fresh-machine setup, the repo-root `make bootstrap` runs the GUI install plus the CLI, daemon, and session-sweep agent — see [../../INSTALL.md](../../INSTALL.md).
 

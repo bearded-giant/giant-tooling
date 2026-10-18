@@ -1,6 +1,6 @@
 {
   "$schema": "https://wails.io/schemas/config.v2.json",
-  "name": "Giantmem",
+  "name": "giantmem",
   "outputfilename": "Giantmem",
   "frontend:install": "npm install",
   "frontend:build": "npm run build",
@@ -11,14 +11,14 @@
     "email": "bryan.grimes@rechargeapps.com"
   },
   "info": {
-    "productName": "Giantmem",
+    "productName": "giantmem",
     "productVersion": "0.4.0",
     "copyright": "\u00a9 2026 Bryan Grimes",
     "comments": "Local-only memory browser over giantmem artifacts + sessions.",
     "protocols": [
       {
         "scheme": "giantmem",
-        "description": "Open a session in Giantmem",
+        "description": "Open a session in giantmem",
         "role": "Viewer"
       }
     ]
