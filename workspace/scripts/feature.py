@@ -171,10 +171,15 @@ def move_index_row(idx_path, name, status, builds_on="", beta="", cp_branch=""):
     if not section:  # terminal status (abandoned/archived): row just goes away
         open(idx_path, "w").write("\n".join(lines) + "\n")
         return True
-    try:
-        si = next(i for i, ln in enumerate(lines) if ln.strip() == section)
-    except StopIteration:
-        return False
+    si = next((i for i, ln in enumerate(lines) if ln.strip() == section), None)
+    if si is None:  # older indexes ship only Active + Quick Reference
+        cols = ["Feature", "Status", "Beta Flag", "Builds On"] + ([] if status == "complete" else ["Paired"])
+        block = [section, "", "| " + " | ".join(cols) + " |", "|" + "|".join("-" * (len(c) + 2) for c in cols) + "|", ""]
+        at = next((i for i, ln in enumerate(lines) if ln.strip() == "## Quick Reference"), len(lines))
+        if at and lines[at - 1].strip():
+            block.insert(0, "")
+        lines[at:at] = block
+        si = lines.index(section)
     sep = next((i for i in range(si, len(lines))
                 if lines[i].lstrip().startswith("|") and "---" in lines[i]), None)
     if sep is None:
