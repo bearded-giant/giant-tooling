@@ -270,12 +270,16 @@ func (s *Server) startReconciler(ctx context.Context) {
 		s.embedder = embedder
 		s.embedderMu.Unlock()
 
+		gate := &projection.Gate{Resync: 10 * time.Minute}
 		run := func(reason string) {
 			s.reconcileMu.Lock()
 			defer s.reconcileMu.Unlock()
-			st, err := projection.Reconcile(s.liveDB, archiveBase, embedder)
+			st, ran, err := gate.Run(s.liveDB, archiveBase, embedder)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "giantmemd: reconcile (%s) failed: %v\n", reason, err)
+				return
+			}
+			if !ran {
 				return
 			}
 			fmt.Fprintf(os.Stderr,
