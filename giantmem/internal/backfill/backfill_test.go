@@ -257,3 +257,41 @@ func TestUpsertFile_SkipsOversizedDumpKeepsDoc(t *testing.T) {
 		t.Errorf("oversized dump should be skipped, got: %q", paths)
 	}
 }
+
+func TestUpsertFile_SkipsBinaryFiles(t *testing.T) {
+	dir := t.TempDir()
+	live, err := db.Open(filepath.Join(dir, "live.db"))
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	defer live.Close()
+
+	ws := filepath.Join(dir, "repo", ".giantmem", "features", "f")
+	if err := os.MkdirAll(ws, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	png := append([]byte("\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"), make([]byte, 64)...)
+	if err := os.WriteFile(filepath.Join(ws, "diagram.png"), png, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(ws, "notes.md"), []byte("# real doc, caf\xc3\xa9\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var st Stats
+	entries, err := os.ReadDir(ws)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		upsertFile(live, filepath.Join(ws, e.Name()), e, "repo", filepath.Dir(filepath.Dir(ws)), "f", "features", "", "now", &st)
+	}
+	if st.Binary != 1 || st.Upserted != 1 {
+		t.Errorf("Binary = %d, Upserted = %d, want 1 and 1", st.Binary, st.Upserted)
+	}
+	var n int
+	live.QueryRow(`SELECT count(*) FROM live_docs WHERE path LIKE '%diagram.png'`).Scan(&n)
+	if n != 0 {
+		t.Errorf("binary file should not be indexed")
+	}
+}

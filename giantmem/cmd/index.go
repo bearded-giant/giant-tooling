@@ -480,8 +480,8 @@ row OR its size differs. Same code path the daemon runs at startup.`,
 		if err != nil {
 			return err
 		}
-		fmt.Printf("backfill: workspaces=%d scanned=%d upserted=%d skipped=%d empty=%d too_large=%d errors=%d\n",
-			st.Workspaces, st.Scanned, st.Upserted, st.Skipped, st.Empty, st.TooLarge, st.Errors)
+		fmt.Printf("backfill: workspaces=%d scanned=%d upserted=%d skipped=%d empty=%d too_large=%d binary=%d errors=%d\n",
+			st.Workspaces, st.Scanned, st.Upserted, st.Skipped, st.Empty, st.TooLarge, st.Binary, st.Errors)
 		return nil
 	},
 }

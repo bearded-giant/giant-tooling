@@ -1,6 +1,6 @@
 // Package backfill scans every .giantmem/ workspace on disk and upserts ALL
-// non-empty files into live_docs. Closes the gap left by the PostToolUse
-// hook, which only sees .md edits made by Claude — files touched by vim,
+// non-empty text files into live_docs. Closes the gap left by the PostToolUse
+// hook, which only sees files Claude writes — files touched by vim,
 // git pull, scripts, etc. never reach live_docs otherwise.
 //
 // Idempotent: a row is skipped when stored mtime >= file mtime AND stored
@@ -9,6 +9,7 @@
 package backfill
 
 import (
+	"bytes"
 	"database/sql"
 	"io/fs"
 	"os"
@@ -63,11 +64,12 @@ type Stats struct {
 	Skipped    int `json:"skipped"`
 	Empty      int `json:"empty"`
 	TooLarge   int `json:"too_large"`
+	Binary     int `json:"binary"`
 	Errors     int `json:"errors"`
 }
 
 // Run discovers every .giantmem/ under the configured dev roots (via
-// artifacts.DiscoverWorkspaces) and upserts every non-empty file into
+// artifacts.DiscoverWorkspaces) and upserts every non-empty text file into
 // live_docs. maxDepth bounds the discovery walk; pass 0 for the default.
 func Run(db *sql.DB, archiveBase string, maxDepth int) (Stats, error) {
 	var st Stats
@@ -234,6 +236,11 @@ func upsertFile(db *sql.DB, p string, d fs.DirEntry, proj, worktreePath, feature
 	body, rerr := os.ReadFile(p)
 	if rerr != nil {
 		st.Errors++
+		return
+	}
+	// png/zip bytes stored as content got projected as artifacts and embedded as garbage vectors
+	if bytes.IndexByte(body[:min(len(body), 8000)], 0) >= 0 {
+		st.Binary++
 		return
 	}
 

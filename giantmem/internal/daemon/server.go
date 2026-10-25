@@ -316,8 +316,8 @@ func (s *Server) runBackfill(archiveBase string) {
 		return
 	}
 	fmt.Fprintf(os.Stderr,
-		"giantmemd: backfill workspaces=%d scanned=%d upserted=%d skipped=%d empty=%d too_large=%d errors=%d\n",
-		st.Workspaces, st.Scanned, st.Upserted, st.Skipped, st.Empty, st.TooLarge, st.Errors)
+		"giantmemd: backfill workspaces=%d scanned=%d upserted=%d skipped=%d empty=%d too_large=%d binary=%d errors=%d\n",
+		st.Workspaces, st.Scanned, st.Upserted, st.Skipped, st.Empty, st.TooLarge, st.Binary, st.Errors)
 }
 
 func (s *Server) watchAndReconcile(ctx context.Context, run func(string), embedder search.Embedder) {
