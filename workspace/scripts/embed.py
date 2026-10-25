@@ -32,7 +32,8 @@ def main() -> None:
         sys.exit(1)
 
     try:
-        model = SentenceTransformer(args.model)
+        # mps caches a compiled graph per input length and never frees it; cpu stays flat
+        model = SentenceTransformer(args.model, device="cpu")
     except Exception as e:  # noqa: BLE001
         print(json.dumps({"error": f"failed to load model {args.model}: {e}"}), flush=True)
         sys.exit(1)
