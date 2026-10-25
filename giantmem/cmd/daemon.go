@@ -80,7 +80,7 @@ var daemonStartCmd = &cobra.Command{
 			if err := launchdStart(); err != nil {
 				return err
 			}
-			return waitDaemonUp("started giantmemd via launchd", 5*time.Second)
+			return waitDaemonUp("started giantmemd via launchd", launchdUpWait, 0)
 		}
 		self, err := os.Executable()
 		if err != nil {
@@ -160,21 +160,28 @@ var daemonRestartCmd = &cobra.Command{
 	Short: "Stop and start giantmemd",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if launchdInstalled() {
+			old, _ := daemonPID()
 			if err := launchdRestart(); err != nil {
 				return err
 			}
-			return waitDaemonUp("restarted giantmemd via launchd", 5*time.Second)
+			return waitDaemonUp("restarted giantmemd via launchd", launchdUpWait, old)
 		}
 		_ = daemonStopCmd.RunE(cmd, args)
 		return daemonStartCmd.RunE(cmd, args)
 	},
 }
 
-func waitDaemonUp(msg string, within time.Duration) error {
+// launchd rejects the first spawn after the binary changes (launch constraint)
+// and retries after its 10s ThrottleInterval
+const launchdUpWait = 15 * time.Second
+
+// oldPID guards against the outgoing daemon's socket answering before it exits.
+func waitDaemonUp(msg string, within time.Duration, oldPID int) error {
 	deadline := time.Now().Add(within)
 	for time.Now().Before(deadline) {
-		if daemon.SocketAlive(daemon.DefaultSocketPath(), 100*time.Millisecond) {
-			fmt.Println(msg)
+		pid, _ := daemonPID()
+		if pid != 0 && pid != oldPID && daemon.SocketAlive(daemon.DefaultSocketPath(), 100*time.Millisecond) {
+			fmt.Printf("%s pid=%d\n", msg, pid)
 			return nil
 		}
 		time.Sleep(100 * time.Millisecond)
