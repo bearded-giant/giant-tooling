@@ -231,6 +231,7 @@ func (e *pythonEmbedder) stopIfIdle() {
 	defer e.mu.Unlock()
 	if e.started && time.Since(e.lastUsed) >= e.idle {
 		e.stopLocked()
+		fmt.Fprintf(os.Stderr, "giantmem: embed sidecar idle %s, stopped\n", e.idle)
 	}
 }
 
