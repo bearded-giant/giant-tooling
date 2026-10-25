@@ -69,7 +69,7 @@ func NewEmbedder(backend string) (Embedder, error) {
 	case "stub":
 		return newStubEmbedder(EmbedDim(), EmbedModel()), nil
 	case "python":
-		emb, err := newPythonEmbedder(EmbedDim(), EmbedModel())
+		emb, err := newPythonEmbedder(EmbedDim(), EmbedModel(), pythonIdleTimeout)
 		if err != nil {
 			return nil, fmt.Errorf("python embedder: %w", err)
 		}
@@ -113,29 +113,36 @@ func (s *stubEmbedder) Embed(text string) ([]float32, error) {
 
 // ----- python subprocess embedder -------------------------------------------
 
+// the sidecar holds the whole model in RAM; stopping it when idle bounds whatever it accumulates
+const pythonIdleTimeout = 10 * time.Minute
+
 type pythonEmbedder struct {
 	dim   int
 	model string
+	idle  time.Duration
 
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	stdin   io.WriteCloser
-	stdout  io.ReadCloser
-	scanner *json.Decoder
-	started bool
+	mu        sync.Mutex
+	cmd       *exec.Cmd
+	stdin     io.WriteCloser
+	stdout    io.ReadCloser
+	scanner   *json.Decoder
+	started   bool
+	lastUsed  time.Time
+	idleTimer *time.Timer
 }
 
-func newPythonEmbedder(dim int, model string) (*pythonEmbedder, error) {
-	e := &pythonEmbedder{dim: dim, model: model}
-	if err := e.ensureStarted(); err != nil {
+func newPythonEmbedder(dim int, model string, idle time.Duration) (*pythonEmbedder, error) {
+	e := &pythonEmbedder{dim: dim, model: model, idle: idle}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if err := e.startLocked(); err != nil {
 		return nil, err
 	}
+	e.touchLocked()
 	return e, nil
 }
 
-func (e *pythonEmbedder) ensureStarted() error {
-	e.mu.Lock()
-	defer e.mu.Unlock()
+func (e *pythonEmbedder) startLocked() error {
 	if e.started {
 		return nil
 	}
@@ -174,13 +181,57 @@ func (e *pythonEmbedder) ensureStarted() error {
 		Error string `json:"error,omitempty"`
 	}
 	if err := e.scanner.Decode(&ready); err != nil {
+		e.stopLocked()
 		return fmt.Errorf("read ready handshake: %w", err)
 	}
 	if !ready.Ready {
+		e.stopLocked()
 		return fmt.Errorf("embedder not ready: %s", ready.Error)
 	}
 	e.started = true
 	return nil
+}
+
+func (e *pythonEmbedder) stopLocked() {
+	cmd := e.cmd
+	if cmd == nil {
+		return
+	}
+	_ = e.stdin.Close()
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		_ = cmd.Process.Kill()
+		<-done
+	}
+	e.cmd = nil
+	e.started = false
+}
+
+func (e *pythonEmbedder) touchLocked() {
+	e.lastUsed = time.Now()
+	if e.idle <= 0 {
+		return
+	}
+	if e.idleTimer == nil {
+		e.idleTimer = time.AfterFunc(e.idle, e.stopIfIdle)
+		return
+	}
+	e.idleTimer.Reset(e.idle)
+}
+
+// the timer can fire while an Embed holds mu; lastUsed tells a stale fire from a real idle
+func (e *pythonEmbedder) stopIfIdle() {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.started && time.Since(e.lastUsed) >= e.idle {
+		e.stopLocked()
+	}
 }
 
 func PythonEmbedScriptPath() string {
@@ -195,13 +246,16 @@ func (e *pythonEmbedder) Dim() int          { return e.dim }
 func (e *pythonEmbedder) ModelName() string { return "python:" + e.model }
 
 func (e *pythonEmbedder) Embed(text string) ([]float32, error) {
-	if err := e.ensureStarted(); err != nil {
-		return nil, err
-	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if err := e.startLocked(); err != nil {
+		return nil, err
+	}
+	defer e.touchLocked()
 	req, _ := json.Marshal(map[string]any{"text": text})
+	// a dead sidecar (jetsam, crash) fails here; reap it so the next call respawns
 	if _, err := e.stdin.Write(append(req, '\n')); err != nil {
+		e.stopLocked()
 		return nil, fmt.Errorf("write embed request: %w", err)
 	}
 	var resp struct {
@@ -209,6 +263,7 @@ func (e *pythonEmbedder) Embed(text string) ([]float32, error) {
 		Error string    `json:"error,omitempty"`
 	}
 	if err := e.scanner.Decode(&resp); err != nil {
+		e.stopLocked()
 		return nil, fmt.Errorf("read embed response: %w", err)
 	}
 	if resp.Error != "" {
@@ -223,12 +278,10 @@ func (e *pythonEmbedder) Embed(text string) ([]float32, error) {
 func (e *pythonEmbedder) Close() error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if !e.started {
-		return nil
+	if e.idleTimer != nil {
+		e.idleTimer.Stop()
 	}
-	_ = e.stdin.Close()
-	_ = e.cmd.Wait()
-	e.started = false
+	e.stopLocked()
 	return nil
 }
 
