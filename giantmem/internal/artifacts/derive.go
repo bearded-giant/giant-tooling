@@ -100,7 +100,7 @@ type TableStats struct {
 // table. Pure derive (no FS): reuses live_docs.content. Idempotent. Also
 // backfills empty live_docs.canonical_project so repo-grouping works.
 //
-// Steady state is cheap: derive is string parsing over a few hundred rows.
+// Every pass re-reads and re-derives all rows, even when nothing changed.
 // Short batched transactions keep it friendly to concurrent peer writes (the
 // PostToolUse hook) under WAL + busy_timeout.
 func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {

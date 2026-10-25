@@ -23,9 +23,8 @@ type Stats struct {
 
 // Reconcile is the full incremental engine: project live_docs into the
 // artifacts table (derive + upsert + delete orphans + canonical backfill), then
-// embed any changed bodies. Idempotent and cheap in steady state — derive is
-// string parsing and embedding is body-hash guarded, so unchanged rows cost a
-// PK lookup. Safe to run concurrently with peer live_docs writes (WAL +
+// embed any changed bodies. Idempotent, but every pass re-reads all content
+// even when nothing changed; embedding is body-hash guarded. Safe to run concurrently with peer live_docs writes (WAL +
 // busy_timeout, short txns).
 //
 // embedder may be nil or a stub; in either case the embedding pass is skipped so
