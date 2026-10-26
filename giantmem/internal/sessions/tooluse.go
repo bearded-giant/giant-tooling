@@ -182,9 +182,14 @@ func (s *linkSet) fromInput(tool string, in map[string]any, ts string) {
 	fp := str(in, "file_path")
 	if tool == "Write" || tool == "Edit" || tool == "MultiEdit" {
 		if p, ok := s.vaultNote(fp); ok {
-			s.add("vault", p, noteStem(p), ts)
+			if strings.HasPrefix(p, filepath.Join(s.root, "handoffs")+string(filepath.Separator)) {
+				s.add("handoff", p, "handoff", ts)
+			} else {
+				s.add("vault", p, noteStem(p), ts)
+			}
 		}
 	}
+	// sessions before handoffs moved to the vault wrote them into the workspace
 	if (tool == "Write" || tool == "Edit") && strings.Contains(fp, "/.giantmem/") && strings.HasSuffix(fp, "handoff.md") {
 		s.add("handoff", filepath.Clean(fp), "handoff", ts)
 	}

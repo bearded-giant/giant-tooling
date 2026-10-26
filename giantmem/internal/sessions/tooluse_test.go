@@ -164,6 +164,31 @@ func TestExtractToolCallsNoVaultRoot(t *testing.T) {
 	}
 }
 
+func TestExtractVaultHandoff(t *testing.T) {
+	path := writeFixture(t,
+		record("assistant", "2026-10-15T10:00:00Z",
+			use("a", "Write", map[string]any{"file_path": "/v/root/handoffs/proj/main.md"}),
+			use("b", "Edit", map[string]any{"file_path": "/v/root/handoffs-old/x.md"}),
+		),
+	)
+	_, links, err := ExtractToolCalls(path, "/v/root")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Link{
+		{Kind: "handoff", Target: "/v/root/handoffs/proj/main.md", Label: "handoff", TS: "2026-10-15T10:00:00Z"},
+		{Kind: "vault", Target: "/v/root/handoffs-old/x.md", Label: "x", TS: "2026-10-15T10:00:00Z"},
+	}
+	if len(links) != len(want) {
+		t.Fatalf("got %d links %+v, want %d", len(links), links, len(want))
+	}
+	for i := range want {
+		if links[i] != want[i] {
+			t.Errorf("link %d = %+v, want %+v", i, links[i], want[i])
+		}
+	}
+}
+
 func TestExtractMRLinks(t *testing.T) {
 	const (
 		created  = "https://gitlab.rechargeapps.net/identity/recharge-auth/-/merge_requests/63"
