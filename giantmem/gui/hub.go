@@ -48,6 +48,11 @@ func (a *App) SessionHub(sessionID string) (SessionHubData, error) {
 		return out, err
 	}
 	if b, err := hub.LoadBundle(archiveBase(), sessionID); err == nil {
+		if p, err := a.TranscriptForSession(sessionID); err == nil {
+			if full := sessions.FirstPrompt(p); full != "" {
+				b.FirstPrompt = full
+			}
+		}
 		out.Bundle = b
 	} else {
 		out.BundleError = err.Error()

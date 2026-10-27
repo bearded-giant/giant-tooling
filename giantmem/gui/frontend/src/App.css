@@ -1381,6 +1381,14 @@
   margin-bottom: 4px;
   max-height: 4.5em;
   overflow: hidden;
+  cursor: pointer;
+}
+.hub-prompt.open {
+  max-height: 40vh;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  user-select: text;
+  cursor: auto;
 }
 .hub-group {
   margin-bottom: 12px;

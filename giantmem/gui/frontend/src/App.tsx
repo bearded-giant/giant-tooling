@@ -3908,12 +3908,30 @@ function fenced(path: string, body: string): string {
 
 function SessionHubHeader({ data }: { data: main.SessionHubData | null }) {
   const b = data?.bundle;
+  const [promptOpen, setPromptOpen] = useState(false);
+  useEffect(() => setPromptOpen(false), [b?.session_id]);
   if (!b) return null;
   const resume = b.resume ? (b.cwd ? `cd ${b.cwd} && ${b.resume}` : b.resume) : "";
   return (
     <div className="hub-meta">
-      {b.first_prompt && <div className="hub-prompt">{b.first_prompt}</div>}
+      {b.first_prompt && (
+        <div
+          className={`hub-prompt ${promptOpen ? "open" : ""}`}
+          title={promptOpen ? "" : "click to show the full prompt"}
+          onClick={() => !promptOpen && setPromptOpen(true)}
+        >
+          {b.first_prompt}
+        </div>
+      )}
       <div className="meta">
+        {b.first_prompt && (
+          <>
+            <button className="mini-btn" onClick={() => setPromptOpen(!promptOpen)}>
+              {promptOpen ? "collapse prompt" : "full prompt"}
+            </button>
+            <CopyButton text={b.first_prompt} label="copy prompt" />
+          </>
+        )}
         {b.branch && <span>branch: {b.branch}</span>}
         <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{shortPath(b.dir)}</span>
         <CopyButton text={b.dir} label="copy bundle path" />

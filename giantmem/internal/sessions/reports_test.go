@@ -112,3 +112,21 @@ func TestClearedFrom(t *testing.T) {
 		t.Fatalf("ClearedFrom on a non-/clear stub = %q, want empty", got)
 	}
 }
+
+func TestFirstPrompt(t *testing.T) {
+	long := strings.Repeat("word ", 100) + "\nsecond line"
+	path := writeFixture(t,
+		map[string]any{"type": "mode", "mode": "default"},
+		userStr("2026-10-27T10:00:00Z", "<local-command-caveat>Caveat</local-command-caveat>", map[string]any{"isMeta": true}),
+		userStr("2026-10-27T10:00:00Z", "<command-name>/model</command-name>", nil),
+		userStr("2026-10-27T10:00:00Z", "skill body", map[string]any{"isMeta": true}),
+		record("user", "2026-10-27T10:00:01Z", text("<system-reminder>ctx</system-reminder>"), text(long)),
+		userStr("2026-10-27T10:01:00Z", "second ask", nil),
+	)
+	if got := FirstPrompt(path); got != strings.TrimSpace(long) {
+		t.Fatalf("got %q", got)
+	}
+	if got := FirstPrompt(filepath.Join(t.TempDir(), "missing.jsonl")); got != "" {
+		t.Fatalf("missing file: got %q", got)
+	}
+}

@@ -82,6 +82,27 @@ func Reports(jsonlPath string) ([]Report, error) {
 	return out, sc.Err()
 }
 
+func FirstPrompt(jsonlPath string) string {
+	f, err := os.Open(jsonlPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	for sc.Scan() {
+		var r reportRow
+		if json.Unmarshal(sc.Bytes(), &r) != nil || r.Type != "user" || r.IsMeta || r.IsSidechain {
+			continue
+		}
+		// same rule as the bundle hook: hook output and slash-command wrappers arrive as user turns
+		if s := strings.TrimSpace(combineText(r.Message.Content, true)); s != "" && !strings.HasPrefix(s, "<") {
+			return s
+		}
+	}
+	return ""
+}
+
 var leadingTags = regexp.MustCompile(`<[^>]+>`)
 
 func promptCaption(s string) (string, bool) {
