@@ -3122,6 +3122,7 @@ type ContentBlock =
     }
   | { type: "tool_result"; content: any; tool_use_id?: string; is_error?: boolean }
   | { type: "thinking"; thinking: string }
+  | { type: "image"; src: string }
   | { type: "unknown"; raw: any };
 
 type SessionTurn = {
@@ -3145,7 +3146,13 @@ function parseJSONL(raw: string): SessionTurn[] {
         obj.role ||
         (obj.message && obj.message.role) ||
         "event";
-      const blocks = extractBlocks(obj);
+      if (!TURN_ROWS.has(role)) continue;
+      if (role === "system" && typeof obj.content !== "string") continue;
+      const blocks = extractBlocks(obj).map((b) =>
+        b.type === "text" && role !== "assistant"
+          ? { ...b, text: commandText(b.text) }
+          : b,
+      );
       turns.push({
         role,
         timestamp: obj.timestamp || obj.ts || undefined,
@@ -3214,10 +3221,25 @@ function parseJSONL(raw: string): SessionTurn[] {
       ) {
         return true;
       }
-      if (b.type === "unknown") return true;
+      if (b.type === "unknown" || b.type === "image") return true;
     }
     return false;
   });
+}
+
+// the rest (mode, attachment, cost-state, api-request-*, pr-link, ...) is harness bookkeeping.
+const TURN_ROWS = new Set(["user", "assistant", "system"]);
+
+function commandText(s: string): string {
+  const t = s.trim();
+  if (!t.startsWith("<command-") && !t.startsWith("<local-command-")) return s;
+  const name = /<command-name>([\s\S]*?)<\/command-name>/.exec(t);
+  if (name) {
+    const args = /<command-args>([\s\S]*?)<\/command-args>/.exec(t)?.[1].trim();
+    return "`" + [name[1].trim(), args].filter(Boolean).join(" ") + "`";
+  }
+  const out = /^<local-command-(?:stdout|stderr)>([\s\S]*?)<\/local-command-(?:stdout|stderr)>/.exec(t);
+  return out ? out[1].replace(/\x1b\[[0-9;]*m/g, "").trim() : "";
 }
 
 function stringifyResult(content: any): string {
@@ -3262,6 +3284,11 @@ function extractBlocks(obj: any): ContentBlock[] {
         };
       case "thinking":
         return { type: "thinking", thinking: String(c.thinking ?? "") };
+      case "image":
+        if (c.source?.type === "base64" && c.source.data)
+          return { type: "image", src: `data:${c.source.media_type};base64,${c.source.data}` };
+        if (c.source?.type === "url" && c.source.url) return { type: "image", src: c.source.url };
+        return { type: "unknown", raw: c };
       default:
         return { type: "unknown", raw: c };
     }
@@ -3588,6 +3615,9 @@ function BlockView({
         </div>
       </details>
     );
+  }
+  if (block.type === "image") {
+    return <img className="turn-image" src={block.src} alt="pasted image" />;
   }
   if (block.type === "tool_result") {
     // orphan tool_result: render minimally.
