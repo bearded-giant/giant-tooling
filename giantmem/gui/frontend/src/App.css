@@ -374,12 +374,19 @@
 
 .transcript-toolbar {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin: 0 0 12px 0;
   align-items: center;
 }
 .transcript-toolbar input[type="search"] {
   flex: 1;
+  min-width: 140px;
+}
+.session-notice {
+  color: var(--fg-muted);
+  font-size: 13px;
+  margin: 0 0 12px 0;
 }
 .transcript-toolbar button {
   white-space: nowrap;
@@ -434,6 +441,16 @@
 }
 .session-turn .turn-summary-spacer {
   flex: 1;
+}
+.session-turn.report .turn-time {
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.session-turn .report-prompt {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .session-turn .turn-time {
   color: var(--fg-muted);

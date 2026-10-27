@@ -14,6 +14,7 @@ import (
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/hub"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/sessions"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -50,6 +51,25 @@ func (a *App) SessionHub(sessionID string) (SessionHubData, error) {
 		out.Bundle = b
 	} else {
 		out.BundleError = err.Error()
+	}
+	return out, nil
+}
+
+type SessionReportsData struct {
+	Reports     []sessions.Report `json:"reports"`
+	ClearedFrom string            `json:"clearedFrom,omitempty"`
+}
+
+func (a *App) SessionReports(path string) (SessionReportsData, error) {
+	path = hub.TranscriptPath(archiveBase(), path, "")
+	rs, err := sessions.Reports(path)
+	if err != nil {
+		return SessionReportsData{}, err
+	}
+	out := SessionReportsData{Reports: rs}
+	if len(rs) == 0 {
+		out.Reports = []sessions.Report{}
+		out.ClearedFrom = sessions.ClearedFrom(path)
 	}
 	return out, nil
 }

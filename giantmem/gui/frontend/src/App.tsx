@@ -40,6 +40,7 @@ import {
   SessionHub,
   SessionLengthStats,
   SessionPathByID,
+  SessionReports,
   SessionToolCalls,
   SetPref,
   SetToolStar,
@@ -48,7 +49,7 @@ import {
   TranscriptForSession,
   Version,
 } from "../wailsjs/go/main/App";
-import { artifacts, hub, main, search } from "../wailsjs/go/models";
+import { artifacts, hub, main, search, sessions } from "../wailsjs/go/models";
 import PruneModal from "./PruneModal";
 import giantImg from "./assets/images/giant.jpg";
 
@@ -1471,6 +1472,14 @@ function App() {
             onToggleOrder={() =>
               setTurnOrder((o) => (o === "desc" ? "asc" : "desc"))
             }
+            onOpenSession={async (sid) => {
+              try {
+                const p = await TranscriptForSession(sid);
+                setSelection({ kind: "session", path: p });
+              } catch (e) {
+                setErr(String(e));
+              }
+            }}
             onExpandAll={() => {
               setDefaultExpanded(true);
               setExpandRev((r) => r + 1);
@@ -3353,6 +3362,7 @@ function SessionDetail({
   onToggleOrder,
   onExpandAll,
   onCollapseAll,
+  onOpenSession,
 }: {
   path: string;
   sessionId: string;
@@ -3368,7 +3378,38 @@ function SessionDetail({
   onToggleOrder: () => void;
   onExpandAll: () => void;
   onCollapseAll: () => void;
+  onOpenSession: (sessionId: string) => void;
 }) {
+  const [reportsOn, setReportsOn] = useState<boolean>(
+    () => localStorage.getItem("gm.transcriptReports") === "1",
+  );
+  useEffect(() => {
+    GetPref("transcriptReports")
+      .then((v) => {
+        if (v) setReportsOn(v === "1");
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    const v = reportsOn ? "1" : "0";
+    localStorage.setItem("gm.transcriptReports", v);
+    SetPref("transcriptReports", v).catch(() => {});
+  }, [reportsOn]);
+  const [reports, setReports] = useState<main.SessionReportsData | null>(null);
+  useEffect(() => {
+    setReports(null);
+    SessionReports(path)
+      .then(setReports)
+      .catch(() => setReports(null));
+  }, [path]);
+  const shownReports = useMemo(() => {
+    const rs = reports?.reports || [];
+    const q = filter.trim().toLowerCase();
+    const base = q
+      ? rs.filter((r) => r.text.toLowerCase().includes(q) || r.prompt.toLowerCase().includes(q))
+      : rs;
+    return order === "desc" ? [...base].reverse() : base;
+  }, [reports, filter, order]);
   const filtered = useMemo(() => {
     if (!turns) return null;
     const q = filter.trim().toLowerCase();
@@ -3471,11 +3512,37 @@ function SessionDetail({
         >
           {order === "desc" ? "↓ newest" : "↑ oldest"}
         </button>
-        <button onClick={onExpandAll}>expand all</button>
-        <button onClick={onCollapseAll}>collapse all</button>
+        <button
+          className={reportsOn ? "active" : ""}
+          onClick={() => setReportsOn((v) => !v)}
+          title="only each turn's final report: the text the terminal showed when the turn ended"
+        >
+          reports{reports ? ` (${reports.reports.length})` : ""}
+        </button>
+        {!reportsOn && <button onClick={onExpandAll}>expand all</button>}
+        {!reportsOn && <button onClick={onCollapseAll}>collapse all</button>}
       </div>
-      {turns === null && <div>loading transcript…</div>}
-      {filtered &&
+      {reports && reports.reports.length === 0 && (
+        <div className="session-notice">
+          no model output
+          {reports.clearedFrom && (
+            <>
+              {" "}(/clear stub), continued from{" "}
+              <a href="#" onClick={(e) => { e.preventDefault(); onOpenSession(reports.clearedFrom!); }}>
+                {reports.clearedFrom.slice(0, 8)}
+              </a>
+            </>
+          )}
+        </div>
+      )}
+      {reportsOn && reports === null && <div>loading reports…</div>}
+      {reportsOn &&
+        shownReports.map((r, i) => <ReportView key={`${path}:${i}`} report={r} />)}
+      {reportsOn && reports && reports.reports.length > 0 && shownReports.length === 0 && (
+        <div className="detail-empty">no reports match filter</div>
+      )}
+      {!reportsOn && turns === null && <div>loading transcript…</div>}
+      {!reportsOn && filtered &&
         filtered.map((t, i) => (
           <SessionTurnView
             key={`${expandRev}:${i}`}
@@ -3484,12 +3551,42 @@ function SessionDetail({
             filter={filter}
           />
         ))}
-      {filtered && filtered.length === 0 && (
+      {!reportsOn && filtered && filtered.length === 0 && (
         <div className="detail-empty">no turns match filter</div>
       )}
       </>
       )}
     </>
+  );
+}
+
+function ReportView({ report }: { report: sessions.Report }) {
+  return (
+    <details className="session-turn assistant report" open>
+      <summary className="turn-summary">
+        <span className="turn-caret">▸</span>
+        <span className="who">report</span>
+        {report.prompt && (
+          <span className="turn-summary-meta report-prompt" title={report.prompt}>
+            {report.prompt}
+          </span>
+        )}
+        <span className="turn-summary-spacer" />
+        <CopyButton text={report.text} label="copy report text" />
+        {report.timestamp && (
+          <span className="turn-time" title={formatRelative(report.timestamp)}>
+            {formatTime(report.timestamp)}
+          </span>
+        )}
+      </summary>
+      <div className="turn-body">
+        <div className="turn-text">
+          <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight as any]}>
+            {report.text}
+          </ReactMarkdown>
+        </div>
+      </div>
+    </details>
   );
 }
 

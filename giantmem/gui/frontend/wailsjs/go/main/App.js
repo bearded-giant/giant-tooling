@@ -130,6 +130,10 @@ export function SessionPathByID(arg1) {
   return window['go']['main']['App']['SessionPathByID'](arg1);
 }
 
+export function SessionReports(arg1) {
+  return window['go']['main']['App']['SessionReports'](arg1);
+}
+
 export function SessionToolCalls(arg1, arg2) {
   return window['go']['main']['App']['SessionToolCalls'](arg1, arg2);
 }
