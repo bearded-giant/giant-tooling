@@ -101,7 +101,7 @@ func registerExtraTools(s *server.MCPServer) {
 	s.AddTool(
 		mcp.NewTool("get_session_summary",
 			append([]mcp.ToolOption{
-				mcp.WithDescription("Return metadata for a session by id-prefix: project, cwd, topic, timestamp, jsonl path."),
+				mcp.WithDescription("Return metadata for a session by id-prefix: project, cwd, topic, timestamp, jsonl path, and last_report (the final end-of-turn report text, what the terminal showed before exit)."),
 				mcp.WithString("id_prefix",
 					mcp.Required(),
 					mcp.Description("session id or any unique prefix (e.g. 40503b40)")),

@@ -601,7 +601,7 @@ Match priority: exact basename, project, branch, then substring of `project/bran
 | `find_tool_uses` | search past tool calls (Bash commands, MCP calls, edits) across sessions and subagents |
 | `get_session_bundle` | a session's archived working files with absolute paths, plus its artifacts, vault notes, handoffs, doit items, and MRs |
 | `find_mr` | the session and worktree behind an MR/PR (`ref`: URL, `repo!N`, `repo#N`, bare `!N`), or a list of open ones (`project`, `since`, `include_closed`); `live` defaults to true |
-| `get_session_summary` | metadata for one session by id-prefix |
+| `get_session_summary` | metadata for one session by id-prefix, plus `last_report` (the final end-of-turn report text), or `cleared_from` when the session is a `/clear` stub |
 | `recent_writes` | live `.giantmem/*.md` writes in a time window (`24h`, `7d`, ...) |
 | `feature_status` | `features.json` per project |
 | `workspace_tree` | `.giantmem/` dir-type counts (from live.db or on-disk) |

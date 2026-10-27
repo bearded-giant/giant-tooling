@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/hub"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/sessions"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -79,14 +81,16 @@ type getSessionSummaryArgs struct {
 }
 
 type sessionSummary struct {
-	SessionID string `json:"session_id"`
-	Project   string `json:"project"`
-	Cwd       string `json:"cwd,omitempty"`
-	Topic     string `json:"topic,omitempty"`
-	Timestamp string `json:"timestamp"`
-	Filepath  string `json:"jsonl_path"`
-	IndexedAt string `json:"indexed_at,omitempty"`
-	FileSize  int64  `json:"file_size_bytes"`
+	SessionID   string `json:"session_id"`
+	Project     string `json:"project"`
+	Cwd         string `json:"cwd,omitempty"`
+	Topic       string `json:"topic,omitempty"`
+	Timestamp   string `json:"timestamp"`
+	Filepath    string `json:"jsonl_path"`
+	IndexedAt   string `json:"indexed_at,omitempty"`
+	FileSize    int64  `json:"file_size_bytes"`
+	LastReport  string `json:"last_report,omitempty"`
+	ClearedFrom string `json:"cleared_from,omitempty"`
 }
 
 func getSessionSummaryHandler(ctx context.Context, _ mcp.CallToolRequest, args getSessionSummaryArgs) (*mcp.CallToolResult, error) {
@@ -131,8 +135,14 @@ func getSessionSummaryHandler(ctx context.Context, _ mcp.CallToolRequest, args g
 		})
 	}
 	r := matches[0]
-	if st, err := os.Stat(r.Filepath); err == nil {
+	path := hub.TranscriptPath(archiveBasePath(), r.Filepath, r.SessionID)
+	if st, err := os.Stat(path); err == nil {
 		r.FileSize = st.Size()
+	}
+	if reports, err := sessions.Reports(path); err == nil && len(reports) > 0 {
+		r.LastReport = reports[len(reports)-1].Text
+	} else if err == nil {
+		r.ClearedFrom = sessions.ClearedFrom(path)
 	}
 	return jsonResult(r)
 }
