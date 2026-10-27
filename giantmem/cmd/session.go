@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/hub"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 	sessionsExport "github.com/bearded-giant/giant-tooling/giantmem/internal/sessions"
@@ -406,6 +407,60 @@ var sessExportCmd = &cobra.Command{
 	},
 }
 
+var (
+	sessReportN   int
+	sessReportAll bool
+)
+
+var sessReportCmd = &cobra.Command{
+	Use:     "report <id-prefix>",
+	Aliases: []string{"summary"},
+	Short:   "Print a session's end-of-turn reports as plain text, newest first",
+	Args:    cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if sessReportN < 1 {
+			return fmt.Errorf("-n must be >= 1")
+		}
+		a, err := db.Open(archiveDBPath())
+		if err != nil {
+			return err
+		}
+		if err := db.EnsureArchive(a); err != nil {
+			a.Close()
+			return err
+		}
+		r, err := lookupSession(a, args[0])
+		a.Close()
+		if err != nil {
+			return err
+		}
+		path := hub.TranscriptPath(archiveBasePath(), r.JSONLPath, r.ID)
+		reports, err := sessionsExport.Reports(path)
+		if err != nil {
+			return fmt.Errorf("parse jsonl: %w", err)
+		}
+		if len(reports) == 0 {
+			if prev := sessionsExport.ClearedFrom(path); prev != "" {
+				return fmt.Errorf("no model output in %s (/clear stub); previous session in dir: %s", r.ID, prev)
+			}
+			return fmt.Errorf("no model output in %s", r.ID)
+		}
+		n := min(sessReportN, len(reports))
+		if sessReportAll {
+			n = len(reports)
+		}
+		if n == 1 {
+			fmt.Println(reports[len(reports)-1].Text)
+			return nil
+		}
+		for i := len(reports) - 1; i >= len(reports)-n; i-- {
+			rep := reports[i]
+			fmt.Printf("── %s · %s\n\n%s\n\n", shortTS(rep.Timestamp), rep.Prompt, rep.Text)
+		}
+		return nil
+	},
+}
+
 var sessDiffCmd = &cobra.Command{
 	Use:   "diff <id-a> <id-b>",
 	Short: "Compare two sessions: file sets, topics, lengths",
@@ -721,6 +776,8 @@ func init() {
 
 	sessExportCmd.Flags().StringVarP(&sessExportOut, "out", "o", "", "write to file instead of stdout")
 	sessExportCmd.Flags().BoolVar(&sessExportTools, "tools", true, "include tool-call summary blocks")
+	sessReportCmd.Flags().IntVarP(&sessReportN, "count", "n", 1, "number of reports, newest first")
+	sessReportCmd.Flags().BoolVar(&sessReportAll, "all", false, "every report in the session")
 	sessDiffCmd.Flags().BoolVar(&sessDiffJSON, "json", false, "JSON output")
 
 	sessPruneOrphansCmd.Flags().BoolVar(&pruneOrphansDelete, "delete", false, "remove orphaned dirs (default: list only)")
@@ -733,6 +790,7 @@ func init() {
 	sessionCmd.AddCommand(sessSetTopicCmd)
 	sessionCmd.AddCommand(sessResumeCmd)
 	sessionCmd.AddCommand(sessExportCmd)
+	sessionCmd.AddCommand(sessReportCmd)
 	sessionCmd.AddCommand(sessDiffCmd)
 	sessionCmd.AddCommand(sessPruneOrphansCmd)
 	rootCmd.AddCommand(sessionCmd)

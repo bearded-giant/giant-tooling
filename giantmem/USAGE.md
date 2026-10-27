@@ -55,6 +55,8 @@ The whole point of session search: stop hunting through `~/.claude/projects/**` 
 | `giantmem session list -p chat-orchestrator -n 30` | recent sessions for a project (LIKE match) |
 | `giantmem session find "hub and spoke"` | FTS5 over session transcripts |
 | `giantmem session show <id-prefix>` | metadata: project, cwd, topic, jsonl path |
+| `giantmem session report <id-prefix>` | the last end-of-turn report as plain text, i.e. what the terminal showed before you exited (alias `summary`; pipe it to `pbcopy` or `glow`) |
+| `giantmem session report <id-prefix> -n 3` | the last 3 reports, newest first, each under a `── <time> · <prompt>` header (`--all` for every one) |
 | `giantmem session resume <id-prefix>` | chdir to recorded cwd, then `exec claude --resume <uuid>` |
 | `giantmem session tools <id-prefix>` | every tool call the session made, subagents included, in order (`--tool Bash`, `--agent main`, `--errors`, `--links` for a `giantmem://` column) |
 | `giantmem session files <id-prefix>` | the session's archived working files with absolute paths (`--kind script`, `--links`) |
@@ -65,6 +67,8 @@ The whole point of session search: stop hunting through `~/.claude/projects/**` 
 | `giantmem session prune-orphans --delete` | remove them (y/N prompt; add `--yes` to skip). A dir keeps if any one session points at a live cwd; dirs with no recorded cwd are never touched |
 
 `<id-prefix>` is any unique prefix of the session UUID (e.g. `40503b40`). Ambiguous prefixes print all candidates and exit.
+
+A report is the model's last text in a turn: the wrap-up with the open edges and what got done. If a Stop hook blocks a report and the model rewrites it, only the rewrite counts. The last turn is often a small follow-up ("save that to the vault"), so `-n 2` is usually where the real summary sits. A session that only ran `/clear` and `/exit` has no reports, so `report` exits 1 and names the session the `/clear` came from, which is the sibling transcript written at the moment of the clear.
 
 If the recorded cwd no longer exists (e.g. you converted a regular repo to a bare-with-worktrees layout), `giantmem session resume` falls back to `<cwd>-wt/main` then `<cwd>-wt/master` automatically.
 
