@@ -474,7 +474,7 @@ function App() {
       const recent = [...rows].sort((a, b) => b.mtime - a.mtime).slice(0, 300);
       const buckets = new Map<string, { dir: string; files: main.BrowseRow[] }>();
       for (const r of recent) {
-        const key = `${r.repo} ${r.feature}`;
+        const key = `${r.repo}\x00${r.feature}`;
         let b = buckets.get(key);
         if (!b) {
           b = { dir: r.feature ? `${r.repo} · ${r.feature}` : r.repo, files: [] };
