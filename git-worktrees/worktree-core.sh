@@ -37,10 +37,13 @@ __wt_in_worktree() {
 __wt_branch_status() {
     local branch="$1"
     local upstream
-    upstream=$(git rev-parse --abbrev-ref "$branch@{upstream}" 2>/dev/null)
-
-    if [ -z "$upstream" ]; then
-        echo "(no upstream)"
+    # rev-parse echoes "$branch@{upstream}" when the upstream ref is gone, so test the exit code
+    if ! upstream=$(git rev-parse --abbrev-ref "$branch@{upstream}" 2>/dev/null); then
+        if git config "branch.$branch.merge" >/dev/null; then
+            echo "(upstream gone)"
+        else
+            echo "(no upstream)"
+        fi
         return
     fi
 
@@ -368,7 +371,10 @@ __wt_main() {
                     fi
                 fi
                 cd "$base/$last_branch"
-                echo "-> $last_branch $(__wt_branch_status "$(__wt_current_branch)")"
+                local head label="$last_branch"
+                head=$(__wt_current_branch)
+                [ "$head" != "$last_branch" ] && label="$last_branch [$head]"
+                echo "-> $label $(__wt_branch_status "$head")"
             else
                 echo "Last branch '$last_branch' no longer exists"
                 cd "$base"
@@ -388,7 +394,10 @@ __wt_main() {
                 fi
             fi
             cd "$base/$1"
-            echo "-> $1 $(__wt_branch_status "$(__wt_current_branch)")"
+            local head label="$1"
+            head=$(__wt_current_branch)
+            [ "$head" != "$1" ] && label="$1 [$head]"
+            echo "-> $label $(__wt_branch_status "$head")"
         else
             # worktree doesn't exist - create
             echo "Worktree '$1' not found. Creating..."
@@ -998,7 +1007,7 @@ __wt_fetch() {
             if [ -n "$upstream" ]; then
                 local behind
                 behind=$(git rev-list --count "$local..$upstream" 2>/dev/null)
-                if [ "$behind" -gt 0 ]; then
+                if [ "${behind:-0}" -gt 0 ]; then
                     echo "  $local is behind $upstream by $behind commits"
                 fi
             fi
