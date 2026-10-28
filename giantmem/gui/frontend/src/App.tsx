@@ -670,15 +670,28 @@ function App() {
   );
 
   // keyboard nav: up/down or j/k move the cursor in the last-clicked column,
-  // enter opens a data-nav="open" row, esc clear, / focus search
+  // enter opens a data-nav="open" row, right opens or expands the cursor row
+  // (data-nav="open" or its [data-open] link), esc clear, / focus search
   useEffect(() => {
-    const moveCursor = (by: number) => {
-      if (document.querySelector(".modal-backdrop, .ctx-backdrop")) return false;
+    const cursor = () => {
+      if (document.querySelector(".modal-backdrop, .ctx-backdrop")) return { rows: [], i: -1 };
       const name = navCol.current === "sidebar" && sidebarCollapsed ? "results" : navCol.current;
       const rows = [...document.querySelectorAll<HTMLElement>(`.${name} [data-nav]`)];
-      if (!rows.length) return false;
       const cur = rows.indexOf(document.activeElement as HTMLElement);
-      const i = cur >= 0 ? cur : rows.findIndex((r) => r.classList.contains("selected"));
+      return { rows, i: cur >= 0 ? cur : rows.findIndex((r) => r.classList.contains("selected")) };
+    };
+    const openCursor = () => {
+      if (navCol.current === "detail") return false;
+      const { rows, i } = cursor();
+      const row = rows[i];
+      if (!row || row.getAttribute("aria-expanded") === "true") return false;
+      const target = row.dataset.nav === "open" ? row : row.querySelector<HTMLElement>("[data-open]");
+      target?.click();
+      return !!target;
+    };
+    const moveCursor = (by: number) => {
+      const { rows, i } = cursor();
+      if (!rows.length) return false;
       const next = rows[Math.min(rows.length - 1, Math.max(0, i + by))];
       // re-clicking the selected row at either end would toggle it off
       if (next === rows[i]) return true;
@@ -727,6 +740,7 @@ function App() {
       const down = e.key === "ArrowDown" || (e.key === "j" && tab !== "doit");
       const up = e.key === "ArrowUp" || (e.key === "k" && tab !== "doit");
       if ((down || up) && moveCursor(down ? 1 : -1)) e.preventDefault();
+      if (e.key === "ArrowRight" && openCursor()) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -2540,6 +2554,7 @@ function ToolUseRow({
         {hit.starred && <span title="starred"> · ★</span>}
         {" · "}
         <a
+          data-open
           onClick={(e) => {
             e.stopPropagation();
             onOpenSession();
@@ -2669,6 +2684,7 @@ function ActivityList({
             <div
               data-nav="open"
               tabIndex={-1}
+              aria-expanded={isOpen}
               onClick={() => onToggle(r.worktreePath)}
               onContextMenu={(e) => {
                 e.preventDefault();
