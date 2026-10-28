@@ -39,6 +39,7 @@ type DoitNote struct {
 	ID        string  `json:"id"`
 	Title     string  `json:"title"`
 	Body      string  `json:"body"`
+	CreatedAt float64 `json:"created_at"`
 	UpdatedAt float64 `json:"updated_at"`
 }
 
@@ -245,6 +246,75 @@ func (a *App) DoitAdd(list, text string) (string, error) {
 		"description": doitStamp(""),
 	})
 	return id, saveDoit(p, d)
+}
+
+func (a *App) DoitNoteAdd(list, title, body string) (string, error) {
+	if strings.TrimSpace(title) == "" && strings.TrimSpace(body) == "" {
+		return "", errors.New("note is empty")
+	}
+	p, d, err := loadDoit(list)
+	if err != nil {
+		return "", err
+	}
+	now := time.Now().Unix()
+	id := fmt.Sprintf("%d_%d", now, rand.IntN(9999999))
+	notes, _ := d["notes"].([]any)
+	d["notes"] = append(notes, map[string]any{
+		"id":         id,
+		"title":      strings.TrimSpace(title),
+		"body":       body,
+		"created_at": now,
+		"updated_at": now,
+	})
+	return id, saveDoit(p, d)
+}
+
+func (a *App) DoitNoteUpdate(list, id, title, body string) error {
+	if strings.TrimSpace(title) == "" && strings.TrimSpace(body) == "" {
+		return errors.New("note is empty")
+	}
+	p, d, err := loadDoit(list)
+	if err != nil {
+		return err
+	}
+	n, _ := findDoitNote(d, id)
+	if n == nil {
+		return fmt.Errorf("note %s not in %s", id, list)
+	}
+	n["title"], n["body"], n["updated_at"] = strings.TrimSpace(title), body, time.Now().Unix()
+	return saveDoit(p, d)
+}
+
+// mirrors mcp delete_note: last 10 kept in _metadata.deleted_notes
+func (a *App) DoitNoteDelete(list, id string) error {
+	p, d, err := loadDoit(list)
+	if err != nil {
+		return err
+	}
+	n, i := findDoitNote(d, id)
+	if n == nil {
+		return fmt.Errorf("note %s not in %s", id, list)
+	}
+	notes := d["notes"].([]any)
+	d["notes"] = append(notes[:i:i], notes[i+1:]...)
+	meta := doitMeta(d)
+	del, _ := meta["deleted_notes"].([]any)
+	del = append([]any{n}, del...)
+	if len(del) > 10 {
+		del = del[:10]
+	}
+	meta["deleted_notes"] = del
+	return saveDoit(p, d)
+}
+
+func findDoitNote(d map[string]any, id string) (map[string]any, int) {
+	notes, _ := d["notes"].([]any)
+	for i, v := range notes {
+		if n, ok := v.(map[string]any); ok && n["id"] == id {
+			return n, i
+		}
+	}
+	return nil, -1
 }
 
 func doitPath(list string) (string, error) {

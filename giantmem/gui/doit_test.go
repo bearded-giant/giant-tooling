@@ -183,6 +183,57 @@ func TestDoitDeleteAndAdd(t *testing.T) {
 	}
 }
 
+func TestDoitNoteCRUD(t *testing.T) {
+	lists := doitFixture(t)
+	a := &App{}
+	notes := func(name string) []any {
+		n, _ := readDoitRaw(t, lists, name)["notes"].([]any)
+		return n
+	}
+
+	id, err := a.DoitNoteAdd("daily", " standup ", "line 1\nline 2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := notes("daily")
+	if len(n) != 1 {
+		t.Fatalf("list without notes should gain one: %v", n)
+	}
+	got := n[0].(map[string]any)
+	if got["id"] != id || got["title"] != "standup" || got["body"] != "line 1\nline 2" || got["created_at"] == nil || got["updated_at"] == nil {
+		t.Fatalf("created note = %v", got)
+	}
+
+	if err := a.DoitNoteUpdate("proj", "n1", "renamed", "new body"); err != nil {
+		t.Fatal(err)
+	}
+	got = notes("proj")[0].(map[string]any)
+	if got["title"] != "renamed" || got["body"] != "new body" || got["updated_at"] == nil {
+		t.Fatalf("updated note = %v", got)
+	}
+
+	if err := a.DoitNoteDelete("proj", "n1"); err != nil {
+		t.Fatal(err)
+	}
+	d := readDoitRaw(t, lists, "proj")
+	if len(d["notes"].([]any)) != 0 {
+		t.Fatal("delete should drop the note")
+	}
+	if del := d["_metadata"].(map[string]any)["deleted_notes"].([]any); len(del) != 1 || del[0].(map[string]any)["title"] != "renamed" {
+		t.Fatalf("deleted note should land in deleted_notes: %v", del)
+	}
+
+	if _, err := a.DoitNoteAdd("proj", " ", ""); err == nil {
+		t.Fatal("empty note should be rejected")
+	}
+	if err := a.DoitNoteUpdate("proj", "gone", "x", ""); err == nil {
+		t.Fatal("missing note should error")
+	}
+	if err := a.DoitNoteDelete("proj", "gone"); err == nil {
+		t.Fatal("missing note should error")
+	}
+}
+
 func TestDoitListsAndGuards(t *testing.T) {
 	doitFixture(t)
 	a := &App{}

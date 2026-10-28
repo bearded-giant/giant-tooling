@@ -42,6 +42,18 @@ export function DoitMtime() {
   return window['go']['main']['App']['DoitMtime']();
 }
 
+export function DoitNoteAdd(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DoitNoteAdd'](arg1, arg2, arg3);
+}
+
+export function DoitNoteDelete(arg1, arg2) {
+  return window['go']['main']['App']['DoitNoteDelete'](arg1, arg2);
+}
+
+export function DoitNoteUpdate(arg1, arg2, arg3, arg4) {
+  return window['go']['main']['App']['DoitNoteUpdate'](arg1, arg2, arg3, arg4);
+}
+
 export function DoitSetStatus(arg1, arg2, arg3) {
   return window['go']['main']['App']['DoitSetStatus'](arg1, arg2, arg3);
 }

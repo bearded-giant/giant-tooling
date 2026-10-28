@@ -407,6 +407,7 @@ export namespace main {
 	    id: string;
 	    title: string;
 	    body: string;
+	    created_at: number;
 	    updated_at: number;
 	
 	    static createFrom(source: any = {}) {
@@ -418,6 +419,7 @@ export namespace main {
 	        this.id = source["id"];
 	        this.title = source["title"];
 	        this.body = source["body"];
+	        this.created_at = source["created_at"];
 	        this.updated_at = source["updated_at"];
 	    }
 	}

@@ -27,6 +27,12 @@ export function DoitLists():Promise<Array<main.DoitList>>;
 
 export function DoitMtime():Promise<number>;
 
+export function DoitNoteAdd(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function DoitNoteDelete(arg1:string,arg2:string):Promise<void>;
+
+export function DoitNoteUpdate(arg1:string,arg2:string,arg3:string,arg4:string):Promise<void>;
+
 export function DoitSetStatus(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function DoitUpdate(arg1:string,arg2:string,arg3:main.DoitEdit):Promise<void>;
