@@ -17,6 +17,20 @@ export function DaySessions(arg1:string):Promise<Array<hub.DaySession>>;
 
 export function DeleteProject(arg1:string,arg2:boolean):Promise<project.Deleted>;
 
+export function DoitAdd(arg1:string,arg2:string):Promise<string>;
+
+export function DoitAvailable():Promise<boolean>;
+
+export function DoitDelete(arg1:string,arg2:string):Promise<void>;
+
+export function DoitLists():Promise<Array<main.DoitList>>;
+
+export function DoitMtime():Promise<number>;
+
+export function DoitSetStatus(arg1:string,arg2:string,arg3:string):Promise<void>;
+
+export function DoitUpdate(arg1:string,arg2:string,arg3:main.DoitEdit):Promise<void>;
+
 export function FacetCounts():Promise<main.FacetCountsResult>;
 
 export function FeaturesByRepo():Promise<Array<main.FeatureRow>>;

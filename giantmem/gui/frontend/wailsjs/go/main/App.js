@@ -22,6 +22,34 @@ export function DeleteProject(arg1, arg2) {
   return window['go']['main']['App']['DeleteProject'](arg1, arg2);
 }
 
+export function DoitAdd(arg1, arg2) {
+  return window['go']['main']['App']['DoitAdd'](arg1, arg2);
+}
+
+export function DoitAvailable() {
+  return window['go']['main']['App']['DoitAvailable']();
+}
+
+export function DoitDelete(arg1, arg2) {
+  return window['go']['main']['App']['DoitDelete'](arg1, arg2);
+}
+
+export function DoitLists() {
+  return window['go']['main']['App']['DoitLists']();
+}
+
+export function DoitMtime() {
+  return window['go']['main']['App']['DoitMtime']();
+}
+
+export function DoitSetStatus(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DoitSetStatus'](arg1, arg2, arg3);
+}
+
+export function DoitUpdate(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DoitUpdate'](arg1, arg2, arg3);
+}
+
 export function FacetCounts() {
   return window['go']['main']['App']['FacetCounts']();
 }
