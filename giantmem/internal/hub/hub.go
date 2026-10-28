@@ -386,7 +386,7 @@ func Day(d *sql.DB, archiveBase, since, until string) ([]DaySession, error) {
 	}
 	rows, err := d.Query(`
         SELECT t.session_id, MIN(t.ts), MAX(t.ts), COUNT(*), SUM(t.is_error),
-               COALESCE(doc.project, MAX(t.project)), COALESCE(doc.topic,''), COALESCE(doc.filepath,''),
+               COALESCE(doc.canonical_project, doc.project, MAX(t.project)), COALESCE(doc.topic,''), COALESCE(doc.filepath,''),
                (SELECT COUNT(*) FROM session_links l WHERE l.session_id = t.session_id)
           FROM tool_uses t
           LEFT JOIN documents doc ON doc.session_id = t.session_id AND doc.source_type = 'session'

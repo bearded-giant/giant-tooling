@@ -32,8 +32,8 @@ func fixture(t *testing.T) (*sql.DB, string, string) {
 			t.Fatal(err)
 		}
 	}
-	exec(`INSERT INTO documents (project, timestamp, source_type, filepath, filename, session_id, indexed_at)
-          VALUES ('dev/proj', '20261015_080000', 'session', ?, 'x.jsonl', ?, datetime('now'))`, transcript, sid)
+	exec(`INSERT INTO documents (project, canonical_project, timestamp, source_type, filepath, filename, session_id, indexed_at)
+          VALUES ('dev/proj', 'proj', '20261015_080000', 'session', ?, 'x.jsonl', ?, datetime('now'))`, transcript, sid)
 	exec(`INSERT INTO documents (project, timestamp, source_type, filepath, filename, session_id, indexed_at)
           VALUES ('dev/proj', '20261015_080000', 'subagent', ?, 'agent-a1.jsonl', ?, datetime('now'))`, agentPath, sid)
 	rows := []struct {
@@ -126,7 +126,7 @@ func TestBundleAgentsDayTranscript(t *testing.T) {
 		t.Fatalf("day = %+v, %v", day, err)
 	}
 	s := day[0]
-	if s.Calls != 3 || s.Errors != 1 || s.Links != 1 || s.Files != 1 || s.FirstPrompt == "" || s.Project != "dev/proj" {
+	if s.Calls != 3 || s.Errors != 1 || s.Links != 1 || s.Files != 1 || s.FirstPrompt == "" || s.Project != "proj" {
 		t.Fatalf("day row = %+v", s)
 	}
 
