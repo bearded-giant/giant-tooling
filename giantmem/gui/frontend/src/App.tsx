@@ -440,6 +440,18 @@ function App() {
         : dayRows,
     [dayRows, selSessionProject],
   );
+  // one header per project, sidebar order; rows stay chronological inside
+  const dayGroups = useMemo(() => {
+    const by = new Map<string, hub.DaySession[]>();
+    for (const r of dayView) {
+      const g = by.get(r.project);
+      if (g) g.push(r);
+      else by.set(r.project, [r]);
+    }
+    return [...by.entries()].sort((a, b) =>
+      (dayProjects.last[b[0]] || "").localeCompare(dayProjects.last[a[0]] || ""),
+    );
+  }, [dayView, dayProjects]);
 
   // sparklines: fan out per visible repo after RecentRepos lands. Cached by
   // worktreePath so re-renders don't refetch. On reloadKey bump we refetch
@@ -1388,15 +1400,20 @@ function App() {
           <div className="detail-empty">no Claude sessions with tool activity on {day}</div>
         )}
         {tab === "day" &&
-          dayView.map((r) => (
-            <DaySessionRow
-              key={r.session_id}
-              row={r}
-              onClick={() => {
-                setTab("sessions");
-                setSelection({ kind: "session", path: r.transcript });
-              }}
-            />
+          dayGroups.map(([project, rows]) => (
+            <div key={project}>
+              <div className="browse-group-head">{project}</div>
+              {rows.map((r) => (
+                <DaySessionRow
+                  key={r.session_id}
+                  row={r}
+                  onClick={() => {
+                    setTab("sessions");
+                    setSelection({ kind: "session", path: r.transcript });
+                  }}
+                />
+              ))}
+            </div>
           ))}
         {tab === "activity" && (
           <ActivityList
