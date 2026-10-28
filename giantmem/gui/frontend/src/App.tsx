@@ -124,8 +124,8 @@ function Icon({ children }: { children: React.ReactNode }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width="20"
-      height="20"
+      width="23"
+      height="23"
       fill="none"
       stroke="currentColor"
       strokeWidth={1.75}
