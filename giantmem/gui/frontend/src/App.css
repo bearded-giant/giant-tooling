@@ -297,6 +297,16 @@
   border-left: 3px solid var(--accent);
   padding-left: 11px;
 }
+.activity-file {
+  padding: 3px 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.activity-file:hover,
+.activity-file.selected {
+  background: rgba(255, 255, 255, 0.06);
+}
 /* keyboard cursor on rows that only open on enter */
 [data-nav="open"]:focus {
   outline: none;

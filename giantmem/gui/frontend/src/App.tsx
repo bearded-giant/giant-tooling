@@ -696,6 +696,8 @@ function App() {
       // re-clicking the selected row at either end would toggle it off
       if (next === rows[i]) return true;
       next.focus({ preventScroll: true });
+      // rows without tabIndex can't hold focus; a stale focus would pin the cursor
+      if (document.activeElement !== next) (document.activeElement as HTMLElement | null)?.blur();
       next.scrollIntoView({ block: "nearest" });
       if (next.dataset.nav !== "open") next.click();
       return true;
@@ -1524,6 +1526,8 @@ function App() {
             onToggle={(wt) =>
               setExpandedWorktree((cur) => (cur === wt ? null : wt))
             }
+            selPath={selection?.kind === "file" ? selection.path : ""}
+            onPick={(path) => setSelection({ kind: "file", path })}
             onRepoMenu={(repo, x, y) =>
               setRepoMenu({ repo, x, y, purgeDefault: false })
             }
@@ -2658,6 +2662,8 @@ function ActivityList({
   expandedFiles,
   sparklines,
   onToggle,
+  selPath,
+  onPick,
   onRepoMenu,
 }: {
   repos: main.RepoActivity[];
@@ -2665,6 +2671,8 @@ function ActivityList({
   expandedFiles: main.FileActivity[];
   sparklines: Record<string, main.SparklinePoint[]>;
   onToggle: (worktree: string) => void;
+  selPath: string;
+  onPick: (path: string) => void;
   onRepoMenu: (repo: string, x: number, y: number) => void;
 }) {
   if (!repos.length) {
@@ -2719,7 +2727,12 @@ function ActivityList({
                   <div className="row-meta">loading…</div>
                 )}
                 {expandedFiles.map((f) => (
-                  <div key={f.path} style={{ padding: "3px 0", fontSize: 14 }}>
+                  <div
+                    key={f.path}
+                    data-nav
+                    className={`activity-file ${selPath === f.path ? "selected" : ""}`}
+                    onClick={() => onPick(f.path)}
+                  >
                     <span className="row-meta" style={{ marginRight: 8 }}>
                       {ago(f.mtime)}
                     </span>
