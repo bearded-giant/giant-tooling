@@ -1596,3 +1596,13 @@ button.doit-danger {
   display: block;
   margin-top: 12px;
 }
+.doit-section-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.doit-section-row .toggle-pill {
+  font-size: 11px;
+  padding: 0 8px;
+  text-transform: none;
+}

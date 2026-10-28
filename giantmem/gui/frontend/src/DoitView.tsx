@@ -5,6 +5,9 @@ import {
   DoitDelete,
   DoitLists,
   DoitMtime,
+  DoitNoteAdd,
+  DoitNoteDelete,
+  DoitNoteUpdate,
   DoitSetStatus,
   DoitUpdate,
 } from "../wailsjs/go/main/App";
@@ -29,6 +32,7 @@ const GLYPH: Record<Status, string> = { pending: "·", in_progress: "▸", done:
 const BUCKETS = ["in progress", "sequence", "critical", "urgent", "important", "default", "done"];
 const GROUPS = ["active", "open", "empty"];
 const PRIOS = ["critical", "urgent", "important"];
+const NEW_NOTE = "note:new";
 
 const status = (t: main.DoitTodo): Status => (t.done ? "done" : t.in_progress ? "in_progress" : "pending");
 
@@ -154,10 +158,11 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
   }, [lists, q]);
 
   const list = views.find((v) => v.name === selList) || views[0];
-  const keys = list ? [...list.todos.map((t) => t.id), ...list.notes.map((n) => `note:${n.id}`)] : [];
-  const key = keys.includes(selKey) ? selKey : keys[0] || "";
+  // notes render above todos, but a freshly opened list lands on its first todo
+  const keys = list ? [...list.notes.map((n) => `note:${n.id}`), ...list.todos.map((t) => t.id)] : [];
+  const key = (list && selKey === NEW_NOTE) || keys.includes(selKey) ? selKey : list?.todos[0]?.id || keys[0] || "";
   const todo = list?.todos.find((t) => t.id === key);
-  const note = key.startsWith("note:") ? list?.notes.find((n) => `note:${n.id}` === key) : undefined;
+  const note = list?.notes.find((n) => `note:${n.id}` === key);
 
   useEffect(() => {
     setEditing(false);
@@ -183,10 +188,14 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
     key,
     todo,
     note,
+    creatingNote: key === NEW_NOTE,
     editing,
     armed,
     setEditing,
-    pickList: (name: string) => setSelList(name),
+    pickList: (name: string) => {
+      setSelList(name);
+      setSelKey("");
+    },
     pick: (k: string) => setSelKey(k),
     jump: (name: string, id: string) => {
       setSelList(name);
@@ -207,6 +216,30 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
       setArmed("");
       run(DoitDelete(list.name, t.id));
     },
+    newNote: () => list && setSelKey(NEW_NOTE),
+    saveNote: async (n: main.DoitNote | undefined, title: string, body: string) => {
+      if (!list) return;
+      try {
+        if (n) await DoitNoteUpdate(list.name, n.id, title, body);
+        else setSelKey(`note:${await DoitNoteAdd(list.name, title, body)}`);
+        await load();
+        setEditing(false);
+      } catch (e) {
+        onErr(String(e));
+      }
+    },
+    removeNote: (n: main.DoitNote) => {
+      if (!list) return;
+      const k = `note:${n.id}`;
+      if (armed !== k) {
+        setArmed(k);
+        return;
+      }
+      const i = keys.indexOf(k);
+      setSelKey(keys[i + 1] || keys[i - 1] || "");
+      setArmed("");
+      run(DoitNoteDelete(list.name, n.id));
+    },
     add: async (text: string) => {
       if (!list) return false;
       try {
@@ -221,7 +254,7 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
     },
   };
 
-  // j/k item, J/K list, space cycles, x completes, e edits, d twice deletes
+  // j/k item, J/K list, space cycles, x completes, e edits, d twice deletes, n new note
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
@@ -239,10 +272,14 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
         d.cycle(todo);
       } else if (todo && e.key === "x") {
         d.setStatus(todo, "done");
-      } else if (todo && e.key === "e") {
+      } else if ((todo || note) && e.key === "e") {
         setEditing(true);
       } else if (todo && e.key === "d") {
         d.remove(todo);
+      } else if (note && e.key === "d") {
+        d.removeNote(note);
+      } else if (list && e.key === "n") {
+        d.newNote();
       } else {
         return;
       }
@@ -272,6 +309,7 @@ export function DoitSidebar({ d }: { d: Doit }) {
             <span>
               <Hl text={v.name} q={d.q} />
               {v.error && <span className="doit-err"> ⚠</span>}
+              {v.notes.length > 0 && <span className="doit-snip"> ✎{v.notes.length}</span>}
             </span>
             <span className="count">{d.q && v.hits ? v.hits : v.open}</span>
           </div>
@@ -299,7 +337,42 @@ export function DoitItems({ d }: { d: Doit }) {
         />
       </div>
       {l.error && <div className="doit-section doit-err">unreadable: {l.error}</div>}
-      {!l.todos.length && !l.notes.length && <div className="detail-empty">no items</div>}
+      {(!d.q || l.notes.length > 0) && (
+        <div className="doit-section doit-section-row">
+          <span>list notes</span>
+          <button className="toggle-pill" onClick={d.newNote} title="n">
+            + note
+          </button>
+        </div>
+      )}
+      {d.creatingNote && (
+        <div className="doit-row selected">
+          <span className="doit-glyph">✎</span>
+          <div className="doit-text doit-snip">new note…</div>
+        </div>
+      )}
+      {l.notes.map((n) => {
+        const label = n.title || (n.body || "").split("\n")[0] || "untitled";
+        const snip = d.q && !label.toLowerCase().includes(d.q) ? snippet(n.body, d.q) : "";
+        return (
+          <div
+            key={n.id}
+            className={`doit-row ${`note:${n.id}` === d.key ? "selected" : ""}`}
+            onClick={() => d.pick(`note:${n.id}`)}
+          >
+            <span className="doit-glyph">✎</span>
+            <div className="doit-text">
+              <Hl text={label} q={d.q} />
+              {snip && (
+                <div className="doit-snip">
+                  <Hl text={snip} q={d.q} />
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+      {!l.todos.length && !d.q && <div className="doit-section">no items</div>}
       {l.todos.map((t, i) => {
         const st = status(t);
         const snip = d.q && !t.text.toLowerCase().includes(d.q) ? snippet(t.description, d.q) : "";
@@ -337,19 +410,6 @@ export function DoitItems({ d }: { d: Doit }) {
           </Fragment>
         );
       })}
-      {l.notes.length > 0 && <div className="doit-section">list notes</div>}
-      {l.notes.map((n) => (
-        <div
-          key={n.id}
-          className={`doit-row ${`note:${n.id}` === d.key ? "selected" : ""}`}
-          onClick={() => d.pick(`note:${n.id}`)}
-        >
-          <span className="doit-glyph">✎</span>
-          <div className="doit-text">
-            <Hl text={n.title || (n.body || "").split("\n")[0]} q={d.q} />
-          </div>
-        </div>
-      ))}
     </>
   );
 }
@@ -363,25 +423,7 @@ export function DoitDetail({ d }: { d: Doit }) {
     }
   }, [d.editing]);
 
-  if (d.note) {
-    return (
-      <>
-        <header className="detail-head">
-          <h1 style={{ marginBottom: 0 }}>
-            <Hl text={d.note.title || "note"} q={d.q} />
-          </h1>
-          <div className="meta">
-            <span className="chip">list note</span>
-            <span>{d.list?.name}</span>
-            {d.note.updated_at > 0 && <span>updated: {when(d.note.updated_at)}</span>}
-          </div>
-        </header>
-        <pre className="doit-notes">
-          <Hl text={d.note.body} q={d.q} />
-        </pre>
-      </>
-    );
-  }
+  if (d.note || d.creatingNote) return <NoteDetail key={d.key} d={d} n={d.note} />;
   if (!t || !d.list) return <div className="detail-empty">{d.list ? "pick an item" : "pick a list"}</div>;
 
   const st = status(t);
@@ -490,12 +532,91 @@ export function DoitDetail({ d }: { d: Doit }) {
       ) : (
         <pre className="doit-notes">{t.description ? <Hl text={t.description} q={d.q} /> : "no notes"}</pre>
       )}
-      <div className="filter-hint doit-keys">
-        <span className="kbd">j</span>/<span className="kbd">k</span> item · <span className="kbd">J</span>/
-        <span className="kbd">K</span> list · <span className="kbd">space</span> cycle ·{" "}
-        <span className="kbd">x</span> complete · <span className="kbd">e</span> edit ·{" "}
-        <span className="kbd">d</span> delete
-      </div>
+      <KeyHint />
     </>
+  );
+}
+
+function NoteDetail({ d, n }: { d: Doit; n?: main.DoitNote }) {
+  const editing = d.editing || !n;
+  const [title, setTitle] = useState(n?.title || "");
+  const [body, setBody] = useState(n?.body || "");
+  useEffect(() => {
+    if (editing) {
+      setTitle(n?.title || "");
+      setBody(n?.body || "");
+    }
+  }, [editing]);
+  const save = () => d.saveNote(n, title, body);
+  const cancel = () => (n ? d.setEditing(false) : d.pick(""));
+  const armed = n && d.armed === `note:${n.id}`;
+
+  return (
+    <>
+      <header className="detail-head">
+        <h1 style={{ marginBottom: 0 }}>{n ? <Hl text={n.title || "untitled"} q={d.q} /> : "new note"}</h1>
+        <div className="meta">
+          <span className="chip">list note</span>
+          <span>{d.list?.name}</span>
+          {n && n.created_at > 0 && <span>created: {when(n.created_at)}</span>}
+          {n && n.updated_at > 0 && <span>updated: {when(n.updated_at)}</span>}
+          {n && (
+            <button className="toggle-pill" onClick={() => ClipboardSetText(n.id)} title={n.id}>
+              copy id
+            </button>
+          )}
+        </div>
+      </header>
+      {editing ? (
+        <div
+          className="doit-edit"
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && e.metaKey) save();
+            if (e.key === "Escape") cancel();
+          }}
+        >
+          <label>
+            title
+            <input type="text" autoFocus value={title} onChange={(e) => setTitle(e.target.value)} />
+          </label>
+          <label>
+            body
+            <textarea rows={20} value={body} onChange={(e) => setBody(e.target.value)} />
+          </label>
+          <div className="doit-actions">
+            <button className="active" onClick={save} title="cmd+enter">
+              {n ? "save" : "create"}
+            </button>
+            <button onClick={cancel} title="esc">
+              cancel
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <div className="doit-actions">
+            <button onClick={() => d.setEditing(true)} title="e">
+              edit
+            </button>
+            <button className={armed ? "doit-danger" : ""} onClick={() => n && d.removeNote(n)} title="d, twice">
+              {armed ? "confirm delete" : "delete"}
+            </button>
+          </div>
+          <pre className="doit-notes">{n?.body ? <Hl text={n.body} q={d.q} /> : "empty"}</pre>
+        </>
+      )}
+      <KeyHint />
+    </>
+  );
+}
+
+function KeyHint() {
+  return (
+    <div className="filter-hint doit-keys">
+      <span className="kbd">j</span>/<span className="kbd">k</span> item · <span className="kbd">J</span>/
+      <span className="kbd">K</span> list · <span className="kbd">space</span> cycle ·{" "}
+      <span className="kbd">x</span> complete · <span className="kbd">e</span> edit ·{" "}
+      <span className="kbd">d</span> delete · <span className="kbd">n</span> new note
+    </div>
   );
 }
