@@ -55,6 +55,14 @@ import PruneModal from "./PruneModal";
 import { DoitDetail, DoitItems, DoitSidebar, useDoit } from "./DoitView";
 import giantImg from "./assets/images/giant.jpg";
 
+// save effects run on mount with the localStorage seed; a fresh webview's
+// defaults would overwrite the prefs file before its load lands
+const loadedPrefs = new Set<string>();
+const loadPref = (key: string) => GetPref(key).finally(() => loadedPrefs.add(key));
+const savePref = (key: string, value: string) => {
+  if (loadedPrefs.has(key)) SetPref(key, value).catch(() => {});
+};
+
 type Tab = "artifacts" | "sessions" | "tools" | "activity" | "day" | "doit";
 
 // lucide icon paths, the set obsidian's ribbon uses
@@ -239,7 +247,7 @@ function App() {
     () => localStorage.getItem("gm.showHistory") !== "0",
   );
   useEffect(() => {
-    GetPref("showHistory")
+    loadPref("showHistory")
       .then((v) => {
         if (v) setShowHistory(v !== "0");
       })
@@ -248,7 +256,7 @@ function App() {
   useEffect(() => {
     const v = showHistory ? "1" : "0";
     localStorage.setItem("gm.showHistory", v);
-    SetPref("showHistory", v).catch(() => {});
+    savePref("showHistory", v);
   }, [showHistory]);
   // sidebarWidth: localStorage seeds first paint (avoids flash) and the
   // Go-backed prefs file is the source of truth across restarts. Read both
@@ -258,7 +266,7 @@ function App() {
     return Number.isFinite(n) && n >= 180 && n <= 600 ? n : 260;
   });
   useEffect(() => {
-    GetPref("sidebarWidth")
+    loadPref("sidebarWidth")
       .then((v) => {
         const n = Number(v);
         if (Number.isFinite(n) && n >= 180 && n <= 600) setSidebarWidth(n);
@@ -267,7 +275,7 @@ function App() {
   }, []);
   useEffect(() => {
     localStorage.setItem("gm.sidebarWidth", String(sidebarWidth));
-    SetPref("sidebarWidth", String(sidebarWidth)).catch(() => {});
+    savePref("sidebarWidth", String(sidebarWidth));
   }, [sidebarWidth]);
   // listWidth null = list and detail split the space evenly
   const [listWidth, setListWidth] = useState<number | null>(() => {
@@ -278,13 +286,13 @@ function App() {
     () => localStorage.getItem("gm.sidebarCollapsed") === "1",
   );
   useEffect(() => {
-    GetPref("listWidth")
+    loadPref("listWidth")
       .then((v) => {
         const n = Number(v);
         if (n >= 240) setListWidth(n);
       })
       .catch(() => {});
-    GetPref("sidebarCollapsed")
+    loadPref("sidebarCollapsed")
       .then((v) => {
         if (v) setSidebarCollapsed(v === "1");
       })
@@ -293,12 +301,12 @@ function App() {
   useEffect(() => {
     const v = listWidth ? String(listWidth) : "";
     localStorage.setItem("gm.listWidth", v);
-    SetPref("listWidth", v).catch(() => {});
+    savePref("listWidth", v);
   }, [listWidth]);
   useEffect(() => {
     const v = sidebarCollapsed ? "1" : "0";
     localStorage.setItem("gm.sidebarCollapsed", v);
-    SetPref("sidebarCollapsed", v).catch(() => {});
+    savePref("sidebarCollapsed", v);
   }, [sidebarCollapsed]);
 
   const [turnOrder, setTurnOrder] = useState<"asc" | "desc">(() => {
@@ -364,7 +372,7 @@ function App() {
   const [dayRows, setDayRows] = useState<hub.DaySession[]>([]);
   const [toolSelected, setToolSelected] = useState<main.ToolUseHit | null>(null);
   useEffect(() => {
-    GetPref("toolNameFilter")
+    loadPref("toolNameFilter")
       .then((v) => {
         if (v) setToolNameFilter(v);
       })
@@ -372,7 +380,7 @@ function App() {
   }, []);
   useEffect(() => {
     localStorage.setItem("gm.toolNameFilter", toolNameFilter);
-    SetPref("toolNameFilter", toolNameFilter).catch(() => {});
+    savePref("toolNameFilter", toolNameFilter);
   }, [toolNameFilter]);
   const [selSessionProject, setSelSessionProject] = useState("");
   const [selSessionDirType, setSelSessionDirType] = useState("");
@@ -386,7 +394,7 @@ function App() {
   });
   const { since, until } = useMemo(() => rangeSinceUntil(dateRange), [dateRange]);
   useEffect(() => {
-    GetPref("dateRange")
+    loadPref("dateRange")
       .then((v) => {
         if (v) {
           try {
@@ -399,7 +407,7 @@ function App() {
   useEffect(() => {
     const s = JSON.stringify(dateRange);
     localStorage.setItem("gm.dateRange", s);
-    SetPref("dateRange", s).catch(() => {});
+    savePref("dateRange", s);
   }, [dateRange]);
   const [hybridRows, setHybridRows] = useState<search.HybridResult[]>([]);
   const [sessionHits, setSessionHits] = useState<search.Hit[]>([]);
@@ -445,7 +453,7 @@ function App() {
     return Number.isFinite(n) && n >= 80 && n <= 150 ? n : 90;
   });
   useEffect(() => {
-    GetPref("uiZoom")
+    loadPref("uiZoom")
       .then((v) => {
         const n = Number(v);
         if (Number.isFinite(n) && n >= 80 && n <= 150) setUiZoom(n);
@@ -454,7 +462,7 @@ function App() {
   }, []);
   useEffect(() => {
     localStorage.setItem("gm.uiZoom", String(uiZoom));
-    SetPref("uiZoom", String(uiZoom)).catch(() => {});
+    savePref("uiZoom", String(uiZoom));
     // css zoom scales the whole app; supported by WKWebView
     (document.body.style as any).zoom = uiZoom === 100 ? "" : `${uiZoom}%`;
   }, [uiZoom]);
@@ -3376,7 +3384,7 @@ function SessionDetail({
     () => localStorage.getItem("gm.transcriptReports") === "1",
   );
   useEffect(() => {
-    GetPref("transcriptReports")
+    loadPref("transcriptReports")
       .then((v) => {
         if (v) setReportsOn(v === "1");
       })
@@ -3385,7 +3393,7 @@ function SessionDetail({
   useEffect(() => {
     const v = reportsOn ? "1" : "0";
     localStorage.setItem("gm.transcriptReports", v);
-    SetPref("transcriptReports", v).catch(() => {});
+    savePref("transcriptReports", v);
   }, [reportsOn]);
   const [reports, setReports] = useState<main.SessionReportsData | null>(null);
   useEffect(() => {
