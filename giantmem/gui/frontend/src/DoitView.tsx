@@ -302,6 +302,7 @@ export function DoitSidebar({ d }: { d: Doit }) {
             <div className="repo-label">{GROUPS[group(v)]}</div>
           )}
           <div
+            data-nav
             className={`facet-row ${v.name === d.list?.name ? "selected" : ""}`}
             onClick={() => d.pickList(v.name)}
             title={v.error || v.name}
@@ -357,6 +358,7 @@ export function DoitItems({ d }: { d: Doit }) {
         return (
           <div
             key={n.id}
+            data-nav
             className={`doit-row ${`note:${n.id}` === d.key ? "selected" : ""}`}
             onClick={() => d.pick(`note:${n.id}`)}
           >
@@ -382,6 +384,7 @@ export function DoitItems({ d }: { d: Doit }) {
               <div className="doit-section">{BUCKETS[bucket(t)]}</div>
             )}
             <div
+              data-nav
               className={`doit-row ${st} ${t.id === d.key ? "selected" : ""}`}
               onClick={() => d.pick(t.id)}
             >

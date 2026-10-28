@@ -475,7 +475,8 @@ function App() {
   }, []);
   const doit = useDoit(tab === "doit", debouncedQuery, reloadKey, setErr);
   const searchRef = useRef<HTMLInputElement>(null);
-  const activityFilterRef = useRef<HTMLInputElement>(null);
+  const sidebarFilterRef = useRef<HTMLInputElement>(null);
+  const navCol = useRef<"sidebar" | "results" | "detail">("results");
 
   const refreshAll = useCallback(() => {
     setReloadKey((k) => k + 1);
@@ -668,31 +669,37 @@ function App() {
     [browseGroups],
   );
 
-  // ordered ids list for j/k nav
-  const visibleRowIDs: string[] = useMemo(() => {
-    if (tab === "doit") return [];
-    if (tab === "artifacts") {
-      return hybridRows.length
-        ? hybridRows.map((h) => h.artifact.id)
-        : browsePaths;
-    }
-    return sessionHits.map((h) => h.filepath);
-  }, [tab, hybridRows, browsePaths, sessionHits]);
-
-  // keyboard nav: j/k move row, esc clear, / focus search
+  // keyboard nav: up/down or j/k move the cursor in the last-clicked column,
+  // enter opens a data-nav="open" row, esc clear, / focus search
   useEffect(() => {
+    const moveCursor = (by: number) => {
+      if (document.querySelector(".modal-backdrop, .ctx-backdrop")) return false;
+      const name = navCol.current === "sidebar" && sidebarCollapsed ? "results" : navCol.current;
+      const rows = [...document.querySelectorAll<HTMLElement>(`.${name} [data-nav]`)];
+      if (!rows.length) return false;
+      const cur = rows.indexOf(document.activeElement as HTMLElement);
+      const i = cur >= 0 ? cur : rows.findIndex((r) => r.classList.contains("selected"));
+      const next = rows[Math.min(rows.length - 1, Math.max(0, i + by))];
+      // re-clicking the selected row at either end would toggle it off
+      if (next === rows[i]) return true;
+      next.focus({ preventScroll: true });
+      next.scrollIntoView({ block: "nearest" });
+      if (next.dataset.nav !== "open") next.click();
+      return true;
+    };
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       const inField = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
       if (e.key === "/" && !inField) {
         e.preventDefault();
-        // on activity tab the topbar FTS search doesn't apply — the
-        // activity-sidebar project filter is what the user actually wants.
-        const target =
-          tab === "activity"
-            ? activityFilterRef.current || searchRef.current
-            : searchRef.current;
-        target?.focus();
+        // activity and day have no topbar search; their sidebar filter is the
+        // one that narrows the list, so open the sidebar to reach it
+        if (tab !== "activity" && tab !== "day") {
+          searchRef.current?.focus();
+          return;
+        }
+        setSidebarCollapsed(false);
+        requestAnimationFrame(() => sidebarFilterRef.current?.focus());
         return;
       }
       if (e.key === "Escape") {
@@ -709,32 +716,21 @@ function App() {
         refreshAll();
         return;
       }
-      if (e.key !== "j" && e.key !== "k") return;
-      if (visibleRowIDs.length === 0) return;
-      const curID =
-        selection?.kind === "artifact"
-          ? selection.id
-          : selection?.kind === "file" || selection?.kind === "session"
-            ? selection.path
-            : null;
-      const i = curID ? visibleRowIDs.indexOf(curID) : -1;
-      const next =
-        e.key === "j"
-          ? Math.min(visibleRowIDs.length - 1, i + 1)
-          : Math.max(0, i - 1);
-      const id = visibleRowIDs[next];
-      setSelection(
-        tab === "artifacts"
-          ? hybridRows.length
-            ? { kind: "artifact", id }
-            : { kind: "file", path: id }
-          : { kind: "session", path: id },
-      );
-      e.preventDefault();
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const active = document.activeElement as HTMLElement | null;
+      if (e.key === "Enter" && active?.dataset.nav === "open") {
+        e.preventDefault();
+        active.click();
+        return;
+      }
+      // doit binds its own j/k
+      const down = e.key === "ArrowDown" || (e.key === "j" && tab !== "doit");
+      const up = e.key === "ArrowUp" || (e.key === "k" && tab !== "doit");
+      if ((down || up) && moveCursor(down ? 1 : -1)) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [visibleRowIDs, selection, tab, hybridRows, refreshAll]);
+  }, [tab, sidebarCollapsed, refreshAll]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 200);
@@ -1265,7 +1261,10 @@ function App() {
           );
         })}
       </nav>
-      <aside className={`sidebar${sidebarCollapsed ? " collapsed" : ""}`}>
+      <aside
+        className={`sidebar${sidebarCollapsed ? " collapsed" : ""}`}
+        onMouseDownCapture={() => (navCol.current = "sidebar")}
+      >
         {tab === "doit" && <DoitSidebar d={doit} />}
         {tab === "artifacts" && (
           <>
@@ -1314,7 +1313,7 @@ function App() {
             heatmap={heatmap}
             toolMix={toolMix}
             lengths={lengths}
-            filterRef={activityFilterRef}
+            filterRef={sidebarFilterRef}
           />
         )}
         {tab === "tools" && (
@@ -1336,6 +1335,7 @@ function App() {
           <>
             <div className="sidebar-filter">
               <input
+                ref={sidebarFilterRef}
                 type="search"
                 placeholder="filter projects…"
                 value={sidebarFilter}
@@ -1421,7 +1421,7 @@ function App() {
         onReset={() => setSidebarWidth(260)}
       />
 
-      <section className="results">
+      <section className="results" onMouseDownCapture={() => (navCol.current = "results")}>
         {tab === "doit" && <DoitItems d={doit} />}
         {tab === "artifacts" && hybridRows.length > 0 &&
           hybridRows.map((h) => (
@@ -1523,7 +1523,7 @@ function App() {
         onReset={() => setListWidth(null)}
       />
 
-      <section className="detail">
+      <section className="detail" onMouseDownCapture={() => (navCol.current = "detail")}>
         {tab === "tools" && toolSelected && (
           <ToolUseDetail
             hit={toolSelected}
@@ -2068,6 +2068,7 @@ function BucketSidebar({
       {buckets.map((b) => (
         <div
           key={`${b.repo}\x00${b.feature}`}
+          data-nav
           className={`tree-row repo ${selRepo === b.repo && selFeature === b.feature ? "selected" : ""}`}
           onClick={() => onPick(b)}
           onContextMenu={(e) => {
@@ -2389,6 +2390,7 @@ function SingleFacetGroup({
         sorted.map(([v, n]) => (
           <div
             key={v}
+            data-nav
             className={`facet-row ${selected === v ? "selected" : ""}`}
             onClick={() => onPick(selected === v ? "" : v)}
             onContextMenu={
@@ -2431,6 +2433,7 @@ function BrowseList({
           {g.files.map((f) => (
             <div
               key={f.path}
+              data-nav
               className={`browse-row ${selPath === f.path ? "selected" : ""}`}
               onClick={() => onPick(f.path)}
               title={f.path}
@@ -2474,6 +2477,7 @@ function HybridRow({
   const a = row.artifact;
   return (
     <div
+      data-nav
       className={`result-row ${selected ? "selected" : ""}`}
       onClick={onClick}
     >
@@ -2506,6 +2510,7 @@ function ToolUseRow({
 }) {
   return (
     <div
+      data-nav
       className={`result-row ${selected ? "selected" : ""}`}
       onClick={onClick}
     >
@@ -2662,6 +2667,8 @@ function ActivityList({
         return (
           <div key={r.worktreePath} className="result-row">
             <div
+              data-nav="open"
+              tabIndex={-1}
               onClick={() => onToggle(r.worktreePath)}
               onContextMenu={(e) => {
                 e.preventDefault();
@@ -3090,6 +3097,7 @@ function SessionRow({
 }) {
   return (
     <div
+      data-nav
       className={`result-row ${selected ? "selected" : ""}`}
       onClick={onClick}
     >
@@ -4038,7 +4046,7 @@ function SessionToolsPanel({
             const key = `${id}:${c.seq}`;
             return (
               <div key={key} id={`call-${key}`}>
-                <div className={`hub-row ${open === key ? "selected" : ""}`} onClick={() => setOpen(open === key ? null : key)}>
+                <div data-nav className={`hub-row ${open === key ? "selected" : ""}`} onClick={() => setOpen(open === key ? null : key)}>
                   <span className="row-meta hub-seq">#{c.seq}</span>
                   <span className={`chip tool ${c.is_error ? "err" : ""}`}>{c.tool}</span>
                   {c.starred && <span className="row-meta" title="starred">★</span>}
@@ -4137,6 +4145,7 @@ function SessionFilesPanel({
           <div
             key={f.path}
             id={`file-${f.path}`}
+            data-nav
             className={`hub-row ${sel?.path === f.path ? "selected" : ""}`}
             onClick={() => setSel(sel?.path === f.path ? null : f)}
             title={f.abs_path}
@@ -4235,7 +4244,7 @@ function SessionLinksPanel({ links }: { links: hub.Link[] }) {
 
 function DaySessionRow({ row, onClick }: { row: hub.DaySession; onClick: () => void }) {
   return (
-    <div className="result-row" onClick={onClick}>
+    <div data-nav="open" tabIndex={-1} className="result-row" onClick={onClick}>
       <div className="row-head">
         <span className="row-meta">
           {clock(row.first_ts)}–{clock(row.last_ts)}

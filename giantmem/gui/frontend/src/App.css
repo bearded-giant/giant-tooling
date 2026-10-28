@@ -297,6 +297,12 @@
   border-left: 3px solid var(--accent);
   padding-left: 11px;
 }
+/* keyboard cursor on rows that only open on enter */
+[data-nav="open"]:focus {
+  outline: none;
+  background: var(--bg-3);
+  box-shadow: inset 3px 0 var(--accent);
+}
 .result-row .row-head {
   display: flex;
   gap: 6px;
