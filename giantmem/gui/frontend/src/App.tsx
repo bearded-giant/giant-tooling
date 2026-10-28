@@ -442,7 +442,7 @@ function App() {
   const [pruneOpen, setPruneOpen] = useState(false);
   const [uiZoom, setUiZoom] = useState<number>(() => {
     const n = Number(localStorage.getItem("gm.uiZoom"));
-    return Number.isFinite(n) && n >= 80 && n <= 150 ? n : 100;
+    return Number.isFinite(n) && n >= 80 && n <= 150 ? n : 90;
   });
   useEffect(() => {
     GetPref("uiZoom")
@@ -1852,15 +1852,15 @@ function ConfirmDeleteModal({
   );
 }
 
-// text size is a scale, not an absolute px — the UI mixes 11-28px on
+// text size is a scale, not an absolute px — the UI mixes 12-28px on
 // purpose (hierarchy), so one fixed size would flatten it. Each step
 // scales everything proportionally.
 const TEXT_SIZES: { label: string; zoom: number }[] = [
-  { label: "Small", zoom: 90 },
-  { label: "Default", zoom: 100 },
-  { label: "Large", zoom: 110 },
-  { label: "X-Large", zoom: 120 },
-  { label: "Huge", zoom: 135 },
+  { label: "Small", zoom: 80 },
+  { label: "Default", zoom: 90 },
+  { label: "Large", zoom: 100 },
+  { label: "X-Large", zoom: 110 },
+  { label: "Huge", zoom: 120 },
 ];
 
 function Switch({
