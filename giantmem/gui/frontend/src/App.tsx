@@ -188,6 +188,37 @@ function App() {
     localStorage.setItem("gm.sidebarWidth", String(sidebarWidth));
     SetPref("sidebarWidth", String(sidebarWidth)).catch(() => {});
   }, [sidebarWidth]);
+  // listWidth null = list and detail split the space evenly
+  const [listWidth, setListWidth] = useState<number | null>(() => {
+    const n = Number(localStorage.getItem("gm.listWidth"));
+    return n >= 240 ? n : null;
+  });
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(
+    () => localStorage.getItem("gm.sidebarCollapsed") === "1",
+  );
+  useEffect(() => {
+    GetPref("listWidth")
+      .then((v) => {
+        const n = Number(v);
+        if (n >= 240) setListWidth(n);
+      })
+      .catch(() => {});
+    GetPref("sidebarCollapsed")
+      .then((v) => {
+        if (v) setSidebarCollapsed(v === "1");
+      })
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    const v = listWidth ? String(listWidth) : "";
+    localStorage.setItem("gm.listWidth", v);
+    SetPref("listWidth", v).catch(() => {});
+  }, [listWidth]);
+  useEffect(() => {
+    const v = sidebarCollapsed ? "1" : "0";
+    localStorage.setItem("gm.sidebarCollapsed", v);
+    SetPref("sidebarCollapsed", v).catch(() => {});
+  }, [sidebarCollapsed]);
 
   const [turnOrder, setTurnOrder] = useState<"asc" | "desc">(() => {
     const v = localStorage.getItem("gm.turnOrder");
@@ -356,9 +387,6 @@ function App() {
   const doit = useDoit(tab === "doit", debouncedQuery, reloadKey, setErr);
   const searchRef = useRef<HTMLInputElement>(null);
   const activityFilterRef = useRef<HTMLInputElement>(null);
-  const gridRef = useRef<HTMLDivElement>(null);
-  const topbarRef = useRef<HTMLDivElement>(null);
-  const chipsRef = useRef<HTMLDivElement>(null);
 
   const refreshAll = useCallback(() => {
     setReloadKey((k) => k + 1);
@@ -848,33 +876,25 @@ function App() {
             : 0;
   const hasActiveFilters = activeFilterCount > 0;
 
-  // measure the topbar + filter-chips stack so the sidebar resizer doesn't
-  // start at the very top of the window and overlay the tab buttons. write
-  // the combined height to a CSS var the resizer reads.
-  useEffect(() => {
-    const apply = () => {
-      const top = topbarRef.current?.getBoundingClientRect().height ?? 0;
-      const chips = chipsRef.current?.getBoundingClientRect().height ?? 0;
-      const h = Math.ceil(top + chips);
-      gridRef.current?.style.setProperty("--topbar-h", `${h}px`);
-    };
-    apply();
-    const ro = new ResizeObserver(apply);
-    if (topbarRef.current) ro.observe(topbarRef.current);
-    if (chipsRef.current) ro.observe(chipsRef.current);
-    return () => ro.disconnect();
-  }, []);
-
   return (
     <div
       id="App"
-      ref={gridRef}
       className="app-grid"
       style={{
-        gridTemplateColumns: `${sidebarWidth}px 1fr 1fr`,
+        // zero-width tracks hold the resizers between columns
+        gridTemplateColumns: `${sidebarCollapsed ? 0 : sidebarWidth}px 0 minmax(240px, ${
+          listWidth ? `${listWidth}px` : "1fr"
+        }) 0 minmax(240px, 1fr)`,
       }}
     >
-      <div className="topbar" ref={topbarRef}>
+      <div className="topbar">
+        <button
+          className="refresh-btn"
+          title={sidebarCollapsed ? "show sidebar" : "hide sidebar"}
+          onClick={() => setSidebarCollapsed((c) => !c)}
+        >
+          {sidebarCollapsed ? "»" : "«"}
+        </button>
         <div className="brand">
           <img src={giantImg} alt="" className="brand-mark" />
           giantmem
@@ -1076,7 +1096,6 @@ function App() {
 
       <div
         className={`filter-chips${hasActiveFilters ? " has-filters" : ""}`}
-        ref={chipsRef}
       >
         {hasActiveFilters && (
           <span className="filter-active-label">
@@ -1190,8 +1209,7 @@ function App() {
         )}
       </div>
 
-      <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
-      <aside className="sidebar">
+      <aside className={`sidebar${sidebarCollapsed ? " collapsed" : ""}`}>
         {tab === "doit" && <DoitSidebar d={doit} />}
         {tab === "artifacts" && (
           <>
@@ -1339,6 +1357,13 @@ function App() {
           </>
         )}
       </aside>
+      <ColResizer
+        min={180}
+        max={600}
+        hidden={sidebarCollapsed}
+        onResize={setSidebarWidth}
+        onReset={() => setSidebarWidth(260)}
+      />
 
       <section className="results">
         {tab === "doit" && <DoitItems d={doit} />}
@@ -1435,6 +1460,12 @@ function App() {
           />
         )}
       </section>
+      <ColResizer
+        min={240}
+        max={4000}
+        onResize={setListWidth}
+        onReset={() => setListWidth(null)}
+      />
 
       <section className="detail">
         {tab === "tools" && toolSelected && (
@@ -2122,12 +2153,18 @@ function FileDetail({
   );
 }
 
-function SidebarResizer({
-  width,
+function ColResizer({
+  min,
+  max,
+  hidden,
   onResize,
+  onReset,
 }: {
-  width: number;
+  min: number;
+  max: number;
+  hidden?: boolean;
   onResize: (w: number) => void;
+  onReset: () => void;
 }) {
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -2136,7 +2173,7 @@ function SidebarResizer({
     const onMove = (e: MouseEvent) => {
       if (!dragging.current) return;
       const dx = e.clientX - startX.current;
-      const next = Math.max(180, Math.min(600, startW.current + dx));
+      const next = Math.max(min, Math.min(max, startW.current + dx));
       onResize(next);
     };
     const onUp = () => {
@@ -2150,20 +2187,21 @@ function SidebarResizer({
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  }, [onResize]);
+  }, [onResize, min, max]);
   return (
     <div
-      className="sidebar-resizer"
-      style={{ left: `${width}px` }}
-      title="drag to resize"
+      className="col-resizer"
+      style={hidden ? { visibility: "hidden" } : undefined}
+      title="drag to resize, double-click to reset"
       onMouseDown={(e) => {
         dragging.current = true;
         startX.current = e.clientX;
-        startW.current = width;
+        // rendered width, not state: the list column is 1fr until first drag
+        startW.current = (e.currentTarget.previousElementSibling as HTMLElement).offsetWidth;
         document.body.style.cursor = "col-resize";
         document.body.style.userSelect = "none";
       }}
-      onDoubleClick={() => onResize(260)}
+      onDoubleClick={onReset}
     />
   );
 }
