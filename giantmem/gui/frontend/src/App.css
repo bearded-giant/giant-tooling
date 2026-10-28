@@ -1466,3 +1466,133 @@
 .hub-check {
   white-space: nowrap;
 }
+
+/* doit todos */
+mark {
+  background: rgba(210, 153, 34, 0.35);
+  color: var(--fg);
+  border-radius: 2px;
+}
+.doit-add {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.doit-section {
+  padding: 3px 14px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--fg-muted);
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+}
+.doit-row {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+.doit-row:hover {
+  background: var(--bg-2);
+}
+.doit-row.selected {
+  background: var(--bg-3);
+  border-left: 3px solid var(--accent);
+  padding-left: 11px;
+}
+.doit-row.done .doit-text {
+  color: var(--fg-muted);
+  text-decoration: line-through;
+}
+.doit-row.in_progress .doit-glyph {
+  color: var(--accent);
+}
+.doit-row.done .doit-glyph {
+  color: var(--success);
+}
+.doit-glyph {
+  flex: none;
+  width: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+  text-align: center;
+}
+.doit-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.doit-snip {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+.chip.prio-critical {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.chip.prio-urgent {
+  border-color: var(--warn);
+  color: var(--warn);
+}
+.chip.prio-important {
+  border-color: var(--accent);
+  color: var(--accent-2);
+}
+.chip.status-in_progress {
+  border-color: var(--accent);
+  color: var(--accent-2);
+}
+.chip.status-done {
+  border-color: var(--success);
+  color: var(--success);
+}
+.doit-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0;
+}
+button.doit-danger {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+.doit-err {
+  color: var(--danger);
+}
+.doit-notes {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.doit-edit label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.doit-edit-row {
+  display: flex;
+  gap: 10px;
+}
+.doit-edit input[type="date"],
+.doit-edit textarea {
+  display: block;
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 6px 10px;
+  color: var(--fg);
+}
+.doit-edit textarea {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px;
+  resize: vertical;
+}
+.doit-keys {
+  display: block;
+  margin-top: 12px;
+}

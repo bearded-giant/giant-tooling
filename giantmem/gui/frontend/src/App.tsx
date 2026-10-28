@@ -18,6 +18,7 @@ import {
   BrowseTree,
   DaySessions,
   DeleteProject,
+  DoitAvailable,
   FacetCounts,
   GetArtifactBody,
   GetLiveBody,
@@ -51,9 +52,10 @@ import {
 } from "../wailsjs/go/main/App";
 import { artifacts, hub, main, search, sessions } from "../wailsjs/go/models";
 import PruneModal from "./PruneModal";
+import { DoitDetail, DoitItems, DoitSidebar, useDoit } from "./DoitView";
 import giantImg from "./assets/images/giant.jpg";
 
-type Tab = "artifacts" | "sessions" | "tools" | "activity" | "day";
+type Tab = "artifacts" | "sessions" | "tools" | "activity" | "day" | "doit";
 
 const TOOL_NAMES = [
   "Bash",
@@ -345,6 +347,14 @@ function App() {
     // css zoom scales the whole app; supported by WKWebView
     (document.body.style as any).zoom = uiZoom === 100 ? "" : `${uiZoom}%`;
   }, [uiZoom]);
+  // the tab only shows where do-it.nvim keeps its lists
+  const [doitOn, setDoitOn] = useState(false);
+  useEffect(() => {
+    DoitAvailable()
+      .then(setDoitOn)
+      .catch(() => {});
+  }, []);
+  const doit = useDoit(tab === "doit", debouncedQuery, reloadKey, setErr);
   const searchRef = useRef<HTMLInputElement>(null);
   const activityFilterRef = useRef<HTMLInputElement>(null);
   const gridRef = useRef<HTMLDivElement>(null);
@@ -510,6 +520,7 @@ function App() {
 
   // ordered ids list for j/k nav
   const visibleRowIDs: string[] = useMemo(() => {
+    if (tab === "doit") return [];
     if (tab === "artifacts") {
       return hybridRows.length
         ? hybridRows.map((h) => h.artifact.id)
@@ -598,6 +609,7 @@ function App() {
   // refetch results when inputs change
   useEffect(() => {
     setErr(null);
+    if (tab === "doit") return;
     setLoading(true);
     const run = async () => {
       try {
@@ -794,7 +806,9 @@ function App() {
         ? artifactFilterCount
         : tab === "tools"
           ? toolFilterCount
-          : 0;
+          : tab === "doit" && queryActive
+            ? 1
+            : 0;
   const hasActiveFilters = activeFilterCount > 0;
 
   // measure the topbar + filter-chips stack so the sidebar resizer doesn't
@@ -884,6 +898,17 @@ function App() {
           >
             tools
           </button>
+          {doitOn && (
+            <button
+              className={tab === "doit" ? "active" : ""}
+              onClick={() => {
+                setTab("doit");
+                setSelection(null);
+              }}
+            >
+              doit - todos
+            </button>
+          )}
         </div>
         {tab === "day" && (
           <div className="search-wrap day-pick">
@@ -904,13 +929,15 @@ function App() {
             placeholder={
               tab === "artifacts"
                 ? "hybrid search artifacts… (/ to focus)"
-                : "FTS search sessions… (/ to focus)"
+                : tab === "doit"
+                  ? "search lists, items, notes… (/ to focus)"
+                  : "FTS search sessions… (/ to focus)"
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        {tab !== "activity" && tab !== "day" && (
+        {tab !== "activity" && tab !== "day" && tab !== "doit" && (
           <div className="date-range" title="filter results by date range">
             <select
               value={dateRange.preset}
@@ -1118,6 +1145,7 @@ function App() {
 
       <SidebarResizer width={sidebarWidth} onResize={setSidebarWidth} />
       <aside className="sidebar">
+        {tab === "doit" && <DoitSidebar d={doit} />}
         {tab === "artifacts" && (
           <>
             <div className="sidebar-filter">
@@ -1262,6 +1290,7 @@ function App() {
       </aside>
 
       <section className="results">
+        {tab === "doit" && <DoitItems d={doit} />}
         {tab === "artifacts" && hybridRows.length > 0 &&
           hybridRows.map((h) => (
             <HybridRow
@@ -1376,7 +1405,8 @@ function App() {
                 : "no results"}
           </div>
         )}
-        {tab !== "tools" && !selection && (
+        {tab === "doit" && <DoitDetail d={doit} />}
+        {tab !== "tools" && tab !== "doit" && !selection && (
           <div className="detail-empty">
             {totalRows > 0
               ? "pick a row to read the body"
@@ -1494,7 +1524,9 @@ function App() {
 
       <div className="status-bar">
         <span>
-          {totalRows} {tab}
+          {tab === "doit"
+            ? `${doit.views.length} lists · ${doit.views.reduce((n, v) => n + v.open, 0)} open`
+            : `${totalRows} ${tab}`}
           {loading && " · loading…"}
         </span>
         {err && <span className="err">err: {err}</span>}
