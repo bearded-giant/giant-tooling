@@ -12,7 +12,7 @@
   },
   "info": {
     "productName": "giantmem",
-    "productVersion": "0.4.0",
+    "productVersion": "0.5.0",
     "copyright": "\u00a9 2026 Bryan Grimes",
     "comments": "Local-only memory browser over giantmem artifacts + sessions.",
     "protocols": [
