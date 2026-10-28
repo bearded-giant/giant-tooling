@@ -197,7 +197,7 @@ func (a *App) FeaturesByRepo() ([]FeatureRow, error) {
 	return out, rows.Err()
 }
 
-// SessionFilter scopes ListSessions and SessionFacets. Each non-empty field
+// SessionFilter scopes ListSessions. Each non-empty field
 // is ANDed into the WHERE clause. Since/Until are date-range specs (duration
 // like "7d", a bare date "2006-01-02", or RFC3339) shared with the other views.
 type SessionFilter struct {
@@ -657,80 +657,77 @@ func firstNonEmpty(strs ...string) string {
 }
 
 // SessionFacetCounts mirrors FacetCountsResult but groups sessions by their
-// archives.db dimensions: project, dir_type, topic, and a coarse date bucket.
+// archives.db dimensions. ProjectLast is each project's newest session
+// timestamp; the sidebar sorts by it.
 type SessionFacetCounts struct {
-	ByProject map[string]int `json:"byProject"`
-	ByDirType map[string]int `json:"byDirType"`
-	ByTopic   map[string]int `json:"byTopic"`
-	ByDate    map[string]int `json:"byDate"`
+	ByProject   map[string]int    `json:"byProject"`
+	ByDirType   map[string]int    `json:"byDirType"`
+	ByTopic     map[string]int    `json:"byTopic"`
+	ProjectLast map[string]string `json:"projectLast"`
 }
 
-// SessionFacets returns counts per project / dir_type / topic / date-bucket
-// for source_type='session' rows. Used to render the sessions-tab sidebar.
-func (a *App) SessionFacets() (SessionFacetCounts, error) {
+// SessionFacets returns counts per project / dir_type / topic for
+// source_type='session' rows inside the since/until range.
+func (a *App) SessionFacets(since, until string) (SessionFacetCounts, error) {
 	out := SessionFacetCounts{
-		ByProject: map[string]int{},
-		ByDirType: map[string]int{},
-		ByTopic:   map[string]int{},
-		ByDate:    map[string]int{},
+		ByProject:   map[string]int{},
+		ByDirType:   map[string]int{},
+		ByTopic:     map[string]int{},
+		ProjectLast: map[string]string{},
 	}
 	if a.archive == nil {
 		return out, nil
 	}
+	lo, hi, err := docTimeBounds(since, until)
+	if err != nil {
+		return out, err
+	}
+	where := `source_type='session'`
+	args := []any{}
+	if lo != "" {
+		where += ` AND timestamp >= ?`
+		args = append(args, lo)
+	}
+	if hi != "" {
+		where += ` AND timestamp < ?`
+		args = append(args, hi)
+	}
 	groups := []struct {
-		col string
-		dst map[string]int
+		col  string
+		dst  map[string]int
+		last map[string]string
 	}{
-		{"COALESCE(canonical_project, project, '')", out.ByProject},
-		{"COALESCE(dir_type,'')", out.ByDirType},
-		{"COALESCE(topic,'')", out.ByTopic},
+		{"COALESCE(canonical_project, project, '')", out.ByProject, out.ProjectLast},
+		{"COALESCE(dir_type,'')", out.ByDirType, nil},
+		{"COALESCE(topic,'')", out.ByTopic, nil},
 	}
 	for _, g := range groups {
 		rows, err := a.archive.Query(fmt.Sprintf(
-			`SELECT %s, COUNT(*) FROM documents WHERE source_type='session' GROUP BY %s`,
-			g.col, g.col,
-		))
+			`SELECT %s, COUNT(*), COALESCE(MAX(timestamp),'') FROM documents WHERE %s GROUP BY %s`,
+			g.col, where, g.col,
+		), args...)
 		if err != nil {
 			return out, err
 		}
 		for rows.Next() {
-			var k string
+			var k, ts string
 			var n int
-			if err := rows.Scan(&k, &n); err != nil {
+			if err := rows.Scan(&k, &n, &ts); err != nil {
 				rows.Close()
 				return out, err
 			}
 			g.dst[k] = n
+			if g.last != nil {
+				g.last[k] = ts
+			}
 		}
+		err = rows.Err()
 		rows.Close()
-	}
-	// Date buckets in a single pass via CASE WHEN.
-	dateQ := `SELECT
-                  CASE
-                    WHEN date(timestamp) = date('now','localtime') THEN 'today'
-                    WHEN date(timestamp) = date('now','-1 day','localtime') THEN 'yesterday'
-                    WHEN timestamp >= datetime('now','-7 days') THEN '7d'
-                    WHEN timestamp >= datetime('now','-30 days') THEN '30d'
-                    ELSE 'older'
-                  END AS bucket,
-                  COUNT(*)
-              FROM documents
-              WHERE source_type='session'
-              GROUP BY bucket`
-	rows, err := a.archive.Query(dateQ)
-	if err != nil {
-		return out, err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var k string
-		var n int
-		if err := rows.Scan(&k, &n); err != nil {
+		if err != nil {
 			return out, err
 		}
-		out.ByDate[k] = n
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // GetArtifact returns one artifact row by ID. Errors when nothing matches.

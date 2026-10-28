@@ -801,13 +801,10 @@
   text-decoration: underline;
 }
 
-/* tree sidebar */
+/* artifacts sidebar */
 .tree {
   font-size: 13px;
   overflow-x: hidden;
-}
-.tree-indent {
-  margin-left: 12px;
 }
 .tree-row {
   display: flex;
@@ -835,11 +832,9 @@
 .tree-row.repo .tree-label {
   font-weight: 600;
 }
-.tree-row.feature .tree-label {
+.tree-row .bucket-feature {
   color: var(--accent-2);
-}
-.tree-row.dir .tree-label {
-  color: var(--fg-muted);
+  font-weight: 400;
 }
 .tree-row .count {
   margin-left: auto;

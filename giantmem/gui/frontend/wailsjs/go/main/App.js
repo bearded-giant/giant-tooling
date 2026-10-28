@@ -154,8 +154,8 @@ export function SearchToolUses(arg1) {
   return window['go']['main']['App']['SearchToolUses'](arg1);
 }
 
-export function SessionFacets() {
-  return window['go']['main']['App']['SessionFacets']();
+export function SessionFacets(arg1, arg2) {
+  return window['go']['main']['App']['SessionFacets'](arg1, arg2);
 }
 
 export function SessionHub(arg1) {

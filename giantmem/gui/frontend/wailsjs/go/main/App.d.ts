@@ -83,7 +83,7 @@ export function SearchHybrid(arg1:string,arg2:artifacts.ListFilter,arg3:number,a
 
 export function SearchToolUses(arg1:main.ToolUseFilter):Promise<Array<main.ToolUseHit>>;
 
-export function SessionFacets():Promise<main.SessionFacetCounts>;
+export function SessionFacets(arg1:string,arg2:string):Promise<main.SessionFacetCounts>;
 
 export function SessionHub(arg1:string):Promise<main.SessionHubData>;
 

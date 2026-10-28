@@ -646,7 +646,7 @@ export namespace main {
 	    byProject: Record<string, number>;
 	    byDirType: Record<string, number>;
 	    byTopic: Record<string, number>;
-	    byDate: Record<string, number>;
+	    projectLast: Record<string, string>;
 	
 	    static createFrom(source: any = {}) {
 	        return new SessionFacetCounts(source);
@@ -657,7 +657,7 @@ export namespace main {
 	        this.byProject = source["byProject"];
 	        this.byDirType = source["byDirType"];
 	        this.byTopic = source["byTopic"];
-	        this.byDate = source["byDate"];
+	        this.projectLast = source["projectLast"];
 	    }
 	}
 	export class SessionFilter {

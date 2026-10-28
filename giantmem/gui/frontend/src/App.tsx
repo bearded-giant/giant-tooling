@@ -152,7 +152,6 @@ function App() {
   const [selRepo, setSelRepo] = useState<string>("");
   const [sidebarFilter, setSidebarFilter] = useState("");
   const [browseRows, setBrowseRows] = useState<main.BrowseRow[]>([]);
-  const [treeExpanded, setTreeExpanded] = useState<Set<string>>(new Set());
   // history docs = per-session turn-set summaries. Useful, but they bump on
   // every session and drown the recent view — hence the toggle.
   const [showHistory, setShowHistory] = useState<boolean>(
@@ -398,9 +397,6 @@ function App() {
     BrowseTree()
       .then((rows) => setBrowseRows(rows || []))
       .catch((e) => setErr(String(e)));
-    SessionFacets()
-      .then((sf) => setSessionFacets(sf))
-      .catch((e) => setErr(String(e)));
     Version()
       .then((v: string) => setVersion(v))
       .catch(() => setVersion(""));
@@ -420,6 +416,30 @@ function App() {
       .then((l) => setLengths(l || []))
       .catch((e) => setErr(String(e)));
   }, [reloadKey]);
+
+  useEffect(() => {
+    SessionFacets(since, until)
+      .then((sf) => setSessionFacets(sf))
+      .catch((e) => setErr(String(e)));
+  }, [since, until, reloadKey]);
+
+  // day tab: same project column as sessions, built from that day's rows
+  const dayProjects = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const last: Record<string, string> = {};
+    for (const r of dayRows) {
+      counts[r.project] = (counts[r.project] || 0) + 1;
+      if (r.last_ts > (last[r.project] || "")) last[r.project] = r.last_ts;
+    }
+    return { counts, last };
+  }, [dayRows]);
+  const dayView = useMemo(
+    () =>
+      selSessionProject
+        ? dayRows.filter((r) => r.project === selSessionProject)
+        : dayRows,
+    [dayRows, selSessionProject],
+  );
 
   // sparklines: fan out per visible repo after RecentRepos lands. Cached by
   // worktreePath so re-renders don't refetch. On reloadKey bump we refetch
@@ -463,56 +483,57 @@ function App() {
   }, [expandedWorktree, reloadKey]);
 
   // browse mode (no query): compact grouped list from the tree data. Shared
-  // context (repo · feature, or dir) lives in the group header once, not on
+  // context (repo · feature) lives in the group header once, not on
   // every row — the old flat ListArtifacts wall repeated it 80 times. Sidebar
   // filter (text + ext:md) and the topbar date range both apply here, so
   // "md files touched in the last 15 min for repo X" is: pick repo, 15m
   // preset, type ext:md.
   const sbFilter = useMemo(() => parseSidebarFilter(sidebarFilter), [sidebarFilter]);
-  const browseGroups = useMemo(() => {
+  const rangedRows = useMemo(() => {
     const { from, to } = rangeToMs(dateRange);
-    let rows = browseRows.filter((r) => {
+    return browseRows.filter((r) => {
       if (!showHistory && r.type === "history") return false;
       const ms = r.mtime * 1000;
       if (ms < from || ms >= to) return false;
       return rowMatchesFilter(r, sbFilter);
     });
-    if (selRepo) rows = rows.filter((r) => r.repo === selRepo);
-    if (selFeature) rows = rows.filter((r) => r.feature === selFeature);
-    if (!selRepo && !selFeature) {
-      // recent across everything: bucket by repo · feature, freshest bucket
-      // first, newest file first inside, 300-row cap
-      const recent = [...rows].sort((a, b) => b.mtime - a.mtime).slice(0, 300);
-      const buckets = new Map<string, { dir: string; files: main.BrowseRow[] }>();
-      for (const r of recent) {
-        const key = `${r.repo}\x00${r.feature}`;
-        let b = buckets.get(key);
-        if (!b) {
-          b = { dir: r.feature ? `${r.repo} · ${r.feature}` : r.repo, files: [] };
-          buckets.set(key, b);
-        }
-        b.files.push(r);
+  }, [browseRows, sbFilter, dateRange, showHistory, reloadKey]);
+  // sidebar = the recent view's repo · feature group headers, freshest first
+  const browseBuckets = useMemo(() => {
+    const byKey = new Map<string, BrowseBucket>();
+    for (const r of rangedRows) {
+      const key = `${r.repo}\x00${r.feature}`;
+      let b = byKey.get(key);
+      if (!b) {
+        b = { repo: r.repo, feature: r.feature, count: 0, last: 0, dead: true };
+        byKey.set(key, b);
       }
-      return [...buckets.values()];
+      b.count++;
+      if (r.mtime > b.last) b.last = r.mtime;
+      if (!r.dead) b.dead = false;
     }
-    const byDir = new Map<string, main.BrowseRow[]>();
-    for (const r of rows) {
-      let rel = r.rel;
-      if (selFeature && rel.startsWith(`features/${r.feature}/`)) {
-        rel = rel.slice(`features/${r.feature}/`.length);
+    return [...byKey.values()].sort((a, b) => b.last - a.last);
+  }, [rangedRows]);
+  const browseGroups = useMemo(() => {
+    const picked = !!selRepo || !!selFeature;
+    const rows = picked
+      ? rangedRows.filter((r) => (!selRepo || r.repo === selRepo) && r.feature === selFeature)
+      : rangedRows;
+    // freshest bucket first, newest file first inside; the 300-row cap only
+    // applies to the unfiltered view
+    const recent = [...rows].sort((a, b) => b.mtime - a.mtime).slice(0, picked ? undefined : 300);
+    const buckets = new Map<string, { dir: string; files: main.BrowseRow[] }>();
+    for (const r of recent) {
+      const key = `${r.repo}\x00${r.feature}`;
+      let b = buckets.get(key);
+      if (!b) {
+        b = { dir: r.feature ? `${r.repo} · ${r.feature}` : r.repo, files: [] };
+        buckets.set(key, b);
       }
-      const dir = rel.includes("/") ? rel.slice(0, rel.lastIndexOf("/") + 1) : "./";
-      const list = byDir.get(dir);
-      if (list) list.push(r);
-      else byDir.set(dir, [r]);
+      b.files.push(r);
     }
-    return [...byDir.entries()]
-      .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([dir, files]) => ({
-        dir,
-        files: [...files].sort((a, b) => a.rel.localeCompare(b.rel)),
-      }));
-  }, [browseRows, selRepo, selFeature, sbFilter, dateRange, showHistory, reloadKey]);
+    return [...buckets.values()];
+  }, [rangedRows, selRepo, selFeature]);
   const browsePaths = useMemo(
     () => browseGroups.flatMap((g) => g.files.map((f) => f.path)),
     [browseGroups],
@@ -782,7 +803,7 @@ function App() {
       : tab === "tools"
         ? toolHits.length
         : tab === "day"
-          ? dayRows.length
+          ? dayView.length
           : sessionHits.length;
 
   const trimmedQuery = query.trim();
@@ -806,7 +827,11 @@ function App() {
         ? artifactFilterCount
         : tab === "tools"
           ? toolFilterCount
-          : tab === "doit" && queryActive
+          : tab === "day"
+            ? selSessionProject
+              ? 1
+              : 0
+            : tab === "doit" && queryActive
             ? 1
             : 0;
   const hasActiveFilters = activeFilterCount > 0;
@@ -1082,6 +1107,14 @@ function App() {
               )}
             </>
           )}
+        {tab === "day" && selSessionProject && (
+          <span
+            className="filter-chip"
+            onClick={() => setSelSessionProject("")}
+          >
+            project: {selSessionProject} <span className="x">×</span>
+          </span>
+        )}
         {tab === "artifacts" &&
           (selFeature ? 1 : 0) + (selRepo ? 1 : 0) > 0 && (
             <>
@@ -1126,6 +1159,8 @@ function App() {
                 clearFacets();
               } else if (tab === "tools") {
                 setToolNameFilter("any");
+              } else if (tab === "day") {
+                setSelSessionProject("");
               }
             }}
             style={{ color: "var(--fg-muted)" }}
@@ -1165,34 +1200,15 @@ function App() {
                 history {showHistory ? "on" : "off"}
               </button>
             </div>
-            <TreeSidebar
-              rows={browseRows}
-              filter={sidebarFilter}
-              expanded={treeExpanded}
-              onToggle={(key) =>
-                setTreeExpanded((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(key)) next.delete(key);
-                  else next.add(key);
-                  return next;
-                })
-              }
+            <BucketSidebar
+              buckets={browseBuckets}
               selRepo={selRepo}
               selFeature={selFeature}
-              selection={selection}
-              onPickRepo={(repo) => {
-                setSelFeature("");
-                setSelRepo(selRepo === repo && !selFeature ? "" : repo);
+              onPick={(b) => {
+                const on = selRepo === b.repo && selFeature === b.feature;
+                setSelRepo(on ? "" : b.repo);
+                setSelFeature(on ? "" : b.feature);
               }}
-              onPickFeature={(repo, feature) => {
-                if (selRepo === repo && selFeature === feature) {
-                  setSelFeature("");
-                } else {
-                  setSelRepo(repo);
-                  setSelFeature(feature);
-                }
-              }}
-              onPickFile={(path) => setSelection({ kind: "file", path })}
               onRepoMenu={(repo, x, y) =>
                 setRepoMenu({ repo, x, y, purgeDefault: false })
               }
@@ -1230,6 +1246,28 @@ function App() {
             </p>
           </div>
         )}
+        {tab === "day" && (
+          <>
+            <div className="sidebar-filter">
+              <input
+                type="search"
+                placeholder="filter projects…"
+                value={sidebarFilter}
+                onChange={(e) => setSidebarFilter(e.target.value)}
+              />
+            </div>
+            <SingleFacetGroup
+              title="project"
+              counts={dayProjects.counts}
+              recent={dayProjects.last}
+              selected={selSessionProject}
+              onPick={setSelSessionProject}
+              filter={sidebarFilter}
+              isCollapsed={collapsed.has("project")}
+              onToggleCollapse={() => toggleCollapsed("project")}
+            />
+          </>
+        )}
         {tab === "sessions" && sessionFacets && (
           <>
             <div className="sidebar-filter">
@@ -1243,6 +1281,7 @@ function App() {
             <SingleFacetGroup
               title="project"
               counts={sessionFacets.byProject || {}}
+              recent={sessionFacets.projectLast || {}}
               selected={selSessionProject}
               onPick={setSelSessionProject}
               filter={sidebarFilter}
@@ -1308,7 +1347,6 @@ function App() {
         {tab === "artifacts" && hybridRows.length === 0 && (
           <BrowseList
             groups={browseGroups}
-            grouped={!!selRepo || !!selFeature}
             selPath={selection?.kind === "file" ? selection.path : ""}
             onPick={(path) => setSelection({ kind: "file", path })}
           />
@@ -1346,11 +1384,11 @@ function App() {
               }
             />
           ))}
-        {tab === "day" && dayRows.length === 0 && !loading && (
+        {tab === "day" && dayView.length === 0 && !loading && (
           <div className="detail-empty">no Claude sessions with tool activity on {day}</div>
         )}
         {tab === "day" &&
-          dayRows.map((r) => (
+          dayView.map((r) => (
             <DaySessionRow
               key={r.session_id}
               row={r}
@@ -1888,36 +1926,15 @@ function AboutModal({
   );
 }
 
-// ----- tree sidebar ---------------------------------------------------------
+// ----- artifacts sidebar ----------------------------------------------------
 
-type TreeDir = {
-  dirs: Map<string, TreeDir>;
-  files: main.BrowseRow[];
-};
-
-type RepoNode = {
+type BrowseBucket = {
   repo: string;
-  dead: boolean;
-  features: Map<string, TreeDir>; // "" key = repo-level docs
+  feature: string;
   count: number;
+  last: number;
+  dead: boolean;
 };
-
-function newDir(): TreeDir {
-  return { dirs: new Map(), files: [] };
-}
-
-function insertPath(root: TreeDir, segs: string[], row: main.BrowseRow) {
-  let cur = root;
-  for (let i = 0; i < segs.length - 1; i++) {
-    let next = cur.dirs.get(segs[i]);
-    if (!next) {
-      next = newDir();
-      cur.dirs.set(segs[i], next);
-    }
-    cur = next;
-  }
-  cur.files.push(row);
-}
 
 function sessionIDFromPath(p: string): string {
   const parts = p.split("/");
@@ -1929,206 +1946,43 @@ function sessionIDFromPath(p: string): string {
   return stem;
 }
 
-function TreeSidebar({
-  rows,
-  filter,
-  expanded,
-  onToggle,
+function BucketSidebar({
+  buckets,
   selRepo,
   selFeature,
-  selection,
-  onPickRepo,
-  onPickFeature,
-  onPickFile,
+  onPick,
   onRepoMenu,
 }: {
-  rows: main.BrowseRow[];
-  filter: string;
-  expanded: Set<string>;
-  onToggle: (key: string) => void;
+  buckets: BrowseBucket[];
   selRepo: string;
   selFeature: string;
-  selection: Selection;
-  onPickRepo: (repo: string) => void;
-  onPickFeature: (repo: string, feature: string) => void;
-  onPickFile: (path: string) => void;
+  onPick: (b: BrowseBucket) => void;
   onRepoMenu: (repo: string, x: number, y: number) => void;
 }) {
-  const f = useMemo(() => parseSidebarFilter(filter), [filter]);
-  const q = f.text || f.ext;
-  const repos = useMemo(() => {
-    const byRepo = new Map<string, RepoNode>();
-    for (const r of rows) {
-      if (!rowMatchesFilter(r, f)) {
-        continue;
-      }
-      let node = byRepo.get(r.repo);
-      if (!node) {
-        node = { repo: r.repo, dead: true, features: new Map(), count: 0 };
-        byRepo.set(r.repo, node);
-      }
-      node.count++;
-      if (!r.dead) node.dead = false;
-      let root = node.features.get(r.feature);
-      if (!root) {
-        root = newDir();
-        node.features.set(r.feature, root);
-      }
-      // strip the features/{name}/ prefix so the feature node shows its own
-      // subtree, not the fixed features/ scaffolding
-      let rel = r.rel;
-      if (r.feature && rel.startsWith(`features/${r.feature}/`)) {
-        rel = rel.slice(`features/${r.feature}/`.length);
-      }
-      insertPath(root, rel.split("/"), r);
-    }
-    return [...byRepo.values()].sort((a, b) => a.repo.localeCompare(b.repo));
-  }, [rows, f]);
-
-  // filtering auto-expands everything that survived; manual expand state
-  // drives the unfiltered browse
-  const isOpen = (key: string) => (q ? true : expanded.has(key));
-
-  const selPath = selection?.kind === "file" ? selection.path : "";
-
   return (
     <div className="tree">
-      {repos.map((node) => {
-        const rkey = `r:${node.repo}`;
-        const featureNames = [...node.features.keys()].sort((a, b) => {
-          if (a === "") return 1; // repo-level docs after features
-          if (b === "") return -1;
-          return a.localeCompare(b);
-        });
-        return (
-          <div key={rkey}>
-            <div
-              className={`tree-row repo ${selRepo === node.repo && !selFeature ? "selected" : ""}`}
-              onClick={() => onToggle(rkey)}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                onRepoMenu(node.repo, e.clientX, e.clientY);
-              }}
-            >
-              <span className="facet-arrow">{isOpen(rkey) ? "▾" : "▸"}</span>
-              <span
-                className="tree-label"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onPickRepo(node.repo);
-                  if (!isOpen(rkey)) onToggle(rkey);
-                }}
-                title={node.repo}
-              >
-                {node.repo}
-              </span>
-              {node.dead && <span className="chip dead">gone</span>}
-              <span className="count">{node.count}</span>
-            </div>
-            {isOpen(rkey) &&
-              featureNames.map((f) => {
-                const fkey = `${rkey}/f:${f}`;
-                const root = node.features.get(f)!;
-                return (
-                  <div key={fkey} className="tree-indent">
-                    <div
-                      className={`tree-row feature ${
-                        selRepo === node.repo && selFeature === f && f !== ""
-                          ? "selected"
-                          : ""
-                      }`}
-                      onClick={() => onToggle(fkey)}
-                    >
-                      <span className="facet-arrow">
-                        {isOpen(fkey) ? "▾" : "▸"}
-                      </span>
-                      <span
-                        className="tree-label"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (f !== "") onPickFeature(node.repo, f);
-                          if (!isOpen(fkey)) onToggle(fkey);
-                        }}
-                      >
-                        {f === "" ? "(repo docs)" : f}
-                      </span>
-                    </div>
-                    {isOpen(fkey) && (
-                      <TreeDirView
-                        dir={root}
-                        keyPrefix={fkey}
-                        isOpen={isOpen}
-                        onToggle={onToggle}
-                        onPickFile={onPickFile}
-                        selPath={selPath}
-                      />
-                    )}
-                  </div>
-                );
-              })}
-          </div>
-        );
-      })}
-      {repos.length === 0 && (
-        <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>
-          {q ? "nothing matches" : "no indexed files"}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function TreeDirView({
-  dir,
-  keyPrefix,
-  isOpen,
-  onToggle,
-  onPickFile,
-  selPath,
-}: {
-  dir: TreeDir;
-  keyPrefix: string;
-  isOpen: (key: string) => boolean;
-  onToggle: (key: string) => void;
-  onPickFile: (path: string) => void;
-  selPath: string;
-}) {
-  const dirNames = [...dir.dirs.keys()].sort();
-  const files = [...dir.files].sort((a, b) => a.rel.localeCompare(b.rel));
-  return (
-    <div className="tree-indent">
-      {dirNames.map((d) => {
-        const dkey = `${keyPrefix}/d:${d}`;
-        return (
-          <div key={dkey}>
-            <div className="tree-row dir" onClick={() => onToggle(dkey)}>
-              <span className="facet-arrow">{isOpen(dkey) ? "▾" : "▸"}</span>
-              <span className="tree-label">{d}/</span>
-            </div>
-            {isOpen(dkey) && (
-              <TreeDirView
-                dir={dir.dirs.get(d)!}
-                keyPrefix={dkey}
-                isOpen={isOpen}
-                onToggle={onToggle}
-                onPickFile={onPickFile}
-                selPath={selPath}
-              />
-            )}
-          </div>
-        );
-      })}
-      {files.map((f) => (
+      {buckets.map((b) => (
         <div
-          key={f.path}
-          className={`tree-row file ${selPath === f.path ? "selected" : ""}`}
-          onClick={() => onPickFile(f.path)}
-          title={f.path}
+          key={`${b.repo}\x00${b.feature}`}
+          className={`tree-row repo ${selRepo === b.repo && selFeature === b.feature ? "selected" : ""}`}
+          onClick={() => onPick(b)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            onRepoMenu(b.repo, e.clientX, e.clientY);
+          }}
+          title={`${b.repo}${b.feature ? ` · ${b.feature}` : ""} · last ${formatMtime(b.last)}`}
         >
-          <span className="tree-label">{f.rel.split("/").pop()}</span>
-          {f.type && <span className={`chip type-${f.type}`}>{f.type}</span>}
+          <span className="tree-label">
+            {b.repo}
+            {b.feature && <span className="bucket-feature"> · {b.feature}</span>}
+          </span>
+          {b.dead && <span className="chip dead">gone</span>}
+          <span className="count">{b.count}</span>
         </div>
       ))}
+      {buckets.length === 0 && (
+        <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>nothing in range</div>
+      )}
     </div>
   );
 }
@@ -2391,9 +2245,11 @@ function SingleFacetGroup({
   isCollapsed = false,
   onToggleCollapse,
   onItemMenu,
+  recent,
 }: {
   title: string;
   counts: Record<string, number>;
+  recent?: Record<string, string>;
   selected: string;
   onPick: (v: string) => void;
   minCount?: number;
@@ -2405,7 +2261,9 @@ function SingleFacetGroup({
   const q = filter.toLowerCase();
   const sorted = Object.entries(counts)
     .filter(([k, n]) => k !== "" && n >= minCount && (!q || k.toLowerCase().includes(q)))
-    .sort((a, b) => b[1] - a[1]);
+    .sort((a, b) =>
+      recent ? (recent[b[0]] || "").localeCompare(recent[a[0]] || "") : b[1] - a[1],
+    );
   if (sorted.length === 0 && !selected) return null;
   return (
     <div className="facet-group">
@@ -2440,17 +2298,14 @@ function SingleFacetGroup({
 }
 
 // BrowseList: compact rows for browse mode. Every group carries the shared
-// context in its header exactly once — dir path when a repo/feature is
-// picked, repo · feature bucket in the recent view — so rows are just
+// repo · feature context in its header exactly once, so rows are just
 // name + type + time.
 function BrowseList({
   groups,
-  grouped,
   selPath,
   onPick,
 }: {
   groups: { dir: string; files: main.BrowseRow[] }[];
-  grouped: boolean;
   selPath: string;
   onPick: (path: string) => void;
 }) {
@@ -2471,7 +2326,9 @@ function BrowseList({
             >
               {f.type && <span className={`chip type-${f.type}`}>{f.type}</span>}
               <span className="browse-name">
-                {grouped ? f.rel.split("/").pop() : f.rel}
+                {f.feature && f.rel.startsWith(`features/${f.feature}/`)
+                  ? f.rel.slice(`features/${f.feature}/`.length)
+                  : f.rel}
               </span>
               {f.dead && <span className="chip dead">gone</span>}
               <span className="browse-meta">{formatMtime(f.mtime)}</span>
