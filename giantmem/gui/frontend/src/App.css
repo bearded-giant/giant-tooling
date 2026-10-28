@@ -64,10 +64,6 @@
   border-radius: 6px;
   border: 1px solid var(--border);
 }
-.topbar .tabs {
-  display: flex;
-  gap: 4px;
-}
 .topbar .search-wrap {
   flex: 1;
 }
@@ -119,6 +115,56 @@
 @keyframes refresh-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+.ribbon {
+  grid-column: 1;
+  grid-row: 2 / -1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+  background: var(--bg-2);
+  border-right: 1px solid var(--border);
+}
+.ribbon-sep {
+  width: 24px;
+  height: 1px;
+  margin: 4px 0;
+  background: var(--border);
+}
+.ribbon-btn {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: var(--fg-muted);
+}
+.ribbon-btn:hover {
+  background: var(--bg-3);
+  border-color: transparent;
+  color: var(--fg);
+}
+.ribbon-btn.active {
+  background: var(--bg-3);
+  border-color: transparent;
+  color: var(--accent);
+}
+.ribbon-btn .tab-filter-badge {
+  position: absolute;
+  top: -3px;
+  right: -5px;
+  margin: 0;
+  min-width: 14px;
+  height: 14px;
+  font-size: 10px;
 }
 
 .sidebar {
@@ -612,7 +658,7 @@
   padding: 6px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--bg);
-  grid-column: 1 / -1;
+  grid-column: 2 / -1;
   min-height: 32px;
   align-items: center;
 }

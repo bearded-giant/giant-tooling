@@ -57,6 +57,87 @@ import giantImg from "./assets/images/giant.jpg";
 
 type Tab = "artifacts" | "sessions" | "tools" | "activity" | "day" | "doit";
 
+// lucide icon paths, the set obsidian's ribbon uses
+const TABS: { id: Tab; label: string; icon: JSX.Element }[] = [
+  { id: "activity", label: "activity", icon: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" /> },
+  {
+    id: "sessions",
+    label: "sessions",
+    icon: (
+      <>
+        <path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z" />
+        <path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1" />
+      </>
+    ),
+  },
+  {
+    id: "day",
+    label: "day",
+    icon: (
+      <>
+        <path d="M8 2v4" />
+        <path d="M16 2v4" />
+        <rect width="18" height="18" x="3" y="4" rx="2" />
+        <path d="M3 10h18" />
+      </>
+    ),
+  },
+  {
+    id: "artifacts",
+    label: "artifacts",
+    icon: (
+      <>
+        <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z" />
+        <path d="M14 2v4a2 2 0 0 0 2 2h4" />
+        <path d="M10 9H8" />
+        <path d="M16 13H8" />
+        <path d="M16 17H8" />
+      </>
+    ),
+  },
+  {
+    id: "tools",
+    label: "tools",
+    icon: (
+      <>
+        <polyline points="4 17 10 11 4 5" />
+        <line x1="12" x2="20" y1="19" y2="19" />
+      </>
+    ),
+  },
+  {
+    id: "doit",
+    label: "doit - todos",
+    icon: (
+      <>
+        <rect x="3" y="5" width="6" height="6" rx="1" />
+        <path d="m3 17 2 2 4-4" />
+        <path d="M13 6h8" />
+        <path d="M13 12h8" />
+        <path d="M13 18h8" />
+      </>
+    ),
+  },
+];
+
+function Icon({ children }: { children: React.ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="20"
+      height="20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.75}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
 const TOOL_NAMES = [
   "Bash",
   "Read",
@@ -882,90 +963,15 @@ function App() {
       className="app-grid"
       style={{
         // zero-width tracks hold the resizers between columns
-        gridTemplateColumns: `${sidebarCollapsed ? 0 : sidebarWidth}px 0 minmax(240px, ${
+        gridTemplateColumns: `44px ${sidebarCollapsed ? 0 : sidebarWidth}px 0 minmax(240px, ${
           listWidth ? `${listWidth}px` : "1fr"
         }) 0 minmax(240px, 1fr)`,
       }}
     >
       <div className="topbar">
-        <button
-          className="refresh-btn"
-          title={sidebarCollapsed ? "show sidebar" : "hide sidebar"}
-          onClick={() => setSidebarCollapsed((c) => !c)}
-        >
-          {sidebarCollapsed ? "»" : "«"}
-        </button>
         <div className="brand">
           <img src={giantImg} alt="" className="brand-mark" />
           giantmem
-        </div>
-        <div className="tabs">
-          <button
-            className={tab === "activity" ? "active" : ""}
-            onClick={() => {
-              setTab("activity");
-              setSelection(null);
-            }}
-          >
-            activity
-          </button>
-          <button
-            className={tab === "sessions" ? "active" : ""}
-            onClick={() => {
-              setTab("sessions");
-              setSelection(null);
-            }}
-          >
-            sessions
-            {sessionFilterCount > 0 && (
-              <span className="tab-filter-badge" title={`${sessionFilterCount} filter(s) active`}>
-                {sessionFilterCount}
-              </span>
-            )}
-          </button>
-          <button
-            className={tab === "day" ? "active" : ""}
-            onClick={() => {
-              setTab("day");
-              setSelection(null);
-            }}
-          >
-            day
-          </button>
-          <button
-            className={tab === "artifacts" ? "active" : ""}
-            onClick={() => {
-              setTab("artifacts");
-              setSelection(null);
-            }}
-          >
-            artifacts
-            {artifactFilterCount > 0 && (
-              <span className="tab-filter-badge" title={`${artifactFilterCount} filter(s) active`}>
-                {artifactFilterCount}
-              </span>
-            )}
-          </button>
-          <button
-            className={tab === "tools" ? "active" : ""}
-            onClick={() => {
-              setTab("tools");
-              setSelection(null);
-            }}
-          >
-            tools
-          </button>
-          {doitOn && (
-            <button
-              className={tab === "doit" ? "active" : ""}
-              onClick={() => {
-                setTab("doit");
-                setSelection(null);
-              }}
-            >
-              doit - todos
-            </button>
-          )}
         </div>
         {tab === "day" && (
           <div className="search-wrap day-pick">
@@ -1209,6 +1215,41 @@ function App() {
         )}
       </div>
 
+      <nav className="ribbon">
+        <button
+          className="ribbon-btn"
+          title={sidebarCollapsed ? "expand sidebar" : "collapse sidebar"}
+          onClick={() => setSidebarCollapsed((c) => !c)}
+        >
+          <Icon>
+            <rect x="3" y="3" width="18" height="18" rx="4" />
+            <rect x="6.5" y="6.5" width="3.5" height="11" rx="1" fill="currentColor" stroke="none" />
+          </Icon>
+        </button>
+        <div className="ribbon-sep" />
+        {TABS.filter((t) => t.id !== "doit" || doitOn).map((t) => {
+          const badge =
+            t.id === "sessions" ? sessionFilterCount : t.id === "artifacts" ? artifactFilterCount : 0;
+          return (
+            <button
+              key={t.id}
+              className={`ribbon-btn${tab === t.id ? " active" : ""}`}
+              title={t.label}
+              onClick={() => {
+                setTab(t.id);
+                setSelection(null);
+              }}
+            >
+              <Icon>{t.icon}</Icon>
+              {badge > 0 && (
+                <span className="tab-filter-badge" title={`${badge} filter(s) active`}>
+                  {badge}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </nav>
       <aside className={`sidebar${sidebarCollapsed ? " collapsed" : ""}`}>
         {tab === "doit" && <DoitSidebar d={doit} />}
         {tab === "artifacts" && (
