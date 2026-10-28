@@ -903,6 +903,13 @@ function App() {
       TakePendingLink();
     });
   }, []);
+  useEffect(() => {
+    const offs = [
+      EventsOn("menu:settings", () => setSettingsOpen(true)),
+      EventsOn("menu:about", () => setAboutOpen(true)),
+    ];
+    return () => offs.forEach((off) => off());
+  }, []);
 
   const clearFacets = () => {
     setSelFeature("");
