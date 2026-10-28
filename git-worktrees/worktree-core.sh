@@ -16,7 +16,7 @@ declare -a __WT_REGISTERED_PREFIXES=()
 # read per-project config via indirect expansion
 __wt_config() {
     local prefix="$1" key="$2" default="${3:-}"
-    local var="${prefix^^}_${key}"
+    local var="$(__wt_upper "$prefix")_${key}"
     echo "${!var:-$default}"
 }
 
@@ -1357,12 +1357,15 @@ __wt_complete_all() {
 }
 
 # ---------------------------------------------------------------------------
+# bash 3.2 (macOS /bin/bash) has no ${var^^}
+__wt_upper() { printf '%s' "$1" | tr '[:lower:]' '[:upper:]'; }
+
 # wt_register - create all user-facing functions for a prefix
 # ---------------------------------------------------------------------------
 
 wt_register() {
     local p="$1"
-    local uc="${p^^}"
+    local uc; uc=$(__wt_upper "$p")
 
     # derive LAST_FILE
     eval "${uc}_LAST_FILE=\"\${${uc}_BASE}/.last-branch\""
@@ -1513,7 +1516,7 @@ wt_rename_prefix() {
         return 1
     fi
 
-    local uc_old="${old^^}" uc_new="${new^^}"
+    local uc_old uc_new; uc_old=$(__wt_upper "$old"); uc_new=$(__wt_upper "$new")
     local ws_old ws_new
     ws_old="$(sed -n "s/^${uc_old}_WS_BASE=\"\(.*\)\"\$/\1/p" "$config")"
     ws_new="$ws_old"
@@ -1816,7 +1819,7 @@ wt_init() {
     read -rp "Workspace alias prefix (empty to skip) [$ws_default]: " ws_base
     ws_base="${ws_base:-$ws_default}"
 
-    local uc="${prefix^^}"
+    local uc; uc=$(__wt_upper "$prefix")
     local config_file="$worktrees_dir/wt-${project_name}.sh"
 
     cat > "$config_file" << CONF
