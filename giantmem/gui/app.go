@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
@@ -1228,7 +1229,12 @@ func (a *App) GetPref(key string) (string, error) {
 	return m[key], nil
 }
 
+// wails runs each bound call on its own goroutine; unlocked read-modify-write drops keys.
+var prefsMu sync.Mutex
+
 func (a *App) SetPref(key, value string) error {
+	prefsMu.Lock()
+	defer prefsMu.Unlock()
 	m, err := readPrefs()
 	if err != nil {
 		return err

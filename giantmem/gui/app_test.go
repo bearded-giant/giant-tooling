@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
@@ -41,5 +43,28 @@ func TestSessionFacetsRangeAndLast(t *testing.T) {
 	ranged, err := a.SessionFacets("2026-10-12", "")
 	if err != nil || len(ranged.ByProject) != 1 || ranged.ByProject["a"] != 1 {
 		t.Fatalf("ranged = %+v, %v", ranged, err)
+	}
+}
+
+func TestSetPrefConcurrent(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	a := &App{}
+	var wg sync.WaitGroup
+	for i := 0; i < 40; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			if err := a.SetPref(fmt.Sprintf("k%d", i), "v"); err != nil {
+				t.Error(err)
+			}
+		}(i)
+	}
+	wg.Wait()
+	m, err := readPrefs()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m) != 40 {
+		t.Fatalf("lost writes: got %d of 40 keys", len(m))
 	}
 }
