@@ -1064,7 +1064,7 @@ function App() {
             </select>
             <label
               style={{
-                fontSize: 13,
+                fontSize: 15,
                 color: "var(--fg-muted)",
                 display: "flex",
                 alignItems: "center",
@@ -1081,7 +1081,7 @@ function App() {
             </label>
             <label
               style={{
-                fontSize: 13,
+                fontSize: 15,
                 color: "var(--fg-muted)",
                 display: "flex",
                 alignItems: "center",
@@ -1303,7 +1303,7 @@ function App() {
           />
         )}
         {tab === "tools" && (
-          <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>
+          <div style={{ color: "var(--fg-muted)", fontSize: 15 }}>
             <p style={{ marginTop: 0 }}>
               Searches each session's JSONL for <strong>tool_use</strong> blocks.
               Matches on input JSON and the paired tool_result body.
@@ -2070,7 +2070,7 @@ function BucketSidebar({
         </div>
       ))}
       {buckets.length === 0 && (
-        <div style={{ color: "var(--fg-muted)", fontSize: 13 }}>nothing in range</div>
+        <div style={{ color: "var(--fg-muted)", fontSize: 15 }}>nothing in range</div>
       )}
     </div>
   );
@@ -2590,7 +2590,7 @@ function ToolUseDetail({
             onClick={onOpenSession}
             style={{
               padding: "2px 8px",
-              fontSize: 13,
+              fontSize: 15,
             }}
           >
             open session ›
@@ -2681,7 +2681,7 @@ function ActivityList({
                   <div className="row-meta">loading…</div>
                 )}
                 {expandedFiles.map((f) => (
-                  <div key={f.path} style={{ padding: "3px 0", fontSize: 13 }}>
+                  <div key={f.path} style={{ padding: "3px 0", fontSize: 15 }}>
                     <span className="row-meta" style={{ marginRight: 8 }}>
                       {ago(f.mtime)}
                     </span>
@@ -2816,7 +2816,7 @@ function SessionLengthPanel({ rows }: { rows: hub.LengthSummary[] }) {
     <div style={{ padding: "8px 4px" }}>
       <div
         style={{
-          fontSize: 13,
+          fontSize: 15,
           color: "var(--fg-muted)",
           marginBottom: 6,
           letterSpacing: "0.04em",
@@ -2832,7 +2832,7 @@ function SessionLengthPanel({ rows }: { rows: hub.LengthSummary[] }) {
           gridTemplateColumns: "minmax(0, 1fr) auto auto",
           columnGap: 8,
           rowGap: 3,
-          fontSize: 12,
+          fontSize: 14,
         }}
       >
         <span className="row-meta">project</span>
@@ -2872,7 +2872,7 @@ function ToolMixPanel({ counts }: { counts: hub.ToolCount[] }) {
     <div style={{ padding: "8px 4px" }}>
       <div
         style={{
-          fontSize: 13,
+          fontSize: 15,
           color: "var(--fg-muted)",
           marginBottom: 6,
           letterSpacing: "0.04em",
@@ -2890,7 +2890,7 @@ function ToolMixPanel({ counts }: { counts: hub.ToolCount[] }) {
             gridTemplateColumns: "minmax(0, 1fr) 64px 34px",
             gap: 6,
             alignItems: "center",
-            fontSize: 12,
+            fontSize: 14,
             padding: "2px 0",
           }}
         >
@@ -2943,7 +2943,7 @@ function Tile({
       >
         {value.toLocaleString()}
       </div>
-      <div style={{ fontSize: 12, color: "var(--fg-muted)" }}>{label}</div>
+      <div style={{ fontSize: 14, color: "var(--fg-muted)" }}>{label}</div>
     </div>
   );
 }
@@ -2966,7 +2966,7 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
     <div style={{ padding: "8px 4px" }}>
       <div
         style={{
-          fontSize: 13,
+          fontSize: 15,
           color: "var(--fg-muted)",
           marginBottom: 6,
           letterSpacing: "0.04em",
@@ -2984,7 +2984,7 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
             <div
               style={{
                 flex: 1,
-                fontSize: 13,
+                fontSize: 15,
                 color: "var(--fg-muted)",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -3019,7 +3019,7 @@ function HeatmapPanel({ cells }: { cells: main.HeatmapCell[] }) {
           alignItems: "center",
           gap: 4,
           marginTop: 8,
-          fontSize: 12,
+          fontSize: 14,
           color: "var(--fg-muted)",
         }}
       >
@@ -3727,7 +3727,7 @@ function BlockView({
     );
   }
   return (
-    <pre style={{ whiteSpace: "pre-wrap", fontSize: 13, opacity: 0.7 }}>
+    <pre style={{ whiteSpace: "pre-wrap", fontSize: 15, opacity: 0.7 }}>
       {JSON.stringify(block, null, 2)}
     </pre>
   );
