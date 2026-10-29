@@ -184,10 +184,9 @@ def move_index_row(idx_path, name, status, builds_on="", beta="", cp_branch=""):
                 if lines[i].lstrip().startswith("|") and "---" in lines[i]), None)
     if sep is None:
         return False
-    if status == "complete":  # completed table has no Paired column
-        row = f"| [{name}]({name}/) | {status} | {beta or ''} | {builds_on or '-'} |"
-    else:
-        row = f"| [{name}]({name}/) | {status} | {beta or ''} | {builds_on or '-'} | {cp_branch or '-'} |"
+    row = f"| [{name}]({name}/) | {status} | {beta or ''} | {builds_on or '-'} |"
+    if "Paired" in lines[sep - 1]:  # completed and older ws-init tables have no Paired column
+        row += f" {cp_branch or '-'} |"
     after = sep + 1
     if after < len(lines) and "_none_" in lines[after]:
         lines[after] = row

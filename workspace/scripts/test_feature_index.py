@@ -11,7 +11,7 @@ OLD_INDEX = """# Feature Index
 
 | Feature | Status | Beta Flag | Builds On |
 |---------|--------|-----------|-----------|
-| [foo](foo/) | in_progress |  | none | - |
+| [foo](foo/) | in_progress |  | none |
 
 ## Quick Reference
 
@@ -50,6 +50,14 @@ def test_pending_adds_section_with_paired_column(tmp_path):
     assert "| Feature | Status | Beta Flag | Builds On | Paired |" in text[pending:]
     assert "| [bar](bar/) | pending |  | - | - |" in text[pending:]
     assert "[foo](foo/)" in text
+
+
+def test_row_matches_existing_table_without_paired_column(tmp_path):
+    p = _write(tmp_path, OLD_INDEX)
+
+    assert feature.move_index_row(str(p), "bar", "in_progress", cp_branch="cp")
+
+    assert "| [bar](bar/) | in_progress |  | - |\n" in p.read_text()
 
 
 def test_existing_section_is_reused(tmp_path):
