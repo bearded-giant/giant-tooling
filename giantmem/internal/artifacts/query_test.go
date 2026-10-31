@@ -121,3 +121,20 @@ func TestTableHasRows(t *testing.T) {
 		t.Error("populated table should report rows")
 	}
 }
+
+func TestListArtifacts_ExcludeType(t *testing.T) {
+	d := newLiveDB(t)
+	insertLiveDoc(t, d, "/r/.giantmem/history/sessions.md", "repoA", "/r", "log", 1717200000)
+	insertLiveDoc(t, d, "/r/.giantmem/research/x.md", "repoA", "/r", "r", 1717200000)
+	insertLiveDoc(t, d, "/r/.giantmem/plans/p.md", "repoA", "/r", "p", 1717200000)
+	if _, err := ReconcileTable(d, t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := ListArtifacts(d, ListFilter{ExcludeType: []string{"history,plan"}}, "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Type != "research" {
+		t.Fatalf("got %+v, want only research", rows)
+	}
+}

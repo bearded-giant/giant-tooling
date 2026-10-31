@@ -20,6 +20,7 @@ import (
 
 var (
 	artifactType        []string
+	artifactNotType     []string
 	artifactStatus      []string
 	artifactFeature     string
 	artifactDomain      string
@@ -132,6 +133,7 @@ embedder (env: GIANTMEM_EMBED_BACKEND). Score weights are env-tunable
 func init() {
 	for _, c := range []*cobra.Command{artifactListCmd} {
 		c.Flags().StringSliceVarP(&artifactType, "type", "t", nil, "filter by type (repeat or comma-separate)")
+		c.Flags().StringSliceVar(&artifactNotType, "exclude-type", nil, "drop these types (e.g. history)")
 		c.Flags().StringSliceVarP(&artifactStatus, "status", "s", nil, "filter by status (default: all)")
 		c.Flags().StringVarP(&artifactFeature, "feature", "f", "", "filter by feature name")
 		c.Flags().StringVarP(&artifactDomain, "domain", "d", "", "filter by domain")
@@ -156,6 +158,7 @@ func init() {
 	artifactSearchCmd.Flags().StringVar(&artifactSearchBackend, "backend", "", "embedder backend (stub|python|ollama; default $GIANTMEM_EMBED_BACKEND)")
 	artifactSearchCmd.Flags().IntVar(&artifactSearchLimit, "limit", 10, "max results")
 	artifactSearchCmd.Flags().StringSliceVarP(&artifactType, "type", "t", nil, "filter by type")
+	artifactSearchCmd.Flags().StringSliceVar(&artifactNotType, "exclude-type", nil, "drop these types (e.g. history)")
 	artifactSearchCmd.Flags().StringSliceVarP(&artifactStatus, "status", "s", nil, "filter by status")
 	artifactSearchCmd.Flags().StringVarP(&artifactFeature, "feature", "f", "", "filter by feature")
 	artifactSearchCmd.Flags().StringVar(&artifactScope, "scope", "", "filter by scope id")
@@ -189,13 +192,14 @@ func resolveWorkspace() (string, *artifacts.Index, error) {
 // left out on purpose: registry membership needs the Go-side check.
 func cliListFilter() artifacts.ListFilter {
 	f := artifacts.ListFilter{
-		Type:      artifactType,
-		Status:    artifactStatus,
-		Lifecycle: artifactLifecycle,
-		Feature:   artifactFeature,
-		Domain:    artifactDomain,
-		Branch:    artifactBranch,
-		Published: artifactPublished,
+		Type:        artifactType,
+		ExcludeType: artifactNotType,
+		Status:      artifactStatus,
+		Lifecycle:   artifactLifecycle,
+		Feature:     artifactFeature,
+		Domain:      artifactDomain,
+		Branch:      artifactBranch,
+		Published:   artifactPublished,
 	}
 	if artifactRepo != "" && artifactRepo != "all" && artifactRepo != "current" {
 		f.Repo = artifactRepo
@@ -211,6 +215,7 @@ func cliListFilter() artifacts.ListFilter {
 
 func filterArtifacts(rows []artifacts.Artifact) []artifacts.Artifact {
 	wantType := setFromSlice(artifactType)
+	skipType := setFromSlice(artifactNotType)
 	wantStatus := setFromSlice(artifactStatus)
 	wantLifecycle := setFromSlice(artifactLifecycle)
 
@@ -224,7 +229,7 @@ func filterArtifacts(rows []artifacts.Artifact) []artifacts.Artifact {
 
 	out := make([]artifacts.Artifact, 0, len(rows))
 	for _, a := range rows {
-		if len(wantType) > 0 && !wantType[a.Type] {
+		if len(wantType) > 0 && !wantType[a.Type] || skipType[a.Type] {
 			continue
 		}
 		if len(wantStatus) > 0 && !wantStatus[a.Status] {

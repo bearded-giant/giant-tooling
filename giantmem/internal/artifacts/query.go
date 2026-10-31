@@ -11,17 +11,18 @@ import (
 // ignored. Multi-value fields (Type, Status, Lifecycle) match any of the given
 // values.
 type ListFilter struct {
-	Type      []string
-	Status    []string
-	Lifecycle []string
-	Scope     string
-	Repo      string
-	Branch    string
-	Feature   string
-	Domain    string
-	Published bool
-	Since     time.Time `json:"-"`
-	Until     time.Time `json:"-"`
+	Type        []string
+	ExcludeType []string
+	Status      []string
+	Lifecycle   []string
+	Scope       string
+	Repo        string
+	Branch      string
+	Feature     string
+	Domain      string
+	Published   bool
+	Since       time.Time `json:"-"`
+	Until       time.Time `json:"-"`
 }
 
 // TableHasRows reports whether the artifacts projection has been populated.
@@ -69,6 +70,14 @@ func ListArtifacts(live *sql.DB, f ListFilter, sortBy string, limit int) ([]Arti
 	}
 
 	addIn("type", f.Type)
+	if vals := expandCSV(f.ExcludeType); len(vals) > 0 {
+		ph := make([]string, len(vals))
+		for i, v := range vals {
+			ph[i] = "?"
+			args = append(args, v)
+		}
+		where = append(where, fmt.Sprintf("a.type NOT IN (%s)", strings.Join(ph, ",")))
+	}
 	addIn("status", f.Status)
 	addIn("lifecycle", f.Lifecycle)
 	addEq("scope", f.Scope)
