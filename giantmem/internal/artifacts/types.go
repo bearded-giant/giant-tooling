@@ -88,7 +88,6 @@ var typeAliases = map[string]string{
 	"rca":            "research",
 }
 
-// CanonicalType maps a declared frontmatter type onto the taxonomy.
 func CanonicalType(t string) (string, bool) {
 	if a, ok := typeAliases[t]; ok {
 		return a, true
