@@ -307,3 +307,36 @@ func TestReconcileTable_NotionKeysRoundTrip(t *testing.T) {
 		t.Errorf("proposal row notion should be empty, got %q / %q", pr.Notion, pr.NotionSynced)
 	}
 }
+
+func TestReconcileTable_RenamedIDKeepsVectorsAndAccess(t *testing.T) {
+	d := newLiveDB(t)
+	base := t.TempDir()
+	rel := "features/foo/grill/01-run.md"
+	insertLiveDoc(t, d, "/r/.giantmem/"+rel, "myrepo", "/r", "grill body", 1717200000)
+	oldID := "myrepo/feat:foo:file:grill/01-run.md"
+	if _, err := upsertArtifact(d, Artifact{ID: oldID, Type: "file", Feature: "foo", Repo: "myrepo", Path: rel}, "2026-01-01T00:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := d.Exec(`INSERT INTO artifact_embedding_meta(artifact_id, ord, rowid, body_hash, dim, model, updated_at)
+	                     VALUES (?, 0, 7, 'h', 384, 'm', 'now')`, oldID); err != nil {
+		t.Fatal(err)
+	}
+	if err := LogAccess(d, oldID, "q", 1); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ReconcileTable(d, base); err != nil {
+		t.Fatal(err)
+	}
+	newID := "myrepo/feat:foo:review:grill/01-run.md"
+	var got string
+	if err := d.QueryRow(`SELECT id FROM artifacts`).Scan(&got); err != nil || got != newID {
+		t.Fatalf("artifacts id = %q (%v), want %q", got, err, newID)
+	}
+	var metaN, accN int
+	d.QueryRow(`SELECT COUNT(*) FROM artifact_embedding_meta WHERE artifact_id=?`, newID).Scan(&metaN)
+	d.QueryRow(`SELECT COUNT(*) FROM artifact_access WHERE artifact_id=?`, newID).Scan(&accN)
+	if metaN != 1 || accN != 1 {
+		t.Fatalf("carried meta=%d access=%d, want 1 and 1", metaN, accN)
+	}
+}

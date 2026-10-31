@@ -164,6 +164,14 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 		}
 	}
 
+	byPath := make(map[string]string, len(winners))
+	for id, it := range winners {
+		byPath[it.a.Repo+"\x00"+it.a.Path] = id
+	}
+	if err := carryRenamedIDs(live, byPath); err != nil {
+		return st, err
+	}
+
 	now := time.Now().UTC().Format(time.RFC3339)
 	derived := make(map[string]struct{}, len(winners))
 	for _, it := range winners {
@@ -243,6 +251,52 @@ func upsertArtifact(live *sql.DB, a Artifact, now string) (sql.Result, error) {
 		a.Repo, a.Branch, a.Path, a.Worktree, a.Size, a.Created, updated, hasFront, now,
 		a.Notion, a.NotionSynced, a.NotionRow,
 	)
+}
+
+// carryRenamedIDs re-keys vectors and access history when a file's id changes
+// (a taxonomy rename), so the embed pass skips it instead of re-embedding.
+func carryRenamedIDs(live *sql.DB, byPath map[string]string) error {
+	current := make(map[string]bool, len(byPath))
+	for _, id := range byPath {
+		current[id] = true
+	}
+	rows, err := live.Query(`SELECT id, repo, path FROM artifacts`)
+	if err != nil {
+		return err
+	}
+	moves := map[string]string{}
+	for rows.Next() {
+		var id, repo, path string
+		if err := rows.Scan(&id, &repo, &path); err != nil {
+			rows.Close()
+			return err
+		}
+		if to, ok := byPath[repo+"\x00"+path]; ok && to != id && !current[id] {
+			moves[id] = to
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	if len(moves) == 0 {
+		return nil
+	}
+	tx, err := live.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for from, to := range moves {
+		if _, err := tx.Exec(`UPDATE OR IGNORE artifact_embedding_meta SET artifact_id=? WHERE artifact_id=?`, to, from); err != nil {
+			return err
+		}
+		if _, err := tx.Exec(`UPDATE artifact_access SET artifact_id=? WHERE artifact_id=?`, to, from); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
 }
 
 // deleteOrphans removes artifacts rows whose id is no longer derivable from

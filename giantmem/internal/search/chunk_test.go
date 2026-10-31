@@ -84,7 +84,7 @@ func TestChunkBody_UTF8SafeWithoutWhitespace(t *testing.T) {
 
 func TestChunkBodyFor_HistoryAndFileKeepHeadOnly(t *testing.T) {
 	body := strings.Repeat("line of session log\n", 1000)
-	for _, typ := range []string{"history", "file"} {
+	for _, typ := range []string{"history", "file", "filebox", "run"} {
 		if n := len(ChunkBodyFor(typ, body)); n != 1 {
 			t.Fatalf("%s should keep one chunk, got %d", typ, n)
 		}

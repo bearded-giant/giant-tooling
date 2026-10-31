@@ -31,12 +31,13 @@ func ChunkBody(body string) []Chunk {
 }
 
 // ChunkBodyFor applies the per-type policy. Session history is excluded from
-// recall, and the catch-all `file` type (filebox dumps, swarm output, sidecars)
-// is 80% of all chunks by volume, so both keep only the head window.
-// ponytail: chunk `file` too if recall starts missing filebox content
+// recall, and dumps (`filebox`, `run`, catch-all `file`) are 80% of all chunks
+// by volume, so they keep only the head window.
+// ponytail: chunk `filebox` too if recall starts missing filebox content
 func ChunkBodyFor(artifactType, body string) []Chunk {
 	chunks := ChunkBody(body)
-	if (artifactType == "history" || artifactType == "file") && len(chunks) > 1 {
+	headOnly := artifactType == "history" || artifactType == "file" || artifactType == "filebox" || artifactType == "run"
+	if headOnly && len(chunks) > 1 {
 		return chunks[:1]
 	}
 	return chunks

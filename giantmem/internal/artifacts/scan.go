@@ -163,7 +163,7 @@ func applyMarkdownFrontmatter(a *Artifact, path string) {
 // Shared by FS Scan (applyMarkdownFrontmatter) and live-db DeriveFromLiveDoc so
 // the two indexers never disagree on how frontmatter overrides path inference.
 func applyFrontmatterMap(a *Artifact, fm map[string]string) {
-	if v, ok := fm["type"]; ok && ValidType(v) {
+	if v, ok := CanonicalType(fm["type"]); ok {
 		a.Type = v
 	}
 	if v, ok := fm["feature"]; ok && v != "" {
@@ -215,8 +215,10 @@ func applyJSONFrontmatterBytes(a *Artifact, raw []byte) {
 		return
 	}
 	a.HasFront = true
-	if v, ok := data["type"].(string); ok && ValidType(v) {
-		a.Type = v
+	if v, ok := data["type"].(string); ok {
+		if v, ok := CanonicalType(v); ok {
+			a.Type = v
+		}
 	}
 	if v, ok := data["feature"].(string); ok && v != "" {
 		a.Feature = v

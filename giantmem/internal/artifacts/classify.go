@@ -17,9 +17,6 @@ type Classification struct {
 
 // Classify infers an artifact's identity from its workspace-relative path.
 // Returns ok=false when the path does not match any known artifact location.
-//
-// Rules match the Python backfill_frontmatter.py classifier exactly so the
-// CLI and the script never disagree about what is "indexable".
 func Classify(rel string) (Classification, bool) {
 	rel = filepath.ToSlash(rel)
 	parts := strings.Split(rel, "/")
@@ -68,27 +65,18 @@ func Classify(rel string) (Classification, bool) {
 		if tail == feature+"-notes.md" {
 			return Classification{Type: "notes", Feature: feature}, true
 		}
-		if len(parts) >= 4 && strings.HasSuffix(last, ".md") {
-			leaf := strings.TrimSuffix(last, ".md")
-			switch tail {
-			case "plans":
-				return Classification{Type: "plan", Feature: feature, Name: leaf}, true
-			case "research":
-				return Classification{Type: "research", Feature: feature, Name: leaf}, true
-			case "reviews":
-				return Classification{Type: "review", Feature: feature, Name: leaf}, true
-			}
+		if c, ok := classifyLeaf(parts[2:]); ok {
+			c.Feature = feature
+			return c, true
 		}
-	}
-
-	// .giantmem/research/*.md  -> repo-level research
-	if len(parts) >= 2 && parts[0] == "research" && strings.HasSuffix(last, ".md") {
-		return Classification{Type: "research", Name: strings.TrimSuffix(last, ".md")}, true
-	}
-
-	// .giantmem/plans/*.md  -> repo-level plan (transient session scratchpad)
-	if len(parts) >= 2 && parts[0] == "plans" && strings.HasSuffix(last, ".md") {
-		return Classification{Type: "plan", Name: strings.TrimSuffix(last, ".md")}, true
+		if c, ok := classifyDir(parts[2:]); ok {
+			c.Feature = feature
+			return c, true
+		}
+		// catch-all: any other file inside a feature dir -> generic "file", so
+		// ad-hoc outputs survive projection instead of vanishing. Name keeps the
+		// feature-relative path for ID uniqueness across nested dirs.
+		return Classification{Type: "file", Feature: feature, Name: strings.Join(parts[2:], "/")}, true
 	}
 
 	// .giantmem/domains/{name}.json  -> domain
@@ -101,15 +89,6 @@ func Classify(rel string) (Classification, bool) {
 		return Classification{Type: "pattern", Name: strings.TrimSuffix(last, ".md")}, true
 	}
 
-	// catch-all: any other file inside a feature dir -> generic "file", so
-	// ad-hoc outputs (csv exports, nested research dirs) survive projection
-	// instead of vanishing. Name keeps the feature-relative path for ID
-	// uniqueness across nested dirs.
-	if len(parts) >= 3 && parts[0] == "features" {
-		return Classification{Type: "file", Feature: parts[1], Name: strings.Join(parts[2:], "/")}, true
-	}
-
-	// remaining well-known locations, so every real doc carries a type
 	if len(parts) == 1 {
 		switch last {
 		case "WORKSPACE.md", "workspace.md":
@@ -121,14 +100,66 @@ func Classify(rel string) (Classification, bool) {
 	if parts[0] == "history" && len(parts) >= 2 {
 		return Classification{Type: "history", Name: strings.TrimSuffix(strings.Join(parts[1:], "/"), ".md")}, true
 	}
+	if c, ok := classifyLeaf(parts); ok {
+		return c, true
+	}
 	if parts[0] == "prompts" && len(parts) >= 2 {
 		return Classification{Type: "prompt", Name: strings.TrimSuffix(strings.Join(parts[1:], "/"), ".md")}, true
 	}
 	if parts[0] == "filebox" && len(parts) >= 2 {
 		return Classification{Type: "filebox", Name: strings.Join(parts[1:], "/")}, true
 	}
+	if c, ok := classifyDir(parts); ok {
+		return c, true
+	}
 
 	// global catch-all: real file in an unanticipated spot beats an untyped
 	// hole in the index
 	return Classification{Type: "file", Name: rel}, true
+}
+
+// classifyLeaf runs before any dir rule: a handoff is a handoff wherever it lands.
+func classifyLeaf(parts []string) (Classification, bool) {
+	last := parts[len(parts)-1]
+	full := strings.Join(parts, "/")
+	switch {
+	case last == "handoff.md":
+		return Classification{Type: "handoff", Name: full}, true
+	case strings.HasPrefix(last, "mr-description") && strings.HasSuffix(last, ".md"):
+		return Classification{Type: "mr", Name: full}, true
+	case strings.HasSuffix(last, ".mmd"):
+		return Classification{Type: "diagram", Name: full}, true
+	}
+	return Classification{}, false
+}
+
+func classifyDir(parts []string) (Classification, bool) {
+	full := strings.Join(parts, "/")
+	if len(parts) < 2 {
+		return Classification{}, false
+	}
+	dir := parts[0]
+	switch dir {
+	// legacy dirs: Name drops the dir so pre-existing ids stay stable
+	case "plans", "research", "reviews":
+		t := map[string]string{"plans": "plan", "research": "research", "reviews": "review"}[dir]
+		return Classification{Type: t, Name: strings.TrimSuffix(strings.Join(parts[1:], "/"), ".md")}, true
+	case "grill":
+		return Classification{Type: "review", Name: full}, true
+	case "filebox":
+		return Classification{Type: "filebox", Name: full}, true
+	case "prompts":
+		return Classification{Type: "prompt", Name: full}, true
+	case "mr-descriptions":
+		return Classification{Type: "mr", Name: full}, true
+	case "runs":
+		return Classification{Type: "run", Name: full}, true
+	}
+	switch {
+	case strings.HasPrefix(dir, "swarm"):
+		return Classification{Type: "run", Name: full}, true
+	case strings.HasSuffix(dir, "-research"):
+		return Classification{Type: "research", Name: full}, true
+	}
+	return Classification{}, false
 }

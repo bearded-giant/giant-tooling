@@ -65,14 +65,35 @@ func BuildID(a Artifact) string {
 	return strings.Join(parts, ":")
 }
 
-// ValidType reports whether t is in the v1 taxonomy.
+// ValidType reports whether t is a type frontmatter may declare.
 func ValidType(t string) bool {
 	switch t {
 	case "source-spec", "delta-spec", "proposal", "design", "tasks",
-		"plan", "research", "review", "domain", "notes", "pattern", "facts":
+		"plan", "research", "review", "domain", "notes", "pattern", "facts",
+		"handoff", "mr", "run", "diagram", "prompt", "filebox":
 		return true
 	}
 	return false
+}
+
+// writers' own type names, folded onto the badge a reader filters by
+var typeAliases = map[string]string{
+	"grill-run":      "review",
+	"grill-final":    "review",
+	"findings":       "review",
+	"mr-description": "mr",
+	"brief":          "prompt",
+	"reference":      "research",
+	"report":         "research",
+	"rca":            "research",
+}
+
+// CanonicalType maps a declared frontmatter type onto the taxonomy.
+func CanonicalType(t string) (string, bool) {
+	if a, ok := typeAliases[t]; ok {
+		return a, true
+	}
+	return t, ValidType(t)
 }
 
 // String renders an Artifact as a TSV row for human inspection.
