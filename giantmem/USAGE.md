@@ -8,7 +8,8 @@ Binary: `~/.local/bin/giantmem`. Source: `~/dev/giant-tooling/giantmem/`.
 
 | Command | Effect |
 |---------|--------|
-| `cd ~/dev/giant-tooling/gm && make install` | rebuild and copy to `~/.local/bin/giantmem` |
+| `cd giantmem && make install` (from the repo root) | rebuild the CLI and copy to `~/.local/bin/giantmem` |
+| `cd giantmem/gui && make install-dev` (from the repo root) | rebuild the GUI and rsync into `/Applications/giantmem.app`; `reinstall-dev` also relaunches it |
 | `giantmem version` | show build info |
 | `giantmem completion bash > ~/.bash_completion.d/giantmem` | shell completion (bash) |
 | `giantmem completion zsh > ~/.zfunc/_giantmem` | shell completion (zsh) |

@@ -52,7 +52,12 @@ make dev             # wails dev — live reload, opens a window
 make build           # wails build — writes build/bin/giantmem.app
 make install         # build + rsync into /Applications/giantmem.app
 make reinstall       # install + kill running app + relaunch
+make build-dev       # build, version stamped <base>-dev+<sha>[.dirty]
+make install-dev     # build-dev + rsync into /Applications/giantmem.app
+make reinstall-dev   # install-dev + kill running app + relaunch
 ```
+
+These targets live only in `giantmem/gui/Makefile`; the `giantmem/` Makefile builds the CLI.
 
 Override install location: `make install INSTALL_TO=$HOME/Applications/giantmem.app`.
 
