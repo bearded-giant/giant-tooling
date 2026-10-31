@@ -79,6 +79,10 @@
   width: auto;
   font-size: 14px;
 }
+.topbar .type-ahead input {
+  width: 150px;
+  font-size: 14px;
+}
 .topbar .date-range .date-range-sep {
   color: var(--fg-muted);
   font-size: 14px;

@@ -1085,19 +1085,7 @@ function App() {
           />
         </div>
         {tab === "artifacts" && (
-          <div className="date-range" title="filter by artifact type (search and browse)">
-            <select value={selType} onChange={(e) => setSelType(e.target.value)}>
-              <option value="">all types</option>
-              {Object.entries(typeCounts)
-                .concat(selType && !(selType in typeCounts) ? [[selType, 0]] : [])
-                .sort((a, b) => b[1] - a[1])
-                .map(([t, n]) => (
-                  <option key={t} value={t}>
-                    {t} ({n})
-                  </option>
-                ))}
-            </select>
-          </div>
+          <TypeAhead counts={typeCounts} value={selType} onChange={setSelType} />
         )}
         {tab !== "activity" && tab !== "day" && tab !== "doit" && (
           <div className="date-range" title="filter results by date range">
@@ -2546,6 +2534,55 @@ function SingleFacetGroup({
 // BrowseList: compact rows for browse mode. Every group carries the shared
 // repo · feature context in its header exactly once, so rows are just
 // name + type + time.
+// native datalist: substring typeahead; a partial word only applies on enter
+function TypeAhead({
+  counts,
+  value,
+  onChange,
+}: {
+  counts: Record<string, number>;
+  value: string;
+  onChange: (t: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  const types = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+  const commit = (v: string) => {
+    const q = v.trim().toLowerCase();
+    if (!q) return onChange("");
+    const hit =
+      types.find(([t]) => t === q) ||
+      types.find(([t]) => t.startsWith(q)) ||
+      types.find(([t]) => t.includes(q));
+    if (hit) onChange(hit[0]);
+    else setDraft(value);
+  };
+  return (
+    <div className="date-range type-ahead" title="filter by artifact type (search and browse)">
+      <input
+        type="search"
+        list="artifact-types"
+        placeholder="all types"
+        value={draft}
+        onChange={(e) => {
+          const v = e.target.value;
+          setDraft(v);
+          if (v === "" || Object.prototype.hasOwnProperty.call(counts, v)) onChange(v);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") commit(draft);
+        }}
+        onBlur={() => commit(draft)}
+      />
+      <datalist id="artifact-types">
+        {types.map(([t, n]) => (
+          <option key={t} value={t} label={String(n)} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
 function TypeChip({ type, onType }: { type: string; onType?: (t: string) => void }) {
   return (
     <span
