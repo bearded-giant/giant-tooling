@@ -241,3 +241,37 @@ func TestExtractMRLinks(t *testing.T) {
 		}
 	}
 }
+
+func TestExtractPublishLinks(t *testing.T) {
+	page := filepath.Join(t.TempDir(), "metric-hoisting.html")
+	if err := os.WriteFile(page, []byte("<html><head><title>\n Metric   Hoisting </title></head></html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := writeFixture(t,
+		record("assistant", "2026-10-30T10:25:00Z", use("a1", "Artifact", map[string]any{"file_path": page})),
+		record("user", "2026-10-30T10:25:01Z", result("a1", false, "Published at https://claude.ai/artifact/TxS1 (Version 1)")),
+		record("assistant", "2026-10-30T10:26:00Z", use("a2", "Artifact", map[string]any{"file_path": "/gone/x.html", "title": "Given Title"})),
+		record("user", "2026-10-30T10:26:01Z", result("a2", false, "Published at https://claude.ai/artifact/Gone2")),
+		record("assistant", "2026-10-30T10:27:00Z", use("b1", "Bash", map[string]any{"command": "FORCE=1 ~/dev/ai/artifact-publish/publish.sh /s/metric.html metric-hoisting"})),
+		record("user", "2026-10-30T10:27:01Z", result("b1", false, "[main abc] publish metric-hoisting\nhttps://artifacts-hub-ten.vercel.app/metric-hoisting/\n")),
+		record("assistant", "2026-10-30T10:28:00Z", use("b2", "Bash", map[string]any{"command": "~/dev/ai/artifact-publish/publish.sh /s/y.html y"})),
+		record("user", "2026-10-30T10:28:01Z", result("b2", true, "https://artifacts-hub-ten.vercel.app/y/\n")),
+	)
+	_, links, err := ExtractToolCalls(path, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Link{
+		{Kind: "artifact", Target: "https://claude.ai/artifact/TxS1", Label: "Metric Hoisting", TS: "2026-10-30T10:25:01Z"},
+		{Kind: "artifact", Target: "https://claude.ai/artifact/Gone2", Label: "Given Title", TS: "2026-10-30T10:26:01Z"},
+		{Kind: "artifact", Target: "https://artifacts-hub-ten.vercel.app/metric-hoisting/", Label: "metric-hoisting", TS: "2026-10-30T10:27:01Z"},
+	}
+	if len(links) != len(want) {
+		t.Fatalf("got %+v, want %+v", links, want)
+	}
+	for i := range want {
+		if links[i] != want[i] {
+			t.Errorf("link %d = %+v, want %+v", i, links[i], want[i])
+		}
+	}
+}

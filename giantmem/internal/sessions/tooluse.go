@@ -36,6 +36,8 @@ type Link struct {
 
 var (
 	artifactURLRe = regexp.MustCompile(`https://claude\.ai/[\w./-]*artifact/[\w-]+`)
+	hubURLRe      = regexp.MustCompile(`(?m)^https://\S+/([a-z0-9-]+)/$`)
+	htmlTitleRe   = regexp.MustCompile(`(?is)<title[^>]*>(.*?)</title>`)
 	mrURLRe       = regexp.MustCompile(`https://gitlab\.[\w.-]+/[\w./-]+/-/merge_requests/\d+|https://github\.com/[\w.-]+/[\w.-]+/pull/\d+`)
 	mrCreateRe    = regexp.MustCompile(`\b(?:glab\s+mr|gh\s+pr)\s+create\b`)
 	doitIDRe      = regexp.MustCompile(`\[id:([^\]\s]+)\]`)
@@ -202,14 +204,20 @@ func (s *linkSet) fromResult(tool string, in map[string]any, text, ts string, is
 			return
 		}
 		if u := artifactURLRe.FindString(text); u != "" {
-			label := u
-			if fp := str(in, "file_path"); fp != "" {
+			fp := str(in, "file_path")
+			label := cmp.Or(htmlTitle(fp), str(in, "title"), u)
+			if label == u && fp != "" {
 				label = filepath.Base(fp)
 			}
 			s.add("artifact", u, label, ts)
 		}
 	case "Bash":
 		cmd := str(in, "command")
+		if !isErr && strings.Contains(cmd, "publish.sh") {
+			if m := hubURLRe.FindStringSubmatch(text); m != nil {
+				s.add("artifact", m[0], m[1], ts)
+			}
+		}
 		if !isErr && mrCreateRe.MatchString(cmd) {
 			// create prints the new URL first; later URLs in a chained command are other MRs
 			if u := mrURLRe.FindString(text); u != "" {
@@ -321,4 +329,19 @@ func clip(s string, n int) string {
 		i++
 	}
 	return s
+}
+
+// htmlTitle reads the page's <title> while the scratchpad copy still exists.
+func htmlTitle(fp string) string {
+	if fp == "" {
+		return ""
+	}
+	raw, err := os.ReadFile(fp)
+	if err != nil {
+		return ""
+	}
+	if m := htmlTitleRe.FindSubmatch(raw); m != nil {
+		return strings.Join(strings.Fields(string(m[1])), " ")
+	}
+	return ""
 }
