@@ -36,6 +36,7 @@ import {
   ResolveTranscript,
   SearchFTS,
   SearchHybrid,
+  SearchPublished,
   SearchToolUses,
   SessionFacets,
   SessionHub,
@@ -211,15 +212,17 @@ function parseSidebarFilter(q: string): SidebarFilter {
   return { text: words.join(" "), ext };
 }
 
+const PUBLISHED_TYPES = new Set(["claude-artifact", "vault"]);
+
 function rowMatchesFilter(r: main.BrowseRow, f: SidebarFilter): boolean {
   if (f.ext) {
-    const name = r.rel.split("/").pop() || "";
+    const name = r.path.split("/").pop() || "";
     const e = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
     if (e !== f.ext) return false;
   }
   if (
     f.text &&
-    !`${r.rel} ${r.repo} ${r.feature} ${r.worktree}`.toLowerCase().includes(f.text)
+    !`${r.rel} ${r.repo} ${r.feature} ${r.worktree} ${r.project || ""}`.toLowerCase().includes(f.text)
   ) {
     return false;
   }
@@ -239,6 +242,8 @@ function App() {
 
   const [selFeature, setSelFeature] = useState<string>("");
   const [selRepo, setSelRepo] = useState<string>("");
+  const [selType, setSelType] = useState<string>("");
+  const [pubHits, setPubHits] = useState<main.BrowseRow[]>([]);
   const [sidebarFilter, setSidebarFilter] = useState("");
   const [browseRows, setBrowseRows] = useState<main.BrowseRow[]>([]);
   // history docs = per-session turn-set summaries. Useful, but they bump on
@@ -628,10 +633,19 @@ function App() {
       return rowMatchesFilter(r, sbFilter);
     });
   }, [browseRows, sbFilter, dateRange, showHistory, reloadKey]);
+  const typeCounts = useMemo(() => {
+    const c: Record<string, number> = {};
+    for (const r of rangedRows) c[r.type] = (c[r.type] || 0) + 1;
+    return c;
+  }, [rangedRows]);
+  const typedRows = useMemo(
+    () => (selType ? rangedRows.filter((r) => r.type === selType) : rangedRows),
+    [rangedRows, selType],
+  );
   // sidebar = the recent view's repo · feature group headers, freshest first
   const browseBuckets = useMemo(() => {
     const byKey = new Map<string, BrowseBucket>();
-    for (const r of rangedRows) {
+    for (const r of typedRows) {
       const key = `${r.repo}\x00${r.feature}`;
       let b = byKey.get(key);
       if (!b) {
@@ -643,12 +657,12 @@ function App() {
       if (!r.dead) b.dead = false;
     }
     return [...byKey.values()].sort((a, b) => b.last - a.last);
-  }, [rangedRows]);
+  }, [typedRows]);
   const browseGroups = useMemo(() => {
     const picked = !!selRepo || !!selFeature;
     const rows = picked
-      ? rangedRows.filter((r) => (!selRepo || r.repo === selRepo) && r.feature === selFeature)
-      : rangedRows;
+      ? typedRows.filter((r) => (!selRepo || r.repo === selRepo) && r.feature === selFeature)
+      : typedRows;
     // freshest bucket first, newest file first inside; the 300-row cap only
     // applies to the unfiltered view
     const recent = [...rows].sort((a, b) => b.mtime - a.mtime).slice(0, picked ? undefined : 300);
@@ -663,10 +677,32 @@ function App() {
       b.files.push(r);
     }
     return [...buckets.values()];
-  }, [rangedRows, selRepo, selFeature]);
+  }, [typedRows, selRepo, selFeature]);
   const browsePaths = useMemo(
     () => browseGroups.flatMap((g) => g.files.map((f) => f.path)),
     [browseGroups],
+  );
+  // search mode honors the same sidebar text/ext filter and type pick as browse
+  const searching = debouncedQuery.trim() !== "";
+  const pubView = useMemo(
+    () => pubHits.filter((r) => (!selType || r.type === selType) && rowMatchesFilter(r, sbFilter)),
+    [pubHits, selType, sbFilter],
+  );
+  const hybridView = useMemo(
+    () =>
+      hybridRows.filter((h) =>
+        rowMatchesFilter(
+          {
+            path: h.artifact.path,
+            rel: h.artifact.path,
+            repo: h.artifact.repo,
+            feature: h.artifact.feature || "",
+            worktree: h.artifact.worktree || "",
+          } as main.BrowseRow,
+          sbFilter,
+        ),
+      ),
+    [hybridRows, sbFilter],
   );
 
   // keyboard nav: up/down or j/k move the cursor in the last-clicked column,
@@ -755,7 +791,8 @@ function App() {
 
   const filter = useMemo<artifacts.ListFilter>(
     () => ({
-      Type: [],
+      Type: selType ? [selType] : [],
+      ExcludeType: showHistory ? [] : ["history"],
       Status: [],
       Lifecycle: [],
       Scope: "",
@@ -765,7 +802,7 @@ function App() {
       Domain: "",
       Published: false,
     }),
-    [selFeature, selRepo],
+    [selFeature, selRepo, selType, showHistory],
   );
 
   // refetch results when inputs change
@@ -777,11 +814,19 @@ function App() {
       try {
         if (tab === "artifacts") {
           if (debouncedQuery.trim()) {
-            const r = await SearchHybrid(debouncedQuery, filter, 100, since, until);
+            const pubWanted = selRepo === "published" || (!selRepo && !selFeature);
+            const [r, p] = await Promise.all([
+              selRepo === "published" || PUBLISHED_TYPES.has(selType)
+                ? Promise.resolve([])
+                : SearchHybrid(debouncedQuery, filter, 100, since, until),
+              pubWanted ? SearchPublished(debouncedQuery, since, until) : Promise.resolve([]),
+            ]);
             setHybridRows(r || []);
+            setPubHits(p || []);
           } else {
             // browse mode renders from browseRows client-side
             setHybridRows([]);
+            setPubHits([]);
           }
         } else if (tab === "tools") {
           const f: main.ToolUseFilter = {
@@ -882,10 +927,18 @@ function App() {
     } else if (selection.kind === "file") {
       setDetailArt(null);
       setSessionLines(null);
-      setDetailFile(browseRows.find((r) => r.path === selection.path) || null);
-      GetLiveBody(selection.path)
-        .then(setDetailBody)
-        .catch((e: unknown) => setDetailBody(`# error\n\n${String(e)}`));
+      setDetailFile(
+        browseRows.find((r) => r.path === selection.path) ||
+          pubHits.find((r) => r.path === selection.path) ||
+          null,
+      );
+      if (selection.path.startsWith("http")) {
+        setDetailBody("");
+      } else {
+        GetLiveBody(selection.path)
+          .then(setDetailBody)
+          .catch((e: unknown) => setDetailBody(`# error\n\n${String(e)}`));
+      }
     } else {
       setDetailArt(null);
       setDetailFile(null);
@@ -898,7 +951,7 @@ function App() {
           setErr(String(e));
         });
     }
-  }, [selection, hybridRows, browseRows, reloadKey]);
+  }, [selection, hybridRows, browseRows, pubHits, reloadKey]);
 
   // giantmem:// links from the vault daily note or a doit item
   useEffect(() => {
@@ -934,6 +987,7 @@ function App() {
   const clearFacets = () => {
     setSelFeature("");
     setSelRepo("");
+    setSelType("");
   };
 
   const toggleCollapsed = useCallback((title: string) => {
@@ -947,7 +1001,9 @@ function App() {
 
   const totalRows =
     tab === "artifacts"
-      ? hybridRows.length || browsePaths.length
+      ? searching
+        ? hybridView.length + pubView.length
+        : browsePaths.length
       : tab === "tools"
         ? toolHits.length
         : tab === "day"
@@ -964,6 +1020,7 @@ function App() {
   const artifactFilterCount =
     (selFeature ? 1 : 0) +
     (selRepo ? 1 : 0) +
+    (selType ? 1 : 0) +
     (tab === "artifacts" && queryActive ? 1 : 0);
   const toolFilterCount =
     (tab === "tools" && queryActive ? 1 : 0) +
@@ -1180,8 +1237,13 @@ function App() {
           </span>
         )}
         {tab === "artifacts" &&
-          (selFeature ? 1 : 0) + (selRepo ? 1 : 0) > 0 && (
+          (selFeature ? 1 : 0) + (selRepo ? 1 : 0) + (selType ? 1 : 0) > 0 && (
             <>
+              {selType && (
+                <span className="filter-chip" onClick={() => setSelType("")}>
+                  type: {selType} <span className="x">×</span>
+                </span>
+              )}
               {selFeature && (
                 <span
                   className="filter-chip"
@@ -1301,6 +1363,14 @@ function App() {
                 history {showHistory ? "on" : "off"}
               </button>
             </div>
+            <SingleFacetGroup
+              title="type"
+              counts={typeCounts}
+              selected={selType}
+              onPick={setSelType}
+              isCollapsed={collapsed.has("type")}
+              onToggleCollapse={() => toggleCollapsed("type")}
+            />
             <BucketSidebar
               buckets={browseBuckets}
               selRepo={selRepo}
@@ -1314,7 +1384,7 @@ function App() {
                 setRepoMenu({ repo, x, y, purgeDefault: false })
               }
             />
-            {(!!selFeature || !!selRepo) && (
+            {(!!selFeature || !!selRepo || !!selType) && (
               <button className="facet-clear" onClick={clearFacets}>
                 clear filters
               </button>
@@ -1439,8 +1509,15 @@ function App() {
 
       <section className="results" onMouseDownCapture={() => (navCol.current = "results")}>
         {tab === "doit" && <DoitItems d={doit} />}
-        {tab === "artifacts" && hybridRows.length > 0 &&
-          hybridRows.map((h) => (
+        {tab === "artifacts" && searching && pubView.length > 0 && (
+          <BrowseList
+            groups={[{ dir: `published · ${pubView.length}`, files: pubView }]}
+            selPath={selection?.kind === "file" ? selection.path : ""}
+            onPick={(path) => setSelection({ kind: "file", path })}
+          />
+        )}
+        {tab === "artifacts" && searching &&
+          hybridView.map((h) => (
             <HybridRow
               key={h.artifact.id}
               row={h}
@@ -1453,7 +1530,7 @@ function App() {
               }
             />
           ))}
-        {tab === "artifacts" && hybridRows.length === 0 && (
+        {tab === "artifacts" && !searching && (
           <BrowseList
             groups={browseGroups}
             selPath={selection?.kind === "file" ? selection.path : ""}
@@ -1578,9 +1655,7 @@ function App() {
         {selection?.kind === "artifact" && detailArt && (
           <>
             <header className="detail-head">
-              <h1 style={{ marginBottom: 0 }}>
-                {detailArt.feature || detailArt.name || detailArt.path}
-              </h1>
+              <h1 style={{ marginBottom: 0 }}>{detailArt.path.split("/").pop()}</h1>
               <div className="meta">
                 <span className={`chip type-${detailArt.type}`}>
                   {detailArt.type}
@@ -2164,8 +2239,11 @@ function FileDetail({
   body: string;
   onOpenSession: (sessionID: string) => void;
 }) {
-  const name = path.split("/").pop() || path;
-  const ext = name.includes(".") ? name.split(".").pop()!.toLowerCase() : "";
+  const published = row?.repo === "published";
+  const isURL = path.startsWith("http");
+  const name = published ? row!.rel : path.split("/").pop() || path;
+  const file = path.split("/").pop() || path;
+  const ext = isURL ? "" : file.includes(".") ? file.split(".").pop()!.toLowerCase() : "";
   const csvRows = useMemo(
     () => (ext === "csv" ? parseCSV(body).slice(0, 500) : null),
     [ext, body],
@@ -2176,9 +2254,28 @@ function FileDetail({
         <h1 style={{ marginBottom: 0 }}>{name}</h1>
         <div className="meta">
           {row?.type && <span className={`chip type-${row.type}`}>{row.type}</span>}
-          {row?.dead && <span className="chip dead">worktree gone</span>}
-          {row?.repo && <span>repo: {row.repo}</span>}
-          {row?.feature && <span>feature: {row.feature}</span>}
+          {row?.dead && <span className="chip dead">{published ? "deleted from disk" : "worktree gone"}</span>}
+          {published ? (
+            row?.project && <span>project: {row.project}</span>
+          ) : (
+            <>
+              {row?.repo && <span>repo: {row.repo}</span>}
+              {row?.feature && <span>feature: {row.feature}</span>}
+            </>
+          )}
+          {isURL && (
+            <button className="mini-btn" onClick={() => BrowserOpenURL(path)}>
+              open
+            </button>
+          )}
+          {published && !isURL && !row?.dead && (
+            <button
+              className="mini-btn"
+              onClick={() => OpenPath(`obsidian://open?path=${encodeURIComponent(path)}`, false)}
+            >
+              open in Obsidian
+            </button>
+          )}
           {row?.mtime ? <span>updated: {formatTime(new Date(row.mtime * 1000).toISOString())}</span> : null}
           {row?.sessionId && (
             <a
@@ -2190,10 +2287,10 @@ function FileDetail({
             </a>
           )}
           <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{path}</span>
-          <CopyButton text={path} label="copy absolute path" />
+          <CopyButton text={path} label={isURL ? "copy url" : "copy absolute path"} />
         </div>
       </header>
-      {ext === "md" || ext === "mmd" ? (
+      {isURL ? null : ext === "md" || ext === "mmd" ? (
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeHighlight as any]}
@@ -2463,6 +2560,7 @@ function BrowseList({
                   : f.rel}
               </span>
               {f.dead && <span className="chip dead">gone</span>}
+              {f.project && f.repo === "published" && <span className="browse-meta">{f.project}</span>}
               <span className="browse-meta">{formatMtime(f.mtime)}</span>
             </div>
           ))}
@@ -2498,18 +2596,15 @@ function HybridRow({
       data-nav
       className={`result-row ${selected ? "selected" : ""}`}
       onClick={onClick}
+      title={`score ${row.score.toFixed(3)} · fts ${row.fts_score.toFixed(2)} · vec ${row.vector_score.toFixed(2)} · rec ${row.recency_score.toFixed(2)} · acc ${row.access_score.toFixed(2)}`}
     >
       <div className="row-head">
         <span className={`chip type-${a.type}`}>{a.type}</span>
-        <span className="row-title">
-          {a.feature || a.name || a.path.split("/").pop()}
-        </span>
-        <span className="chip score">{row.score.toFixed(3)}</span>
+        <span className="row-title">{a.path.split("/").pop()}</span>
+        {a.updated && <span className="row-meta">{a.updated}</span>}
       </div>
-      <div className="row-path">{a.path}</div>
-      <div className="row-meta">
-        fts {row.fts_score.toFixed(2)} · vec {row.vector_score.toFixed(2)} · rec{" "}
-        {row.recency_score.toFixed(2)} · acc {row.access_score.toFixed(2)}
+      <div className="row-path">
+        {[a.repo, a.feature].filter(Boolean).join(" · ")} · {a.path}
       </div>
     </div>
   );

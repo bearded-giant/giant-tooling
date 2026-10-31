@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -66,5 +68,36 @@ func TestSetPrefConcurrent(t *testing.T) {
 	}
 	if len(m) != 40 {
 		t.Fatalf("lost writes: got %d of 40 keys", len(m))
+	}
+}
+
+func TestGitLastVersionDeletedNote(t *testing.T) {
+	root := t.TempDir()
+	run := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", append([]string{"-C", root}, args...)...)
+		cmd.Env = append(os.Environ(), "GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@t", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@t")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	note := filepath.Join(root, "areas", "ai", "note.md")
+	if err := os.MkdirAll(filepath.Dir(note), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	os.WriteFile(note, []byte("v1"), 0o644)
+	run("init", "-q")
+	run("add", ".")
+	run("commit", "-qm", "add")
+	os.WriteFile(note, []byte("v2"), 0o644)
+	run("commit", "-qam", "edit")
+	run("rm", "-rq", "areas")
+	run("commit", "-qm", "delete")
+	got, err := gitLastVersion(note)
+	if err != nil || got != "v2" {
+		t.Fatalf("got %q, %v; want v2", got, err)
+	}
+	if _, err := gitLastVersion("https://claude.ai/artifact/x"); err == nil {
+		t.Fatal("url should not resolve")
 	}
 }

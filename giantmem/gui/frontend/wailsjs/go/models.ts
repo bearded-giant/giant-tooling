@@ -54,6 +54,7 @@ export namespace artifacts {
 	}
 	export class ListFilter {
 	    Type: string[];
+	    ExcludeType: string[];
 	    Status: string[];
 	    Lifecycle: string[];
 	    Scope: string;
@@ -70,6 +71,7 @@ export namespace artifacts {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.Type = source["Type"];
+	        this.ExcludeType = source["ExcludeType"];
 	        this.Status = source["Status"];
 	        this.Lifecycle = source["Lifecycle"];
 	        this.Scope = source["Scope"];
@@ -331,6 +333,7 @@ export namespace main {
 	    mtime: number;
 	    sessionId: string;
 	    dead: boolean;
+	    project?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new BrowseRow(source);
@@ -347,6 +350,7 @@ export namespace main {
 	        this.mtime = source["mtime"];
 	        this.sessionId = source["sessionId"];
 	        this.dead = source["dead"];
+	        this.project = source["project"];
 	    }
 	}
 	export class DBSizes {

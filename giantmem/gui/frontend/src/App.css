@@ -362,6 +362,21 @@
   border-color: var(--warn);
   color: var(--warn);
 }
+.chip.type-claude-artifact,
+.chip.type-vault {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--bg);
+}
+.chip.type-handoff,
+.chip.type-mr {
+  border-color: var(--accent-2);
+  color: var(--accent-2);
+}
+.chip.type-review {
+  border-color: var(--danger);
+  color: var(--danger);
+}
 .chip.score {
   color: var(--accent-2);
   border-color: var(--accent);

@@ -81,6 +81,8 @@ export function SearchFTS(arg1:search.Params):Promise<Array<search.Hit>>;
 
 export function SearchHybrid(arg1:string,arg2:artifacts.ListFilter,arg3:number,arg4:string,arg5:string):Promise<Array<search.HybridResult>>;
 
+export function SearchPublished(arg1:string,arg2:string,arg3:string):Promise<Array<main.BrowseRow>>;
+
 export function SearchToolUses(arg1:main.ToolUseFilter):Promise<Array<main.ToolUseHit>>;
 
 export function SessionFacets(arg1:string,arg2:string):Promise<main.SessionFacetCounts>;

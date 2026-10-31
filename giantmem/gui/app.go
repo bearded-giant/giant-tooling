@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/daemon"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/hub"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/prune"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
@@ -772,6 +774,7 @@ type BrowseRow struct {
 	Mtime     int64  `json:"mtime"`
 	SessionID string `json:"sessionId"`
 	Dead      bool   `json:"dead"`
+	Project   string `json:"project,omitempty"`
 }
 
 // BrowseTree returns every .giantmem/ file known to live_docs, typed via the
@@ -790,6 +793,18 @@ func (a *App) BrowseTree() ([]BrowseRow, error) {
 		return nil, err
 	}
 	defer rows.Close()
+
+	// frontmatter can retype a file; search reads the projection, so browse must too
+	typed := map[string]string{}
+	if trows, err := a.live.Query(`SELECT repo, path, type FROM artifacts`); err == nil {
+		for trows.Next() {
+			var repo, rel, typ string
+			if trows.Scan(&repo, &rel, &typ) == nil {
+				typed[repo+"\x00"+rel] = typ
+			}
+		}
+		trows.Close()
+	}
 
 	deadCache := map[string]bool{}
 	isDead := func(wt string) bool {
@@ -821,13 +836,56 @@ func (a *App) BrowseTree() ([]BrowseRow, error) {
 		}
 		r.Rel = rel
 		r.Type = cls.Type
+		if t, ok := typed[r.Repo+"\x00"+rel]; ok {
+			r.Type = t
+		}
 		if r.Feature == "" {
 			r.Feature = cls.Feature
 		}
 		r.Dead = isDead(r.Worktree)
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if a.archive != nil {
+		pubs, err := hub.ListPublished(a.archive, hub.PublishedFilter{})
+		if err != nil {
+			return nil, err
+		}
+		for _, p := range pubs {
+			out = append(out, publishedRow(p))
+		}
+	}
+	return out, nil
+}
+
+// one sidebar bucket per published type, so every page and note is a click away
+func publishedRow(p hub.Published) BrowseRow {
+	var mtime int64
+	if t, err := time.Parse(time.RFC3339, p.TS); err == nil {
+		mtime = t.Unix()
+	}
+	return BrowseRow{
+		Path: p.Target, Rel: p.Title, Repo: "published", Feature: p.Type,
+		Type: p.Type, Mtime: mtime, SessionID: p.SessionID, Dead: p.Missing, Project: p.Project,
+	}
+}
+
+// SearchPublished runs the same matcher as `giantmem published <query>`.
+func (a *App) SearchPublished(query, since, until string) ([]BrowseRow, error) {
+	if a.archive == nil {
+		return nil, nil
+	}
+	pubs, err := hub.ListPublished(a.archive, hub.PublishedFilter{Query: query, Since: since, Until: until})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BrowseRow, 0, len(pubs))
+	for _, p := range pubs {
+		out = append(out, publishedRow(p))
+	}
+	return out, nil
 }
 
 // DeleteProject removes a project from the live index (live_docs, artifacts,
@@ -902,7 +960,50 @@ func (a *App) GetLiveBody(path string) (string, error) {
 	if a.live == nil {
 		return "", fmt.Errorf("live db not open")
 	}
-	return artifacts.BodyByPath(a.live, path)
+	body, err := artifacts.BodyByPath(a.live, path)
+	if err == nil {
+		return body, nil
+	}
+	if old, gerr := gitLastVersion(path); gerr == nil {
+		return "> deleted from disk; this is the last version in git history\n\n" + old, nil
+	}
+	return "", err
+}
+
+// a note deleted from the vault still lives in the vault's own git history
+func gitLastVersion(path string) (string, error) {
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("not a path: %s", path)
+	}
+	dir := filepath.Dir(path)
+	for {
+		if _, err := os.Stat(dir); err == nil || dir == filepath.Dir(dir) {
+			break
+		}
+		dir = filepath.Dir(dir)
+	}
+	top, err := exec.Command("git", "-C", dir, "rev-parse", "--show-toplevel").Output()
+	if err != nil {
+		return "", err
+	}
+	root := strings.TrimSpace(string(top))
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		tail, _ := filepath.Rel(dir, path)
+		path = filepath.Join(real, tail)
+	}
+	rel, err := filepath.Rel(root, path)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("outside repo: %s", path)
+	}
+	if body, err := exec.Command("git", "-C", root, "show", "HEAD:"+rel).Output(); err == nil {
+		return string(body), nil
+	}
+	h, err := exec.Command("git", "-C", root, "rev-list", "-n1", "HEAD", "--", rel).Output()
+	if err != nil || strings.TrimSpace(string(h)) == "" {
+		return "", fmt.Errorf("no history: %s", rel)
+	}
+	body, err := exec.Command("git", "-C", root, "show", strings.TrimSpace(string(h))+"^:"+rel).Output()
+	return string(body), err
 }
 
 // SessionPathByID resolves a session id to its transcript jsonl path so the
