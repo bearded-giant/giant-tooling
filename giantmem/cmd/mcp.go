@@ -211,7 +211,7 @@ func registerExtraTools(s *server.MCPServer) {
 			append([]mcp.ToolOption{
 				mcp.WithDescription("Find typed artifacts across .giantmem/ workspaces. Filter by type, status, feature, domain, repo, branch, and optional fulltext query. Returns artifact ID, type, status, path, repo+branch, and a snippet when query matches."),
 				mcp.WithString("type",
-					mcp.Description("comma-separated artifact types (source-spec, delta-spec, proposal, design, tasks, plan, research, review, domain, notes, pattern, facts)")),
+					mcp.Description("comma-separated artifact types (source-spec, delta-spec, proposal, design, tasks, plan, research, review, domain, notes, pattern, facts, handoff, mr, run, diagram, prompt, filebox, history, workspace, file)")),
 				mcp.WithString("domain",
 					mcp.Description("filter by domain name (e.g. auth, payments)")),
 				mcp.WithString("status",

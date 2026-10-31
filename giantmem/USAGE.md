@@ -43,6 +43,29 @@ Binary: `~/.local/bin/giantmem`. Source: `~/dev/giant-tooling/giantmem/`.
 
 `dir_type` values: `plans`, `context`, `research`, `reviews`, `filebox`, `history`, `prompts`, `features`, `domains`, `root`.
 
+### Typed artifacts and published pages
+
+`giantmem artifact list|search` filter on the artifact `type`, which is the badge the GUI shows. A writer's frontmatter `type:` wins over the path; `grill-run`, `grill-final`, and `findings` fold into `review`, `mr-description` into `mr`, `brief` into `prompt`, and `reference`, `report`, and `rca` into `research`.
+
+| type | what lands there |
+|------|------------------|
+| `proposal`, `design`, `tasks`, `facts`, `notes`, `plan`, `delta-spec`, `source-spec` | the feature lifecycle docs |
+| `research`, `pattern`, `domain` | research dirs (`research/`, `*-research/`), `context/*.md`, `domains/*.json` |
+| `review` | `reviews/`, `grill/` |
+| `handoff`, `mr`, `diagram` | `handoff.md`, `mr-description*.md` or `mr-descriptions/`, any `*.mmd` |
+| `run`, `filebox`, `prompt` | workflow output (`runs/`, `swarm*/`), drop-box files, `prompts/` |
+| `history`, `workspace`, `file` | session summaries, `WORKSPACE.md`, everything else |
+
+| Command | What it does |
+|---------|--------------|
+| `giantmem artifact search "auth" -t review` | hybrid search, reviews only |
+| `giantmem artifact search "auth" --exclude-type history` | drop session summaries (the GUI's history toggle) |
+| `giantmem published --since 2d` | claude.ai and artifacts-hub pages, vault notes, and vault handoffs sessions produced, newest first |
+| `giantmem published metric hoisting -t claude-artifact,vault` | words match title, path, project, and vault note bodies |
+| `giantmem published --json` | same rows the GUI's published bucket shows |
+
+A vault note that no longer exists on disk prints `(missing)`.
+
 `source` values: `workspace`, `session`, `domain`. (`live` is a separate db — use `--live` flag, not `-s live`.)
 
 ## Sessions: find buried conversations and resume them
