@@ -1,9 +1,7 @@
 package cmd
 
 import (
-	"bufio"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
@@ -13,6 +11,7 @@ import (
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/backfill"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/ingest"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 	"github.com/spf13/cobra"
 )
@@ -26,6 +25,7 @@ var indexCmd = &cobra.Command{
 var (
 	migrateDryRun     bool
 	migrateCanonical  bool
+	migrateFromCwd    bool
 	sessionsForce     bool
 	liveRoots         []string
 	backfillWorkspace string
@@ -71,6 +71,14 @@ var indexMigrateCmd = &cobra.Command{
 			return err
 		}
 		defer a.Close()
+
+		if migrateFromCwd {
+			n, err := renameSessionsFromCwd(a, migrateDryRun)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("renamed %d session row(s) from cwd\n", n)
+		}
 
 		rows, err := a.Query("SELECT DISTINCT project FROM documents")
 		if err != nil {
@@ -157,6 +165,51 @@ var indexMigrateCmd = &cobra.Command{
 		}
 		return nil
 	},
+}
+
+// renameSessionsFromCwd reaches session rows whose transcript Claude Code already pruned, which re-ingest cannot.
+func renameSessionsFromCwd(a *sql.DB, dryRun bool) (int, error) {
+	rows, err := a.Query(`SELECT DISTINCT cwd FROM documents
+                          WHERE source_type IN ('session','subagent') AND COALESCE(cwd,'') <> ''`)
+	if err != nil {
+		return 0, err
+	}
+	var cwds []string
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		cwds = append(cwds, c)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+
+	tx, err := a.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	total := 0
+	for _, c := range cwds {
+		p := ingest.ProjectFromCwd(c, archiveBasePath())
+		canon := canonicalProjectName(p)
+		res, err := tx.Exec(`UPDATE documents SET project = ?, canonical_project = ?
+                              WHERE cwd = ? AND source_type IN ('session','subagent')
+                                AND (project IS NOT ? OR canonical_project IS NOT ?)`, p, canon, c, p, canon)
+		if err != nil {
+			return 0, err
+		}
+		n, _ := res.RowsAffected()
+		total += int(n)
+	}
+	if dryRun {
+		return total, nil
+	}
+	return total, tx.Commit()
 }
 
 // backfillCanonical writes canonical_project for every documents row.
@@ -265,7 +318,7 @@ var indexSessionsCmd = &cobra.Command{
 			if strings.Contains(path, "subagents") {
 				return nil
 			}
-			cwd := extractCwd(path)
+			cwd := ingest.SessionCwd(path)
 			if cwd == "" {
 				return nil
 			}
@@ -284,28 +337,6 @@ var indexSessionsCmd = &cobra.Command{
 		fmt.Println("(run giantmem-search.py ingest to add new sessions)")
 		return nil
 	},
-}
-
-func extractCwd(jsonlPath string) string {
-	f, err := os.Open(jsonlPath)
-	if err != nil {
-		return ""
-	}
-	defer f.Close()
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
-	limit := 50
-	for sc.Scan() && limit > 0 {
-		limit--
-		var m map[string]any
-		if err := json.Unmarshal(sc.Bytes(), &m); err != nil {
-			continue
-		}
-		if v, ok := m["cwd"].(string); ok && v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 var indexLiveCmd = &cobra.Command{
@@ -489,6 +520,7 @@ row OR its size differs. Same code path the daemon runs at startup.`,
 func init() {
 	indexMigrateCmd.Flags().BoolVar(&migrateDryRun, "dry-run", false, "show planned changes only")
 	indexMigrateCmd.Flags().BoolVar(&migrateCanonical, "canonicalize", false, "also backfill canonical_project on existing rows")
+	indexMigrateCmd.Flags().BoolVar(&migrateFromCwd, "from-cwd", false, "rename session rows from their recorded cwd (reaches pruned transcripts re-ingest cannot)")
 	indexSessionsCmd.Flags().BoolVar(&sessionsForce, "force", false, "re-extract cwd even if set")
 	indexBackfillCmd.Flags().StringVar(&backfillWorkspace, "workspace", "", "scope to a single .giantmem (or its parent worktree); default = all roots")
 
