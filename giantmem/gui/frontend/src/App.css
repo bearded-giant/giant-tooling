@@ -79,9 +79,44 @@
   width: auto;
   font-size: 14px;
 }
+.topbar .type-ahead {
+  position: relative;
+}
 .topbar .type-ahead input {
-  width: 150px;
+  width: 160px;
   font-size: 14px;
+}
+.type-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 220px;
+  max-height: 70vh;
+  overflow-y: auto;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 0;
+  z-index: 50;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+}
+.type-opt {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+.type-opt.active {
+  background: var(--bg-3);
+}
+.type-opt.current {
+  color: var(--accent-2);
+}
+.type-opt .count {
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
 }
 .topbar .date-range .date-range-sep {
   color: var(--fg-muted);

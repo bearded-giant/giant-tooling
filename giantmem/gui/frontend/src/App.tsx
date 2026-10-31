@@ -2534,7 +2534,7 @@ function SingleFacetGroup({
 // BrowseList: compact rows for browse mode. Every group carries the shared
 // repo · feature context in its header exactly once, so rows are just
 // name + type + time.
-// native datalist: substring typeahead; a partial word only applies on enter
+// own menu, not a datalist: webkit caps the native popup at ~3 rows
 function TypeAhead({
   counts,
   value,
@@ -2545,40 +2545,77 @@ function TypeAhead({
   onChange: (t: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => setDraft(value), [value]);
-  const types = Object.entries(counts).sort((a, b) => b[1] - a[1]);
-  const commit = (v: string) => {
-    const q = v.trim().toLowerCase();
-    if (!q) return onChange("");
-    const hit =
-      types.find(([t]) => t === q) ||
-      types.find(([t]) => t.startsWith(q)) ||
-      types.find(([t]) => t.includes(q));
-    if (hit) onChange(hit[0]);
-    else setDraft(value);
+  const q = draft === value ? "" : draft.trim().toLowerCase();
+  const matches = Object.entries(counts)
+    .filter(([t]) => !q || t.includes(q))
+    .sort((a, b) => (q ? Number(!a[0].startsWith(q)) - Number(!b[0].startsWith(q)) : 0) || b[1] - a[1]);
+  const options: [string, number][] = q ? matches : [["", 0], ...matches];
+  const pick = (t: string) => {
+    onChange(t);
+    setDraft(t);
+    setOpen(false);
+    inputRef.current?.blur();
   };
   return (
     <div className="date-range type-ahead" title="filter by artifact type (search and browse)">
       <input
+        ref={inputRef}
         type="search"
-        list="artifact-types"
         placeholder="all types"
         value={draft}
+        onFocus={(e) => {
+          setOpen(true);
+          setActive(0);
+          e.target.select();
+        }}
         onChange={(e) => {
-          const v = e.target.value;
-          setDraft(v);
-          if (v === "" || Object.prototype.hasOwnProperty.call(counts, v)) onChange(v);
+          setDraft(e.target.value);
+          setOpen(true);
+          setActive(0);
+          if (e.target.value === "") onChange("");
         }}
         onKeyDown={(e) => {
-          if (e.key === "Enter") commit(draft);
+          if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+            e.preventDefault();
+            const d = e.key === "ArrowDown" ? 1 : -1;
+            setActive((a) => Math.max(0, Math.min(options.length - 1, a + d)));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (options[active]) pick(options[active][0]);
+          } else if (e.key === "Escape") {
+            setDraft(value);
+            setOpen(false);
+          }
         }}
-        onBlur={() => commit(draft)}
+        onBlur={() => {
+          setOpen(false);
+          setDraft(value);
+        }}
       />
-      <datalist id="artifact-types">
-        {types.map(([t, n]) => (
-          <option key={t} value={t} label={String(n)} />
-        ))}
-      </datalist>
+      {open && options.length > 0 && (
+        <div className="type-menu" role="listbox">
+          {options.map(([t, n], i) => (
+            <div
+              key={t || "(all)"}
+              role="option"
+              aria-selected={t === value}
+              className={`type-opt${i === active ? " active" : ""}${t === value ? " current" : ""}`}
+              onMouseEnter={() => setActive(i)}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                pick(t);
+              }}
+            >
+              <span>{t || "all types"}</span>
+              {t && <span className="count">{n}</span>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
