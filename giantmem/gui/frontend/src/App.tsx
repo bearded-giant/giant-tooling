@@ -1084,6 +1084,21 @@ function App() {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
+        {tab === "artifacts" && (
+          <div className="date-range" title="filter by artifact type (search and browse)">
+            <select value={selType} onChange={(e) => setSelType(e.target.value)}>
+              <option value="">all types</option>
+              {Object.entries(typeCounts)
+                .concat(selType && !(selType in typeCounts) ? [[selType, 0]] : [])
+                .sort((a, b) => b[1] - a[1])
+                .map(([t, n]) => (
+                  <option key={t} value={t}>
+                    {t} ({n})
+                  </option>
+                ))}
+            </select>
+          </div>
+        )}
         {tab !== "activity" && tab !== "day" && tab !== "doit" && (
           <div className="date-range" title="filter results by date range">
             <select
@@ -1514,6 +1529,7 @@ function App() {
             groups={[{ dir: `published · ${pubView.length}`, files: pubView }]}
             selPath={selection?.kind === "file" ? selection.path : ""}
             onPick={(path) => setSelection({ kind: "file", path })}
+            onType={setSelType}
           />
         )}
         {tab === "artifacts" && searching &&
@@ -1528,6 +1544,7 @@ function App() {
               onClick={() =>
                 setSelection({ kind: "artifact", id: h.artifact.id })
               }
+              onType={setSelType}
             />
           ))}
         {tab === "artifacts" && !searching && (
@@ -1535,6 +1552,7 @@ function App() {
             groups={browseGroups}
             selPath={selection?.kind === "file" ? selection.path : ""}
             onPick={(path) => setSelection({ kind: "file", path })}
+            onType={setSelType}
           />
         )}
         {tab === "tools" &&
@@ -2528,14 +2546,35 @@ function SingleFacetGroup({
 // BrowseList: compact rows for browse mode. Every group carries the shared
 // repo · feature context in its header exactly once, so rows are just
 // name + type + time.
+function TypeChip({ type, onType }: { type: string; onType?: (t: string) => void }) {
+  return (
+    <span
+      className={`chip type-${type}${onType ? " clickable" : ""}`}
+      title={onType ? `show only ${type}` : undefined}
+      onClick={
+        onType
+          ? (e) => {
+              e.stopPropagation();
+              onType(type);
+            }
+          : undefined
+      }
+    >
+      {type}
+    </span>
+  );
+}
+
 function BrowseList({
   groups,
   selPath,
   onPick,
+  onType,
 }: {
   groups: { dir: string; files: main.BrowseRow[] }[];
   selPath: string;
   onPick: (path: string) => void;
+  onType?: (t: string) => void;
 }) {
   if (groups.length === 0) {
     return null;
@@ -2553,7 +2592,7 @@ function BrowseList({
               onClick={() => onPick(f.path)}
               title={f.path}
             >
-              {f.type && <span className={`chip type-${f.type}`}>{f.type}</span>}
+              {f.type && <TypeChip type={f.type} onType={onType} />}
               <span className="browse-name">
                 {f.feature && f.rel.startsWith(`features/${f.feature}/`)
                   ? f.rel.slice(`features/${f.feature}/`.length)
@@ -2585,10 +2624,12 @@ function HybridRow({
   row,
   selected,
   onClick,
+  onType,
 }: {
   row: search.HybridResult;
   selected: boolean;
   onClick: () => void;
+  onType?: (t: string) => void;
 }) {
   const a = row.artifact;
   return (
@@ -2599,7 +2640,7 @@ function HybridRow({
       title={`score ${row.score.toFixed(3)} · fts ${row.fts_score.toFixed(2)} · vec ${row.vector_score.toFixed(2)} · rec ${row.recency_score.toFixed(2)} · acc ${row.access_score.toFixed(2)}`}
     >
       <div className="row-head">
-        <span className={`chip type-${a.type}`}>{a.type}</span>
+        <TypeChip type={a.type} onType={onType} />
         <span className="row-title">{a.path.split("/").pop()}</span>
         {a.updated && <span className="row-meta">{a.updated}</span>}
       </div>
