@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
 )
 
 var (
@@ -166,6 +169,59 @@ func extractAssistantBlocks(content any, texts *[]string, filesTouched map[strin
 			}
 		}
 	}
+}
+
+// SessionProject names a session by the cwd it ran in, falling back to the
+// slug only when no record carries one: the slug turns every hyphen in a repo
+// name into a path separator (claude-code-config -> dev/claude/code-config).
+func SessionProject(jsonlPath, projectsDir, archiveBase string) string {
+	cwd := SessionCwd(jsonlPath)
+	if cwd == "" {
+		return SessionProjectName(jsonlPath, projectsDir)
+	}
+	return ProjectFromCwd(cwd, archiveBase)
+}
+
+// worktree sessions keep <container>-<worktree> so the sessions facet still splits by branch
+func ProjectFromCwd(cwd, archiveBase string) string {
+	if _, err := os.Stat(cwd); err == nil {
+		info := project.Detect(cwd, archiveBase)
+		if info.IsBare {
+			return info.Project + "-" + filepath.Base(info.WorktreePath)
+		}
+		return info.Project
+	}
+	parts := strings.Split(filepath.ToSlash(filepath.Clean(cwd)), "/")
+	for i, p := range parts {
+		if strings.HasSuffix(p, "-wt") && i+1 < len(parts) {
+			return p + "-" + parts[i+1]
+		}
+	}
+	return filepath.Base(cwd)
+}
+
+// SessionCwd scans only the head of the transcript: the first records carry cwd.
+func SessionCwd(jsonlPath string) string {
+	f, err := os.Open(jsonlPath)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	for i := 0; i < 50 && sc.Scan(); i++ {
+		line := sc.Bytes()
+		if !bytes.Contains(line, []byte(`"cwd"`)) {
+			continue
+		}
+		var rec struct {
+			Cwd string `json:"cwd"`
+		}
+		if json.Unmarshal(line, &rec) == nil && rec.Cwd != "" {
+			return rec.Cwd
+		}
+	}
+	return ""
 }
 
 // SessionProjectName derives a human-readable project name from a JSONL path.

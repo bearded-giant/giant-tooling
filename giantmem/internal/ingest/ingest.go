@@ -171,7 +171,7 @@ func Run(db *sql.DB, opt Options) (Stats, error) {
 
 sessions:
 	if doSessions {
-		s, errs, err := ingestSessions(db, opt.ClaudeProjects, opt.Project, opt.Force, now)
+		s, errs, err := ingestSessions(db, opt.ClaudeProjects, opt.ArchiveBase, opt.Project, opt.Force, now)
 		if err != nil {
 			return st, err
 		}
@@ -315,7 +315,7 @@ func resolveLatestTimestamps(archiveBase string) map[string]bool {
 
 // ----- sessions pass -----
 
-func ingestSessions(db *sql.DB, projectsDir, projectFilter string, force bool, now string) (int, int, error) {
+func ingestSessions(db *sql.DB, projectsDir, archiveBase, projectFilter string, force bool, now string) (int, int, error) {
 	if _, err := os.Stat(projectsDir); err != nil {
 		return 0, 0, nil
 	}
@@ -345,7 +345,7 @@ func ingestSessions(db *sql.DB, projectsDir, projectFilter string, force bool, n
 		if strings.Contains(p, "subagents") {
 			return nil
 		}
-		projectName := SessionProjectName(p, projectsDir)
+		projectName := SessionProject(p, projectsDir, archiveBase)
 		if projectFilter != "" && !strings.Contains(strings.ToLower(projectName), strings.ToLower(projectFilter)) {
 			return nil
 		}

@@ -63,7 +63,7 @@ func (s *claudeJSONLSource) Emit(ctx context.Context, opts EmitOptions) (<-chan 
 				return nil
 			}
 			parentID, agentID := subagentOf(opts.ClaudeProjects, p)
-			projectName := ingest.SessionProjectName(p, opts.ClaudeProjects)
+			projectName := ingest.SessionProject(p, opts.ClaudeProjects, archiveBase())
 			if opts.Project != "" && !strings.Contains(strings.ToLower(projectName), strings.ToLower(opts.Project)) {
 				return nil
 			}
