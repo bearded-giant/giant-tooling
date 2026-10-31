@@ -722,6 +722,8 @@ After installing or updating the hook, restart Claude Code so it re-reads `setti
 | Regular repo `~/dev/foo` AND `~/giantmem_archive/foo-wt/` exists | `foo-wt` (consolidated) |
 | Bare-with-worktrees `~/dev/foo-wt/main` | `foo-wt` |
 
+Claude session transcripts take their name from the `cwd` recorded in the transcript, run through the same detector, so `~/dev/claude-code-config` is `claude-code-config` rather than a guess from the hyphenated projects-dir slug. A worktree session is `foo-wt-main` so the sessions view still splits by worktree; a removed worktree resolves from the `-wt` segment of its path. Only a transcript with no `cwd` falls back to the slug.
+
 `giantmem db index migrate` rewrites old `documents.project` values from `foo` to `foo-wt` whenever both buckets exist. Pre-existing `dev/ai/chat-orchestrator` session rows still match `giantmem session list -p chat-orchestrator` because `-p` is a `LIKE` filter.
 
 ## Storage layout
