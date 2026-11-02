@@ -1,9 +1,10 @@
 [Unit]
-Description=giantmem session ingest
+Description=giantmem session ingest + live index backfill
 
 [Service]
 Type=oneshot
 ExecStart=%h/.local/bin/giantmem db ingest --sessions-only
+ExecStart=%h/.local/bin/giantmem db index backfill
 Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
 StandardOutput=append:%h/.cache/giantmem/session-sweep.out
 StandardError=append:%h/.cache/giantmem/session-sweep.err

@@ -1,5 +1,5 @@
 [Unit]
-Description=giantmem session ingest every 10 minutes
+Description=giantmem session ingest + live index backfill every 10 minutes
 
 [Timer]
 OnBootSec=2min
