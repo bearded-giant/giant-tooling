@@ -1,0 +1,16 @@
+[Unit]
+Description=giantmemd, the giantmem JSON-RPC daemon
+After=default.target
+
+[Service]
+ExecStart=%h/.local/bin/giantmem daemon serve
+Environment=GIANTMEM_EMBED_BACKEND=python
+Environment=GIANTMEM_EMBED_PYTHON=%h/.venvs/giant-ai/bin/python3
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+Restart=always
+RestartSec=2
+StandardOutput=append:%h/.cache/giantmem/giantmemd.log
+StandardError=append:%h/.cache/giantmem/giantmemd.log
+
+[Install]
+WantedBy=default.target

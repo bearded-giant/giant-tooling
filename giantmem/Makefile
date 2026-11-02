@@ -13,10 +13,9 @@ LDFLAGS := -s -w \
   -X github.com/bearded-giant/giant-tooling/giantmem/cmd.Commit=$(COMMIT) \
   -X github.com/bearded-giant/giant-tooling/giantmem/cmd.BuildDate=$(DATE)
 
-VPS_HOST ?= bryan@5.161.66.2
-VPS_SRC  ?= ~/dev/giant-tooling/giantmem
+DEVBOX_HOST ?= devbox
 
-.PHONY: all build install install-completions uninstall test clean tidy run deploy-vps
+.PHONY: all build install install-completions uninstall test clean tidy run deploy-devbox
 
 all: build
 
@@ -54,13 +53,13 @@ clean:
 run: build
 	./$(BIN) $(ARGS)
 
-# Rebuild + install on the cloud-claude VPS. Source already mutagen-synced;
-# this ssh's in and runs `make install` remotely. Assumes Go installed at
-# ~/.local/go/bin and ~/.local/bin on PATH.
-#
-# Override host: make deploy-vps VPS_HOST=bryan@1.2.3.4
-deploy-vps:
-	@echo "==> deploying to $(VPS_HOST):$(VPS_SRC)"
-	ssh $(VPS_HOST) 'export PATH=$$HOME/.local/bin:$$HOME/.local/go/bin:$$PATH && cd $(VPS_SRC) && make install'
-	@echo "==> verifying"
-	@ssh $(VPS_HOST) '$$HOME/.local/bin/giantmem version'
+# Cross-build for the devbox, ship the binary and the user units, restart.
+# Override host: make deploy-devbox DEVBOX_HOST=other-box
+deploy-devbox: tidy
+	@echo "==> cross-building linux/amd64 $(VERSION)"
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o /tmp/$(BIN)-linux .
+	ssh $(DEVBOX_HOST) 'mkdir -p ~/.local/bin ~/.config/systemd/user ~/.cache/giantmem'
+	scp -q /tmp/$(BIN)-linux $(DEVBOX_HOST):.local/bin/$(BIN).new
+	scp -q systemd/giantmemd.service systemd/giantmem-ingest.service systemd/giantmem-ingest.timer $(DEVBOX_HOST):.config/systemd/user/
+	ssh $(DEVBOX_HOST) 'mv -f ~/.local/bin/$(BIN).new ~/.local/bin/$(BIN) && pkill -xf ".*/giantmem daemon serve" || true; systemctl --user daemon-reload && systemctl --user enable --now giantmem-ingest.timer && systemctl --user enable giantmemd && systemctl --user restart giantmemd && sleep 1 && systemctl --user is-active giantmemd && ~/.local/bin/$(BIN) version | head -1'
+	@rm -f /tmp/$(BIN)-linux
