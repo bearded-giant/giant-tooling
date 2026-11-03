@@ -169,6 +169,8 @@ func TestExtractVaultHandoff(t *testing.T) {
 		record("assistant", "2026-10-15T10:00:00Z",
 			use("a", "Write", map[string]any{"file_path": "/v/root/handoffs/proj/main.md"}),
 			use("b", "Edit", map[string]any{"file_path": "/v/root/handoffs-old/x.md"}),
+			use("c", "Write", map[string]any{"file_path": "/v/root/areas/proj/handoffs/features/f.md"}),
+			use("d", "Write", map[string]any{"file_path": "/v/root/areas/proj/handoffs-notes/y.md"}),
 		),
 	)
 	_, links, err := ExtractToolCalls(path, "/v/root")
@@ -178,6 +180,8 @@ func TestExtractVaultHandoff(t *testing.T) {
 	want := []Link{
 		{Kind: "handoff", Target: "/v/root/handoffs/proj/main.md", Label: "handoff", TS: "2026-10-15T10:00:00Z"},
 		{Kind: "vault", Target: "/v/root/handoffs-old/x.md", Label: "x", TS: "2026-10-15T10:00:00Z"},
+		{Kind: "handoff", Target: "/v/root/areas/proj/handoffs/features/f.md", Label: "handoff", TS: "2026-10-15T10:00:00Z"},
+		{Kind: "vault", Target: "/v/root/areas/proj/handoffs-notes/y.md", Label: "y", TS: "2026-10-15T10:00:00Z"},
 	}
 	if len(links) != len(want) {
 		t.Fatalf("got %d links %+v, want %d", len(links), links, len(want))

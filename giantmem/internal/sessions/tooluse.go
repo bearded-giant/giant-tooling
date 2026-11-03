@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -184,7 +185,7 @@ func (s *linkSet) fromInput(tool string, in map[string]any, ts string) {
 	fp := str(in, "file_path")
 	if tool == "Write" || tool == "Edit" || tool == "MultiEdit" {
 		if p, ok := s.vaultNote(fp); ok {
-			if strings.HasPrefix(p, filepath.Join(s.root, "handoffs")+string(filepath.Separator)) {
+			if slices.Contains(strings.Split(filepath.Dir(p), string(filepath.Separator)), "handoffs") {
 				s.add("handoff", p, "handoff", ts)
 			} else {
 				s.add("vault", p, noteStem(p), ts)
