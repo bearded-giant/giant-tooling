@@ -25,55 +25,60 @@ var mcpServeCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Run the giantmem MCP stdio server (search, artifacts, features, sessions, tool calls)",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		s := server.NewMCPServer(
-			"giantmem-search",
-			Version,
-			server.WithToolCapabilities(false),
-		)
-		tool := mcp.NewTool("search_archive",
-			mcp.WithDescription(`Search archived workspaces, Claude session transcripts, and domain knowledge via FTS5.
+		return server.ServeStdio(newMCPServer())
+	},
+}
+
+func newMCPServer() *server.MCPServer {
+	s := server.NewMCPServer(
+		"giantmem-search",
+		Version,
+		server.WithToolCapabilities(false),
+	)
+	tool := mcp.NewTool("search_archive",
+		mcp.WithDescription(`Search archived workspaces, Claude session transcripts, and domain knowledge via FTS5.
 
 Plain queries are auto-quoted so punctuation (e.g. "hub-and-spoke") works. FTS5 syntax (AND, OR, NOT, "phrase", prefix*) passes through untouched.
 
 When tool_filter or ext_filter is set on a session search, results expand to PER-LINE matches inside session JSONL transcripts: each row is one Claude tool_use with role + tool name + file path + a decoded text excerpt. Otherwise file-level results with FTS snippet.
 
 Read tool calls are HIDDEN by default (high-volume noise). Pass include_read=true or include "Read" in tool_filter to surface them.`),
-			mcp.WithReadOnlyHintAnnotation(true),
-			mcp.WithDestructiveHintAnnotation(false),
-			mcp.WithIdempotentHintAnnotation(true),
-			mcp.WithOpenWorldHintAnnotation(false),
-			mcp.WithString("query",
-				mcp.Required(),
-				mcp.Description(`FTS5 search query. Plain text is auto-quoted; wrap your own '"exact phrase"' for literal substring; full FTS5 operators supported when present.`),
-			),
-			mcp.WithString("project",
-				mcp.Description(`filter by project, LIKE-matched (e.g. "chat-orchestrator" matches "dev/ai/chat-orchestrator")`),
-			),
-			mcp.WithString("source_type",
-				mcp.Description(`filter by source: "workspace", "session", or "domain"`),
-			),
-			mcp.WithString("topic",
-				mcp.Description(`filter by session topic (e.g. "auth", "api", "bug", "feature")`),
-			),
-			mcp.WithString("tool_filter",
-				mcp.Description(`session-only filter (comma-separated): keep matches on lines where Claude used these tool names (e.g. "Write,Edit,MultiEdit"). Triggers per-line expansion. Case-insensitive.`),
-			),
-			mcp.WithString("ext_filter",
-				mcp.Description(`session-only filter (comma-separated): keep matches where a tool_use touched a file with these extensions (e.g. "md,go"). Composes with tool_filter via AND. Triggers per-line expansion.`),
-			),
-			mcp.WithBoolean("include_read",
-				mcp.Description(`session-only: include Read tool calls in results (default false; Read is hidden because Claude reads files constantly).`),
-			),
-			mcp.WithNumber("limit",
-				mcp.Description("max results (default 10)"),
-				mcp.Min(1),
-				mcp.Max(100),
-			),
-		)
-		s.AddTool(tool, mcp.NewTypedToolHandler(searchHandler))
-		registerExtraTools(s)
-		return server.ServeStdio(s)
-	},
+		mcp.WithReadOnlyHintAnnotation(true),
+		mcp.WithDestructiveHintAnnotation(false),
+		mcp.WithIdempotentHintAnnotation(true),
+		mcp.WithOpenWorldHintAnnotation(false),
+		mcp.WithString("query",
+			mcp.Required(),
+			mcp.Description(`FTS5 search query. Plain text is auto-quoted; wrap your own '"exact phrase"' for literal substring; full FTS5 operators supported when present.`),
+		),
+		mcp.WithString("project",
+			mcp.Description(`filter by project, LIKE-matched (e.g. "chat-orchestrator" matches "dev/ai/chat-orchestrator")`),
+		),
+		mcp.WithString("source_type",
+			mcp.Description(`filter by source: "workspace", "session", or "domain"`),
+		),
+		mcp.WithString("topic",
+			mcp.Description(`filter by session topic (e.g. "auth", "api", "bug", "feature")`),
+		),
+		mcp.WithString("tool_filter",
+			mcp.Description(`session-only filter (comma-separated): keep matches on lines where Claude used these tool names (e.g. "Write,Edit,MultiEdit"). Triggers per-line expansion. Case-insensitive.`),
+		),
+		mcp.WithString("ext_filter",
+			mcp.Description(`session-only filter (comma-separated): keep matches where a tool_use touched a file with these extensions (e.g. "md,go"). Composes with tool_filter via AND. Triggers per-line expansion.`),
+		),
+		mcp.WithBoolean("include_read",
+			mcp.Description(`session-only: include Read tool calls in results (default false; Read is hidden because Claude reads files constantly).`),
+		),
+		mcp.WithNumber("limit",
+			mcp.Description("max results (default 10)"),
+			mcp.Min(1),
+			mcp.Max(100),
+		),
+	)
+	s.AddTool(tool, mcp.NewTypedToolHandler(searchHandler))
+	registerExtraTools(s)
+	registerOpsTools(s)
+	return s
 }
 
 func registerExtraTools(s *server.MCPServer) {

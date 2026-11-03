@@ -17,7 +17,7 @@ import (
 
 var featureCmd = &cobra.Command{
 	Use:   "feature",
-	Short: "Feature lifecycle: new, start, pause, complete, abandon, reopen, list, move, archive",
+	Short: "Feature lifecycle: new, start, pause, complete, abandon, reopen, next, list, move, archive",
 }
 
 var (
@@ -232,6 +232,7 @@ func init() {
 		featurePySubcmd("complete [name]", "complete", "Mark the active (or named) feature complete"),
 		featurePySubcmd("abandon [name]", "abandon", "Drop a feature: mark abandoned, no spec merge, then archive"),
 		featurePySubcmd("reopen <name>", "reopen", "Reopen a paused/completed feature"),
+		featurePySubcmd("next [name]", "next", "Print the next ready task for the active (or named) feature"),
 		featureListCmd,
 		featureMoveCmd,
 		featureArchiveCmd,
