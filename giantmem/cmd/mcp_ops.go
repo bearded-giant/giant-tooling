@@ -13,7 +13,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 )
 
-var featureActions = []string{"new", "start", "pause", "reopen", "complete", "abandon", "next", "list", "archive", "move"}
+var featureActions = []string{"new", "start", "pause", "reopen", "complete", "abandon", "next", "facts", "list", "archive", "move"}
 
 func registerOpsTools(s *server.MCPServer) {
 	hints := func(readOnly, destructive, idempotent bool) []mcp.ToolOption {
@@ -67,25 +67,27 @@ func registerOpsTools(s *server.MCPServer) {
 		mcp.NewTool("feature",
 			append([]mcp.ToolOption{
 				mcp.WithDescription(`Run a feature lifecycle action in a workspace; same as ` + "`giantmem feature <action>`" + ` (feature.py for new..next).
-- new: create features/<name>/ (proposal, tasks, facts, notes) and check out branch <name> unless skip_checkout. Takes branch, base, builds_on, discovery, paired, skip_checkout.
+- new: create features/<name>/ (proposal, tasks, facts, notes) and check out branch <name> unless skip_checkout. Takes branch, base, builds_on, discovery, paired, no_paired, skip_checkout.
 - start: promote a pending feature to in_progress and check out its branch unless skip_checkout. Takes branch, base, skip_checkout.
 - pause: mark paused. Takes note, paused_state.
 - reopen: reopen a paused or complete feature. Takes skip_checkout.
 - complete: mark complete and merge delta-specs into source-specs. Takes quick, no_merge, reason.
 - abandon: mark abandoned, skip the spec merge, then archive the dir unless no_archive. Takes reason, no_archive.
 - next: print the next ready task.
+- facts: print features/<name>/facts.md (partial name match; ambiguous names list the candidates).
 - list: print features.json. Takes status.
 - archive: verify every file is in live.db, then remove the feature dir (no name = every complete/abandoned feature). Takes force, dry_run.
 - move: move features/<name> into the dest worktree's .giantmem. Takes dest, dry_run.
-name defaults to the active feature where the action allows it. Flags an action does not take are rejected.`),
+name defaults to the active feature where the action allows it; new, facts, and move require it. Flags an action does not take are rejected.`),
 				mcp.WithString("action", mcp.Required(), mcp.Enum(featureActions...)),
-				mcp.WithString("name", mcp.Description("feature name (required for new and move)")),
+				mcp.WithString("name", mcp.Description("feature name (required for new, facts, and move)")),
 				cwd,
 				mcp.WithString("branch", mcp.Description("git branch (new, start)")),
 				mcp.WithString("base", mcp.Description("base branch (new, start)")),
 				mcp.WithString("builds_on", mcp.Description("feature this builds on (new)")),
 				mcp.WithString("discovery", mcp.Description("discovery notes seeded into the proposal (new)")),
 				mcp.WithBoolean("paired", mcp.Description("paired frontend+backend feature (new)")),
+				mcp.WithBoolean("no_paired", mcp.Description("skip the paired counterpart even where the repo map pairs one (new)")),
 				mcp.WithBoolean("skip_checkout", mcp.Description("do not switch git branches (new, start, reopen)")),
 				mcp.WithString("note", mcp.Description("resumption note (pause)")),
 				mcp.WithString("paused_state", mcp.Description("paused-state snapshot (pause)")),
@@ -169,6 +171,7 @@ type featureArgs struct {
 	BuildsOn     string `json:"builds_on"`
 	Discovery    string `json:"discovery"`
 	Paired       bool   `json:"paired"`
+	NoPaired     bool   `json:"no_paired"`
 	SkipCheckout bool   `json:"skip_checkout"`
 	Note         string `json:"note"`
 	PausedState  string `json:"paused_state"`
@@ -190,7 +193,7 @@ func featureArgv(a featureArgs) ([]string, error) {
 	if !known {
 		return nil, fmt.Errorf("unknown action %q (want one of %s)", a.Action, strings.Join(featureActions, ", "))
 	}
-	if (a.Action == "new" || a.Action == "move") && a.Name == "" {
+	if (a.Action == "new" || a.Action == "facts" || a.Action == "move") && a.Name == "" {
 		return nil, fmt.Errorf("%s needs name", a.Action)
 	}
 	if a.Action == "move" && a.Dest == "" {
@@ -211,6 +214,7 @@ func featureArgv(a featureArgs) ([]string, error) {
 	argv = appendStr(argv, "--builds-on", a.BuildsOn)
 	argv = appendStr(argv, "--discovery", a.Discovery)
 	argv = appendBool(argv, "--paired", a.Paired)
+	argv = appendBool(argv, "--no-paired", a.NoPaired)
 	argv = appendBool(argv, "--skip-checkout", a.SkipCheckout)
 	argv = appendStr(argv, "--note", a.Note)
 	argv = appendStr(argv, "--paused-state", a.PausedState)

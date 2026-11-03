@@ -16,6 +16,9 @@ func TestFeatureArgv(t *testing.T) {
 		wantErr bool
 	}{
 		{"new needs name", featureArgs{Action: "new"}, nil, true},
+		{"facts needs name", featureArgs{Action: "facts"}, nil, true},
+		{"facts", featureArgs{Action: "facts", Name: "wails"}, []string{"feature", "facts", "wails"}, false},
+		{"new no paired", featureArgs{Action: "new", Name: "x", NoPaired: true}, []string{"feature", "new", "x", "--no-paired"}, false},
 		{"move needs dest", featureArgs{Action: "move", Name: "x"}, nil, true},
 		{"unknown action", featureArgs{Action: "explode"}, nil, true},
 		{"list takes no name", featureArgs{Action: "list", Name: "x"}, nil, true},

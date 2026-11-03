@@ -270,6 +270,7 @@ The old `workspace features` / `workspace *-feature` verbs are deprecated aliase
 | `giantmem feature pause [name] [flags]` | pause the active (or named) feature |
 | `giantmem feature reopen <name> [flags]` | reopen a paused/completed feature |
 | `giantmem feature next [name]` | print the next ready task for the active (or named) feature |
+| `giantmem feature facts <name>` | print a feature's `facts.md`; partial names match, ambiguous ones list the candidates |
 | `giantmem feature complete [name] [flags]` | mark the active (or named) feature complete (merges delta-specs) |
 | `giantmem feature abandon [name] [flags]` | drop a feature you're not going to build: status `abandoned`, no spec merge, then archives it |
 | `giantmem feature archive [name]` | archive complete/abandoned feature(s) — see Archiving above |
@@ -655,7 +656,7 @@ Match priority: exact basename, project, branch, then substring of `project/bran
 | `reindex_artifacts` | rebuild a workspace's `artifacts.json` and reconcile the `artifacts` table; same as `giantmem artifact reindex` |
 | `stale_artifacts` | `giantmem artifact stale`: `days` (default 30, `0` = tier policy), `all_repos`, `scope`, `lifecycle`, and `apply` to deprecate idle candidates |
 | `orphan_artifacts` | artifact-shaped files with no frontmatter; same as `giantmem artifact orphans` |
-| `feature` | one feature lifecycle `action` (new, start, pause, reopen, complete, abandon, next, list, archive, move) with that verb's flags; same as `giantmem feature <action>` |
+| `feature` | one feature lifecycle `action` (new, start, pause, reopen, complete, abandon, next, facts, list, archive, move) with that verb's flags; same as `giantmem feature <action>` |
 
 The ops tools (`reindex_artifacts`, `stale_artifacts`, `orphan_artifacts`, `feature`) take an optional `cwd` naming the worktree to act on; without it they use the directory the server started in, which is the session's launch directory. Each call runs the giantmem binary in a child process and returns its output.
 
