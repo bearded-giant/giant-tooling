@@ -15,9 +15,15 @@ var (
 var rootCmd = &cobra.Command{
 	Use:           "giantmem <command>",
 	Short:         "giantmem CLI: search, archive, and manage .giantmem workspaces",
-	Long:          "giantmem is a unified CLI for searching, archiving, and managing .giantmem workspace artifacts and Claude Code sessions.",
+	Long:          "giantmem is a unified CLI for searching, archiving, and managing .giantmem workspace artifacts and Claude Code sessions. Run it with no command in a terminal for an interactive menu over the same tools the MCP server exposes.",
 	SilenceUsage:  true,
 	SilenceErrors: false,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if !isInteractive() {
+			return cmd.Help()
+		}
+		return runInteractive(cmd.Context())
+	},
 }
 
 func Execute() {
