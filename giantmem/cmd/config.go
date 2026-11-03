@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -157,19 +158,25 @@ func describeHooks(home string) []hookInfo {
 }
 
 func describeMCP(home string) mcpInfo {
-	settingsPath := filepath.Join(home, ".claude", "settings.json")
-	raw, _ := os.ReadFile(settingsPath)
-	body := string(raw)
-	out := mcpInfo{}
-	if strings.Contains(body, `"giantmem-search"`) {
-		out.Registered = true
+	raw, _ := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	var parsed struct {
+		MCPServers map[string]struct {
+			Command string   `json:"command"`
+			Args    []string `json:"args"`
+		} `json:"mcpServers"`
 	}
-	if strings.Contains(body, `mcp", "serve"`) || strings.Contains(body, `"mcp","serve"`) {
-		out.Command = "giantmem"
-		out.Args = "mcp serve"
-		out.Healthy = true
+	_ = json.Unmarshal(raw, &parsed)
+	entry, ok := parsed.MCPServers["giantmem-search"]
+	if !ok {
+		return mcpInfo{}
 	}
-	return out
+	args := strings.Join(entry.Args, " ")
+	return mcpInfo{
+		Registered: true,
+		Command:    entry.Command,
+		Args:       args,
+		Healthy:    strings.Contains(entry.Command, "giantmem") && args == "mcp serve",
+	}
 }
 
 func fileExists(p string) bool {
