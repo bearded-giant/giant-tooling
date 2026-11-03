@@ -96,7 +96,7 @@ func ArchiveFeature(workspaceDir, name string, force, dryRun bool) (FeatureResul
 	}
 
 	featuresJSON := filepath.Join(ws, "features", "features.json")
-	entries, err := readFeaturesJSON(featuresJSON)
+	entries, err := ReadFeaturesJSON(featuresJSON)
 	if err != nil {
 		return res, fmt.Errorf("read features.json: %w", err)
 	}
@@ -166,7 +166,7 @@ func ArchiveCompleted(workspaceDir string, force, dryRun bool) ([]FeatureResult,
 		return nil, err
 	}
 	featuresJSON := filepath.Join(ws, "features", "features.json")
-	entries, err := readFeaturesJSON(featuresJSON)
+	entries, err := ReadFeaturesJSON(featuresJSON)
 	if err != nil {
 		return nil, fmt.Errorf("read features.json: %w", err)
 	}
@@ -216,8 +216,8 @@ func resolveWorkspace(workspaceDir string) (string, error) {
 	return ws, nil
 }
 
-// readFeaturesJSON parses the flat-dict shape: {"<name>": {...}, ...}
-func readFeaturesJSON(path string) (map[string]map[string]any, error) {
+// ReadFeaturesJSON parses the flat-dict shape: {"<name>": {...}, ...}
+func ReadFeaturesJSON(path string) (map[string]map[string]any, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err

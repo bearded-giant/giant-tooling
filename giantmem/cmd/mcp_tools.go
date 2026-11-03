@@ -9,10 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	archive "github.com/bearded-giant/giant-tooling/giantmem/internal/archiver"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/hub"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/sessions"
@@ -273,30 +275,21 @@ func featureStatusHandler(ctx context.Context, _ mcp.CallToolRequest, args featu
 }
 
 func readFeaturesJSON(path string) []map[string]any {
-	raw, err := os.ReadFile(path)
+	entries, err := archive.ReadFeaturesJSON(path)
 	if err != nil {
 		return nil
 	}
-	// dict shape: {features: {name: {...}}}
-	var asDict struct {
-		Features map[string]map[string]any `json:"features"`
+	names := make([]string, 0, len(entries))
+	for name := range entries {
+		names = append(names, name)
 	}
-	if err := json.Unmarshal(raw, &asDict); err == nil && asDict.Features != nil {
-		var out []map[string]any
-		for name, f := range asDict.Features {
-			f["name"] = name
-			out = append(out, f)
-		}
-		return out
+	sort.Strings(names)
+	out := make([]map[string]any, 0, len(names))
+	for _, name := range names {
+		entries[name]["name"] = name
+		out = append(out, entries[name])
 	}
-	// list shape: {features: [{...}, ...]}
-	var asList struct {
-		Features []map[string]any `json:"features"`
-	}
-	if err := json.Unmarshal(raw, &asList); err == nil {
-		return asList.Features
-	}
-	return nil
+	return out
 }
 
 // ----- workspace_tree --------------------------------------------------------

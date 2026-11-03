@@ -64,14 +64,14 @@ func TestMoveFeature(t *testing.T) {
 		t.Fatalf("Files = %d, want 1", res.Files)
 	}
 
-	srcEntries, err := readFeaturesJSON(filepath.Join(srcWS, "features", "features.json"))
+	srcEntries, err := ReadFeaturesJSON(filepath.Join(srcWS, "features", "features.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := srcEntries["widget"]; ok {
 		t.Fatal("widget still in source features.json")
 	}
-	destEntries, err := readFeaturesJSON(filepath.Join(destWS, "features", "features.json"))
+	destEntries, err := ReadFeaturesJSON(filepath.Join(destWS, "features", "features.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

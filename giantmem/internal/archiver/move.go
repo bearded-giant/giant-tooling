@@ -50,7 +50,7 @@ func MoveFeature(srcDir, destDir, name string, dryRun bool) (MoveResult, error) 
 	}
 
 	srcJSON := filepath.Join(srcWS, "features", "features.json")
-	entries, err := readFeaturesJSON(srcJSON)
+	entries, err := ReadFeaturesJSON(srcJSON)
 	if err != nil {
 		return res, fmt.Errorf("read source features.json: %w", err)
 	}
@@ -91,7 +91,7 @@ func MoveFeature(srcDir, destDir, name string, dryRun bool) (MoveResult, error) 
 	}
 
 	destJSON := filepath.Join(destWS, "features", "features.json")
-	destEntries, err := readFeaturesJSON(destJSON)
+	destEntries, err := ReadFeaturesJSON(destJSON)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
 			return res, fmt.Errorf("read dest features.json: %w", err)
