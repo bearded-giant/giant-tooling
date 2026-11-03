@@ -18,6 +18,22 @@ Binary: `~/.local/bin/giantmem`. Source: `~/dev/giant-tooling/giantmem/`.
 
 `giantmem --help` lists subcommands, grouped: Core Workflow / Search & Recall / Infrastructure / Plumbing. Every subcommand supports `-h`. `giantmem session --help`, `giantmem feature --help`, `giantmem db --help`. No need to memorize anything past `giantmem`.
 
+## Interactive menu
+
+Run `giantmem` with no command in a terminal and you get a prompt-driven menu instead of help. Every entry calls the same MCP tools Claude uses, in-process, so what you see is what a session sees. Type to filter any list, Enter picks, Esc goes back one level, ctrl+c quits. Long output (artifact bodies, session reports, query results, bundle files) goes through `$PAGER`, defaulting to `less -FRX`. When stdin or stdout isn't a terminal, `giantmem` prints help like it always did, so scripts don't notice.
+
+| Menu entry | What it does | Tools behind it |
+|------------|--------------|-----------------|
+| Find artifacts | filter by body text, pick one, read it; scoped to the current repo when you're inside a workspace | `find_artifact`, `get_artifact` |
+| Search everything | FTS5 over workspaces, sessions, and domain docs | `search_archive` |
+| Sessions | recent sessions, then a summary with the resume line, the session's bundle files, or its tool calls | `list_sessions`, `get_session_summary`, `get_session_bundle`, `find_tool_uses` |
+| Tool calls | search past tool calls across sessions | `find_tool_uses` |
+| MRs and PRs | MRs sessions opened or touched; picking one loads live status | `find_mr` |
+| Features | the current workspace's features, plus new, next, start, pause, complete, reopen, abandon, archive (abandon and archive ask first) | `feature` |
+| Recent writes | `.giantmem/` writes from the last 48 hours, opened in the pager | `recent_writes` |
+| Reindex artifacts | rebuild `artifacts.json` and reconcile the artifacts table | `reindex_artifacts` |
+| Query a database | read-only SQL against `live.db` or `archives.db`, printed as a table | `query_db` |
+
 ## Search (the main event)
 
 `giantmem find <query>` runs an FTS5 query across **live workspaces** (`live.db`) and **archived docs + Claude session transcripts** (`archives.db`), then merges and ranks the results.
@@ -253,6 +269,7 @@ The old `workspace features` / `workspace *-feature` verbs are deprecated aliase
 | `giantmem feature start [name] [flags]` | promote a pending feature to in_progress |
 | `giantmem feature pause [name] [flags]` | pause the active (or named) feature |
 | `giantmem feature reopen <name> [flags]` | reopen a paused/completed feature |
+| `giantmem feature next [name]` | print the next ready task for the active (or named) feature |
 | `giantmem feature complete [name] [flags]` | mark the active (or named) feature complete (merges delta-specs) |
 | `giantmem feature abandon [name] [flags]` | drop a feature you're not going to build: status `abandoned`, no spec merge, then archives it |
 | `giantmem feature archive [name]` | archive complete/abandoned feature(s) — see Archiving above |
@@ -598,7 +615,7 @@ Match priority: exact basename, project, branch, then substring of `project/bran
 
 ## MCP server
 
-`giantmem mcp serve` is the stdio MCP server wired into `~/.claude/settings.json` as `giantmem-search`. Six read-only tools let a Claude session find prior docs, prior conversations, and current workspace state without leaving the editor.
+`giantmem mcp serve` is the stdio MCP server wired into `~/.claude/settings.json` as `giantmem-search`. Its lookup tools let a Claude session find prior docs, prior conversations, and current workspace state, and its ops tools run the routine giantmem chores (reindex, stale sweeps, feature lifecycle) without a session shelling out to the CLI or a script.
 
 ### Wiring
 
@@ -629,6 +646,18 @@ Match priority: exact basename, project, branch, then substring of `project/bran
 | `recent_writes` | live `.giantmem/*.md` writes in a time window (`24h`, `7d`, ...) |
 | `feature_status` | `features.json` per project |
 | `workspace_tree` | `.giantmem/` dir-type counts (from live.db or on-disk) |
+| `find_artifact` | typed artifacts filtered by type, status, feature, domain, repo, branch, scope, lifecycle, date, and optional body text; `semantic` turns on hybrid scoring |
+| `get_artifact` | full frontmatter and body of one artifact by id |
+| `find_entity` | a file-level entity from `.giantmem/domains/*.json` plus every artifact that mentions its path |
+| `list_features_with_artifacts` | artifacts grouped by feature across one or all repos |
+| `get_stats` | artifact counts by type, status, lifecycle, and repo, plus recent access |
+| `query_db` | one SQL statement against `live.db` (default) or `archives.db`, rows back as JSON; the connection is read-only, so writes error out |
+| `reindex_artifacts` | rebuild a workspace's `artifacts.json` and reconcile the `artifacts` table; same as `giantmem artifact reindex` |
+| `stale_artifacts` | `giantmem artifact stale`: `days` (default 30, `0` = tier policy), `all_repos`, `scope`, `lifecycle`, and `apply` to deprecate idle candidates |
+| `orphan_artifacts` | artifact-shaped files with no frontmatter; same as `giantmem artifact orphans` |
+| `feature` | one feature lifecycle `action` (new, start, pause, reopen, complete, abandon, next, list, archive, move) with that verb's flags; same as `giantmem feature <action>` |
+
+The ops tools (`reindex_artifacts`, `stale_artifacts`, `orphan_artifacts`, `feature`) take an optional `cwd` naming the worktree to act on; without it they use the directory the server started in, which is the session's launch directory. Each call runs the giantmem binary in a child process and returns its output.
 
 ### `search_archive` parameters
 
@@ -703,7 +732,7 @@ Match priority: exact basename, project, branch, then substring of `project/bran
 - Default to no `tool_filter` / `ext_filter` for breadth, narrow only when first-pass results are noisy.
 - `Read` is hidden by default — most matches inside Read tool inputs are file-content noise. Pass `include_read: true` only when you specifically need to know what Claude opened.
 - `limit` returns up to 100. Per-line expansion can produce many rows per file — increase `limit` if filters are tight.
-- The MCP server is read-only and idempotent. Safe to retry; safe to call in parallel.
+- Lookup tools and `query_db` are read-only and idempotent, so retry and parallelize freely. `feature` changes workspace state (and `new`/`start`/`reopen` switch git branches unless `skip_checkout`), so don't fire two at the same worktree at once.
 
 ## Live indexing hook
 
