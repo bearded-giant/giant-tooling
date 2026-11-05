@@ -2074,3 +2074,39 @@ button.doit-danger {
 .ribbon-btn[data-tip]:hover::after {
   opacity: 1;
 }
+
+/* keyboard shortcuts modal */
+.shortcuts-modal {
+  width: 520px;
+  max-width: 90vw;
+  max-height: 85vh;
+  overflow: auto;
+  padding: 24px 28px 20px;
+  text-align: left;
+}
+.shortcuts-group {
+  margin-top: 14px;
+}
+.shortcuts-group h3 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-muted);
+}
+.shortcuts-group dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 16px;
+  row-gap: 6px;
+  margin: 0;
+  align-items: baseline;
+}
+.shortcuts-group dt {
+  white-space: nowrap;
+}
+.shortcuts-group dd {
+  margin: 0;
+  color: var(--fg);
+}

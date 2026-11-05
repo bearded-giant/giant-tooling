@@ -129,8 +129,8 @@ const TABS: { id: Tab; label: string; icon: JSX.Element }[] = [
   },
 ];
 
-// g then a letter jumps to a tab; single letters would collide with the doit tab's own keys
-const TAB_KEYS: Record<string, Tab> = { a: "activity", s: "sessions", y: "day", r: "artifacts", t: "tools", d: "doit" };
+// capital letters jump to a tab; lowercase stays free for the cursor keys
+const TAB_KEYS: Record<string, Tab> = { A: "activity", S: "sessions", Y: "day", R: "artifacts", T: "tools", D: "doit" };
 const TAB_KEY = Object.fromEntries(Object.entries(TAB_KEYS).map(([k, v]) => [v, k])) as Record<Tab, string>;
 
 function Icon({ children }: { children: React.ReactNode }) {
@@ -456,6 +456,7 @@ function App() {
   const [version, setVersion] = useState<string>("");
   const [aboutOpen, setAboutOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [pruneOpen, setPruneOpen] = useState(false);
   const [uiZoom, setUiZoom] = useState<number>(() => {
     const n = Number(localStorage.getItem("gm.uiZoom"));
@@ -788,36 +789,26 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [tab, sidebarCollapsed, refreshAll]);
 
-  // capture phase so a pending g swallows the letter before the doit tab's own handler sees it
   useEffect(() => {
-    let pending = 0;
     const onKey = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (pending) {
-        window.clearTimeout(pending);
-        pending = 0;
-        const next = TAB_KEYS[e.key];
-        if (next && (next !== "doit" || doitOn)) {
-          setTab(next);
-          setSelection(null);
-        }
+      if (document.querySelector(".modal-backdrop, .ctx-backdrop")) return;
+      if (e.key === "?") {
+        setShortcutsOpen(true);
         e.preventDefault();
-        e.stopPropagation();
         return;
       }
-      if (e.key === "g") {
-        pending = window.setTimeout(() => (pending = 0), 1000);
+      const next = TAB_KEYS[e.key];
+      if (next && (next !== "doit" || doitOn)) {
+        setTab(next);
+        setSelection(null);
         e.preventDefault();
-        e.stopPropagation();
       }
     };
-    window.addEventListener("keydown", onKey, true);
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
-      window.clearTimeout(pending);
-    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, [doitOn]);
 
   useEffect(() => {
@@ -1016,6 +1007,7 @@ function App() {
     const offs = [
       EventsOn("menu:settings", () => setSettingsOpen(true)),
       EventsOn("menu:about", () => setAboutOpen(true)),
+      EventsOn("menu:shortcuts", () => setShortcutsOpen(true)),
     ];
     return () => offs.forEach((off) => off());
   }, []);
@@ -1338,9 +1330,8 @@ function App() {
             <span className="kbd">/</span> focus search ·{" "}
             <span className="kbd">j</span>/<span className="kbd">k</span> nav ·{" "}
             <span className="kbd">r</span> refresh ·{" "}
-            <span className="kbd">g</span>+<span className="kbd">a</span>/<span className="kbd">s</span>/
-            <span className="kbd">y</span>/<span className="kbd">r</span>/<span className="kbd">t</span>/
-            <span className="kbd">d</span> tab · <span className="kbd">esc</span> clear
+            <span className="kbd">esc</span> clear ·{" "}
+            <span className="kbd">?</span> all shortcuts
           </span>
         )}
       </div>
@@ -1364,7 +1355,7 @@ function App() {
             <button
               key={t.id}
               className={`ribbon-btn${tab === t.id ? " active" : ""}`}
-              data-tip={`${t.label}   g ${TAB_KEY[t.id]}`}
+              data-tip={`${t.label}  ·  ${TAB_KEY[t.id]}`}
               onClick={() => {
                 setTab(t.id);
                 setSelection(null);
@@ -1826,6 +1817,14 @@ function App() {
         <button
           type="button"
           className="status-about"
+          onClick={() => setShortcutsOpen(true)}
+          title="keyboard shortcuts (?)"
+        >
+          shortcuts
+        </button>
+        <button
+          type="button"
+          className="status-about"
           onClick={() => setSettingsOpen(true)}
           title="ui settings"
         >
@@ -1848,6 +1847,7 @@ function App() {
       {aboutOpen && (
         <AboutModal version={version} onClose={() => setAboutOpen(false)} />
       )}
+      {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
       {settingsOpen && (
         <SettingsModal
           uiZoom={uiZoom}
@@ -4541,3 +4541,89 @@ function DaySessionRow({ row, onClick }: { row: hub.DaySession; onClick: () => v
 }
 
 export default App;
+
+const SHORTCUTS: { group: string; rows: [string, string][] }[] = [
+  {
+    group: "everywhere",
+    rows: [
+      ["/", "focus the search box"],
+      ["esc", "leave a field, or clear the selection"],
+      ["r", "refresh everything"],
+      ["?", "this list"],
+      ["⌘ /", "this list (Help menu)"],
+      ["⌘ ,", "settings"],
+    ],
+  },
+  {
+    group: "tabs",
+    rows: [
+      ["A", "activity"],
+      ["S", "sessions"],
+      ["Y", "day"],
+      ["R", "artifacts"],
+      ["T", "tools"],
+      ["D", "doit - todos"],
+    ],
+  },
+  {
+    group: "lists (activity, sessions, day, artifacts, tools)",
+    rows: [
+      ["j / k  or  ↓ / ↑", "move the cursor in the last-clicked column"],
+      ["enter", "open the row under the cursor"],
+      ["→", "open or expand the row under the cursor"],
+    ],
+  },
+  {
+    group: "doit - todos",
+    rows: [
+      ["⌘ enter", "save the item or note being edited"],
+      ["esc", "cancel the edit"],
+    ],
+  },
+];
+
+function ShortcutsModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div
+        className="modal shortcuts-modal"
+        onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Keyboard shortcuts"
+      >
+        <button type="button" className="modal-close" onClick={onClose} aria-label="close">
+          ×
+        </button>
+        <h2 className="settings-title">Keyboard shortcuts</h2>
+        {SHORTCUTS.map((g) => (
+          <section key={g.group} className="shortcuts-group">
+            <h3>{g.group}</h3>
+            <dl>
+              {g.rows.map(([k, what]) => (
+                <Fragment key={k}>
+                  <dt>
+                    {k.split("  ").map((part, i) => (
+                      <Fragment key={i}>
+                        {i > 0 && " "}
+                        {part.trim() === "or" ? "or" : <span className="kbd">{part.trim()}</span>}
+                      </Fragment>
+                    ))}
+                  </dt>
+                  <dd>{what}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          </section>
+        ))}
+      </div>
+    </div>
+  );
+}

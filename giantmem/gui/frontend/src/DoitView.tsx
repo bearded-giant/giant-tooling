@@ -370,47 +370,6 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
     },
   };
 
-  // j/k item, J/K list, space cycles, x completes, e edits, d twice deletes, n new note
-  useEffect(() => {
-    if (!active) return;
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
-      if (e.metaKey || e.ctrlKey || e.altKey) return;
-      const step = (arr: string[], cur: string, by: number) =>
-        arr[Math.min(arr.length - 1, Math.max(0, arr.indexOf(cur) + by))];
-      if (e.key === "j" || e.key === "k") {
-        if (keys.length) setSelKey(step(keys, key, e.key === "j" ? 1 : -1));
-      } else if (e.key === "J" || e.key === "K") {
-        const names = views.map((v) => v.name);
-        if (names.length && list) setSelList(step(names, list.name, e.key === "J" ? 1 : -1));
-      } else if (todo && e.key === " ") {
-        d.cycle(todo);
-      } else if (todo && e.key === "x") {
-        d.setStatus(todo, "done");
-      } else if ((todo || note) && e.key === "e") {
-        setEditing(true);
-      } else if (todo && e.key === "d") {
-        d.remove(todo);
-      } else if (note && e.key === "d") {
-        d.removeNote(note);
-      } else if (list && e.key === "n") {
-        d.newNote();
-      } else if (e.key === "N") {
-        setListEdit("new");
-      } else if (e.key === "z") {
-        setShowDone(!showDone);
-      } else if (e.key === "o") {
-        d.cycleSort();
-      } else {
-        return;
-      }
-      e.preventDefault();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
-
   return d;
 }
 
@@ -489,10 +448,10 @@ export function DoitSidebar({ d }: { d: Doit }) {
       <div className="doit-section doit-section-row">
         <span>lists</span>
         <span className="doit-section-tools">
-          <button className="toggle-pill" onClick={d.cycleSort} title="o · sort lists">
+          <button className="toggle-pill" onClick={d.cycleSort} title="sort lists">
             {SORT_LABEL[d.sort]}
           </button>
-          <button className="toggle-pill" onClick={() => d.setListEdit("new")} title="N">
+          <button className="toggle-pill" onClick={() => d.setListEdit("new")} title="new list">
             + list
           </button>
         </span>
@@ -605,7 +564,7 @@ export function DoitItems({ d }: { d: Doit }) {
       {(!d.q || l.notes.length > 0) && (
         <div className="doit-section doit-section-row">
           <span>list notes</span>
-          <button className="toggle-pill" onClick={d.newNote} title="n">
+          <button className="toggle-pill" onClick={d.newNote} title="new list note">
             + note
           </button>
         </div>
@@ -652,7 +611,7 @@ export function DoitItems({ d }: { d: Doit }) {
               <div className={`doit-section doit-section-row ${BUCKET_CLASS[bucket(t)]}`}>
                 <span>{BUCKETS[bucket(t)]}</span>
                 {t.done && (
-                  <button className="toggle-pill" onClick={() => d.setShowDone(false)} title="z">
+                  <button className="toggle-pill" onClick={() => d.setShowDone(false)} title="fold done items">
                     hide
                   </button>
                 )}
@@ -701,7 +660,7 @@ export function DoitItems({ d }: { d: Doit }) {
       {l.doneHidden > 0 && (
         <div className="doit-section doit-section-row done">
           <span>done ({l.doneHidden})</span>
-          <button className="toggle-pill" onClick={() => d.setShowDone(true)} title="z">
+          <button className="toggle-pill" onClick={() => d.setShowDone(true)} title="show done items">
             show
           </button>
         </div>
@@ -790,15 +749,15 @@ export function DoitDetail({ d }: { d: Doit }) {
       </header>
       {!d.editing && (
         <div className="doit-actions">
-          <button onClick={() => d.cycle(t)} title="space">
+          <button onClick={() => d.cycle(t)}>
             {CYCLE_LABEL[st]}
           </button>
           {st === "pending" && (
-            <button onClick={() => d.setStatus(t, "done")} title="x">
+            <button onClick={() => d.setStatus(t, "done")}>
               ✓ complete
             </button>
           )}
-          <button onClick={() => d.setEditing(true)} title="e">
+          <button onClick={() => d.setEditing(true)}>
             edit
           </button>
           <select value="" onChange={(e) => e.target.value && d.move(t, e.target.value)} title="move to another list">
@@ -814,7 +773,7 @@ export function DoitDetail({ d }: { d: Doit }) {
           <button
             className={d.armed === t.id ? "doit-danger" : ""}
             onClick={() => d.remove(t)}
-            title="d, twice"
+            title="click twice to confirm"
           >
             {d.armed === t.id ? (t.twin ? `confirm: delete here and in ${t.twin.list}` : "confirm delete") : "delete"}
           </button>
@@ -938,7 +897,7 @@ export function DoitDetail({ d }: { d: Doit }) {
             />
           </label>
           <div className="doit-actions">
-            <button className="active" onClick={save} title="cmd+enter">
+            <button className="active" onClick={save} title="⌘ enter">
               save
             </button>
             <button onClick={() => d.setEditing(false)} title="esc">
@@ -949,7 +908,6 @@ export function DoitDetail({ d }: { d: Doit }) {
       ) : (
         <pre className="doit-notes">{t.description ? <Hl text={t.description} q={d.q} /> : "no notes"}</pre>
       )}
-      <KeyHint />
     </>
   );
 }
@@ -1001,7 +959,7 @@ function NoteDetail({ d, n }: { d: Doit; n?: main.DoitNote }) {
             <textarea rows={20} value={body} onChange={(e) => setBody(e.target.value)} />
           </label>
           <div className="doit-actions">
-            <button className="active" onClick={save} title="cmd+enter">
+            <button className="active" onClick={save} title="⌘ enter">
               {n ? "save" : "create"}
             </button>
             <button onClick={cancel} title="esc">
@@ -1012,30 +970,16 @@ function NoteDetail({ d, n }: { d: Doit; n?: main.DoitNote }) {
       ) : (
         <>
           <div className="doit-actions">
-            <button onClick={() => d.setEditing(true)} title="e">
+            <button onClick={() => d.setEditing(true)}>
               edit
             </button>
-            <button className={armed ? "doit-danger" : ""} onClick={() => n && d.removeNote(n)} title="d, twice">
+            <button className={armed ? "doit-danger" : ""} onClick={() => n && d.removeNote(n)} title="click twice to confirm">
               {armed ? "confirm delete" : "delete"}
             </button>
           </div>
           <pre className="doit-notes">{n?.body ? <Hl text={n.body} q={d.q} /> : "empty"}</pre>
         </>
       )}
-      <KeyHint />
     </>
-  );
-}
-
-function KeyHint() {
-  return (
-    <div className="filter-hint doit-keys">
-      <span className="kbd">j</span>/<span className="kbd">k</span> item · <span className="kbd">J</span>/
-      <span className="kbd">K</span> list · <span className="kbd">space</span> cycle ·{" "}
-      <span className="kbd">x</span> complete · <span className="kbd">e</span> edit ·{" "}
-      <span className="kbd">d</span> delete · <span className="kbd">n</span> new note ·{" "}
-      <span className="kbd">N</span> new list · <span className="kbd">o</span> sort lists ·{" "}
-      <span className="kbd">z</span> show/hide done
-    </div>
   );
 }

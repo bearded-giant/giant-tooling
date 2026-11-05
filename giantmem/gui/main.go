@@ -64,5 +64,7 @@ func appMenu(app *App) *menu.Menu {
 	am.AddText("Quit giantmem", keys.CmdOrCtrl("q"), func(*menu.CallbackData) { runtime.Quit(app.ctx) })
 	m.Append(menu.EditMenu())
 	m.Append(menu.WindowMenu())
+	hm := m.AddSubmenu("Help")
+	hm.AddText("Keyboard Shortcuts", keys.CmdOrCtrl("/"), emit("menu:shortcuts"))
 	return m
 }
