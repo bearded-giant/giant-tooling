@@ -1727,3 +1727,48 @@ button.doit-danger {
   padding: 0 8px;
   text-transform: none;
 }
+.doit-list-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.doit-list-head strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doit-list-head .doit-name {
+  flex: 1;
+}
+.doit-list-head .toggle-pill {
+  font-size: 13px;
+  padding: 0 8px;
+}
+.doit-facets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.doit-facets select {
+  max-width: 200px;
+}
+.doit-edit-row label {
+  flex: 1;
+  min-width: 0;
+}
+.doit-edit-row input[type="text"],
+.doit-edit-row input[type="number"],
+.doit-edit-row select {
+  width: 100%;
+}
+.doit-edit label.doit-check {
+  flex: none;
+  align-self: flex-end;
+  padding-bottom: 6px;
+}

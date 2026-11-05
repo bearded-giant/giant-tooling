@@ -3,7 +3,11 @@ import { ClipboardSetText } from "../wailsjs/runtime/runtime";
 import {
   DoitAdd,
   DoitDelete,
+  DoitListCreate,
+  DoitListDelete,
+  DoitListRename,
   DoitLists,
+  DoitMove,
   DoitMtime,
   DoitNoteAdd,
   DoitNoteDelete,
@@ -14,12 +18,15 @@ import {
 import { main } from "../wailsjs/go/models";
 
 type Status = "pending" | "in_progress" | "done";
+type Facet = { worktree: string; feature: string; type: string };
 type ListView = {
   name: string;
   error?: string;
   todos: main.DoitTodo[];
+  all: main.DoitTodo[];
   notes: main.DoitNote[];
   open: number;
+  doneHidden: number;
   active: boolean;
   hits: number;
 };
@@ -32,9 +39,30 @@ const GLYPH: Record<Status, string> = { pending: "·", in_progress: "▸", done:
 const BUCKETS = ["in progress", "sequence", "critical", "urgent", "important", "default", "done"];
 const GROUPS = ["active", "open", "empty"];
 const PRIOS = ["critical", "urgent", "important"];
+const FACETS: (keyof Facet)[] = ["worktree", "feature", "type"];
+const NO_FACET: Facet = { worktree: "", feature: "", type: "" };
 const NEW_NOTE = "note:new";
+const OWED_LIST = "daily";
 
 const status = (t: main.DoitTodo): Status => (t.done ? "done" : t.in_progress ? "in_progress" : "pending");
+
+// mcp todo-text.js shape: "claude: [type] N. body (dep on #M, #K)"
+const SHAPE = /^(claude:\s*)?(?:\[([^\][]+)\]\s*)?(?:(\d+[a-z]*)\.\s+)?([\s\S]*)$/i;
+const DEPS = /\s*\(dep on ([^)]*)\)\s*$/i;
+
+export function parseText(text: string) {
+  const m = SHAPE.exec(text || "")!;
+  let body = m[4] || "";
+  const dm = DEPS.exec(body);
+  if (dm) body = body.slice(0, dm.index).trimEnd();
+  return {
+    claude: Boolean(m[1]),
+    type: m[2] || "",
+    rank: m[3] || "",
+    body,
+    deps: dm ? dm[1].replace(/#/g, "").trim() : "",
+  };
+}
 
 function bucket(t: main.DoitTodo): number {
   if (t.done) return 6;
@@ -53,6 +81,8 @@ function sortTodos(todos: main.DoitTodo[]): main.DoitTodo[] {
       a.order_index - b.order_index,
   );
 }
+
+const facetOf = (t: main.DoitTodo, f: keyof Facet) => (f === "type" ? parseText(t.text).type : t[f] || "");
 
 const group = (v: ListView) => (v.active ? 0 : v.open > 0 ? 1 : 2);
 
@@ -102,6 +132,14 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
   const [selKey, setSelKey] = useState("");
   const [editing, setEditing] = useState(false);
   const [armed, setArmed] = useState("");
+  const [facet, setFacet] = useState<Facet>(NO_FACET);
+  const [listEdit, setListEdit] = useState<"" | "new" | "rename">("");
+  // long lists: done items stay folded until asked for
+  const [showDone, setShowDoneState] = useState(() => localStorage.getItem("gm.doit.showDone") === "1");
+  const setShowDone = (v: boolean) => {
+    localStorage.setItem("gm.doit.showDone", v ? "1" : "0");
+    setShowDoneState(v);
+  };
   const q = query.trim().toLowerCase();
 
   const load = useCallback(
@@ -130,15 +168,20 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
 
   const views = useMemo(() => {
     const hit = (s: string) => (s || "").toLowerCase().includes(q);
+    const facetOk = (t: main.DoitTodo) => FACETS.every((f) => !facet[f] || facetOf(t, f) === facet[f]);
     const out: ListView[] = [];
     for (const l of lists) {
-      const todos = sortTodos(l.todos || []);
+      const all = sortTodos(l.todos || []);
       const notes = l.notes || [];
+      const faceted = all.filter(facetOk);
+      const todos = showDone || q ? faceted : faceted.filter((t) => !t.done);
       const base = {
         name: l.name,
         error: l.error,
-        open: todos.filter((t) => !t.done).length,
-        active: todos.some((t) => t.in_progress && !t.done),
+        all,
+        open: all.filter((t) => !t.done).length,
+        doneHidden: faceted.length - todos.length,
+        active: all.some((t) => t.in_progress && !t.done),
       };
       if (!q) {
         out.push({ ...base, todos, notes, hits: 0 });
@@ -152,17 +195,25 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
     return out.sort(
       (a, b) =>
         group(a) - group(b) ||
-        Number(b.name === "daily") - Number(a.name === "daily") ||
+        Number(b.name === OWED_LIST) - Number(a.name === OWED_LIST) ||
         a.name.localeCompare(b.name),
     );
-  }, [lists, q]);
+  }, [lists, q, facet, showDone]);
 
   const list = views.find((v) => v.name === selList) || views[0];
+  const names = lists.map((l) => l.name);
   // notes render above todos, but a freshly opened list lands on its first todo
   const keys = list ? [...list.notes.map((n) => `note:${n.id}`), ...list.todos.map((t) => t.id)] : [];
   const key = (list && selKey === NEW_NOTE) || keys.includes(selKey) ? selKey : list?.todos[0]?.id || keys[0] || "";
   const todo = list?.todos.find((t) => t.id === key);
   const note = list?.notes.find((n) => `note:${n.id}` === key);
+  const facets = useMemo(() => {
+    const out = {} as Record<keyof Facet, string[]>;
+    for (const f of FACETS) {
+      out[f] = [...new Set((list?.all || []).map((t) => facetOf(t, f)).filter(Boolean))].sort();
+    }
+    return out;
+  }, [list?.all]);
 
   useEffect(() => {
     setEditing(false);
@@ -180,31 +231,49 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
         return false;
       });
 
+  const pickList = (name: string) => {
+    setSelList(name);
+    setSelKey("");
+    setFacet(NO_FACET);
+    setListEdit("");
+  };
+
   const d = {
     q,
     views,
+    names,
     list,
     keys,
     key,
     todo,
     note,
+    facet,
+    facets,
+    showDone,
+    listEdit,
     creatingNote: key === NEW_NOTE,
     editing,
     armed,
     setEditing,
-    pickList: (name: string) => {
-      setSelList(name);
-      setSelKey("");
-    },
+    setFacet: (f: keyof Facet, v: string) => setFacet({ ...facet, [f]: v }),
+    setShowDone,
+    setListEdit,
+    pickList,
     pick: (k: string) => setSelKey(k),
     jump: (name: string, id: string) => {
       setSelList(name);
       setSelKey(id);
+      setFacet(NO_FACET);
     },
     cycle: (t: main.DoitTodo) => list && run(DoitSetStatus(list.name, t.id, NEXT[status(t)])),
     setStatus: (t: main.DoitTodo, s: Status) => list && run(DoitSetStatus(list.name, t.id, s)),
     save: (t: main.DoitTodo, e: main.DoitEdit) =>
       list && run(DoitUpdate(list.name, t.id, e)).then((ok) => ok && setEditing(false)),
+    move: (t: main.DoitTodo, to: string) =>
+      list &&
+      run(DoitMove(list.name, t.id, to)).then((ok) => {
+        if (ok) d.jump(to, t.id);
+      }),
     remove: (t: main.DoitTodo) => {
       if (!list) return;
       if (armed !== t.id) {
@@ -252,6 +321,27 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
         return false;
       }
     },
+    createList: (name: string) =>
+      run(DoitListCreate(name)).then((ok) => {
+        if (ok) pickList(name.trim());
+        return ok;
+      }),
+    renameList: (name: string) =>
+      !!list &&
+      run(DoitListRename(list.name, name)).then((ok) => {
+        if (ok) pickList(name.trim());
+        return ok;
+      }),
+    removeList: () => {
+      if (!list) return;
+      const k = `list:${list.name}`;
+      if (armed !== k) {
+        setArmed(k);
+        return;
+      }
+      setArmed("");
+      run(DoitListDelete(list.name)).then((ok) => ok && pickList(""));
+    },
   };
 
   // j/k item, J/K list, space cycles, x completes, e edits, d twice deletes, n new note
@@ -280,6 +370,10 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
         d.removeNote(note);
       } else if (list && e.key === "n") {
         d.newNote();
+      } else if (e.key === "N") {
+        setListEdit("new");
+      } else if (e.key === "z") {
+        setShowDone(!showDone);
       } else {
         return;
       }
@@ -292,10 +386,54 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
   return d;
 }
 
+function NameInput({
+  initial,
+  placeholder,
+  onSubmit,
+  onCancel,
+}: {
+  initial: string;
+  placeholder: string;
+  onSubmit: (name: string) => Promise<boolean>;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(initial);
+  return (
+    <input
+      type="text"
+      autoFocus
+      className="doit-name"
+      placeholder={placeholder}
+      value={name}
+      onChange={(e) => setName(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" && name.trim()) onSubmit(name);
+        if (e.key === "Escape") onCancel();
+      }}
+    />
+  );
+}
+
 export function DoitSidebar({ d }: { d: Doit }) {
-  if (!d.views.length) return <div className="detail-empty">{d.q ? "no match" : "no lists"}</div>;
   return (
     <>
+      <div className="doit-section doit-section-row">
+        <span>lists</span>
+        <button className="toggle-pill" onClick={() => d.setListEdit("new")} title="N">
+          + list
+        </button>
+      </div>
+      {d.listEdit === "new" && (
+        <div className="doit-add">
+          <NameInput
+            initial=""
+            placeholder="new list name… (enter)"
+            onSubmit={d.createList}
+            onCancel={() => d.setListEdit("")}
+          />
+        </div>
+      )}
+      {!d.views.length && <div className="detail-empty">{d.q ? "no match" : "no lists"}</div>}
       {d.views.map((v, i) => (
         <Fragment key={v.name}>
           {(i === 0 || group(v) !== group(d.views[i - 1])) && (
@@ -324,8 +462,35 @@ export function DoitItems({ d }: { d: Doit }) {
   const [draft, setDraft] = useState("");
   const l = d.list;
   if (!l) return null;
+  const armed = d.armed === `list:${l.name}`;
+  const hasFacets = FACETS.some((f) => d.facets[f].length > 0);
   return (
     <>
+      <div className="doit-list-head">
+        {d.listEdit === "rename" ? (
+          <NameInput
+            initial={l.name}
+            placeholder="rename list… (enter)"
+            onSubmit={d.renameList}
+            onCancel={() => d.setListEdit("")}
+          />
+        ) : (
+          <strong>{l.name}</strong>
+        )}
+        <span className="doit-snip">
+          {l.open} open · {l.all.length - l.open} done
+        </span>
+        {l.name !== OWED_LIST && d.listEdit !== "rename" && (
+          <>
+            <button className="toggle-pill" onClick={() => d.setListEdit("rename")}>
+              rename
+            </button>
+            <button className={`toggle-pill ${armed ? "doit-danger" : ""}`} onClick={d.removeList}>
+              {armed ? "confirm delete list" : "delete"}
+            </button>
+          </>
+        )}
+      </div>
       <div className="doit-add">
         <input
           type="text"
@@ -337,6 +502,23 @@ export function DoitItems({ d }: { d: Doit }) {
           }}
         />
       </div>
+      {hasFacets && (
+        <div className="doit-facets">
+          {FACETS.map(
+            (f) =>
+              d.facets[f].length > 0 && (
+                <select key={f} value={d.facet[f]} onChange={(e) => d.setFacet(f, e.target.value)} title={f}>
+                  <option value="">{f}: all</option>
+                  {d.facets[f].map((v) => (
+                    <option key={v} value={v}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              ),
+          )}
+        </div>
+      )}
       {l.error && <div className="doit-section doit-err">unreadable: {l.error}</div>}
       {(!d.q || l.notes.length > 0) && (
         <div className="doit-section doit-section-row">
@@ -381,13 +563,21 @@ export function DoitItems({ d }: { d: Doit }) {
         return (
           <Fragment key={t.id}>
             {(i === 0 || bucket(t) !== bucket(l.todos[i - 1])) && (
-              <div className="doit-section">{BUCKETS[bucket(t)]}</div>
+              <div className="doit-section doit-section-row">
+                <span>{BUCKETS[bucket(t)]}</span>
+                {t.done && (
+                  <button className="toggle-pill" onClick={() => d.setShowDone(false)} title="z">
+                    hide
+                  </button>
+                )}
+              </div>
             )}
             <div
               data-nav
               className={`doit-row ${st} ${t.id === d.key ? "selected" : ""}`}
               onClick={() => d.pick(t.id)}
             >
+              {t.depth > 0 && <span style={{ width: t.depth * 14 }} />}
               <button
                 className="doit-glyph"
                 title={`${STATUS_LABEL[st]} · click: ${CYCLE_LABEL[st]}`}
@@ -408,21 +598,56 @@ export function DoitItems({ d }: { d: Doit }) {
               </div>
               {t.priorities && <span className={`chip prio-${t.priorities}`}>{t.priorities}</span>}
               {t.due_date && <span className="chip">{dueLabel(t.due_date)}</span>}
+              {t.worktree && <span className="chip">wt:{t.worktree}</span>}
+              {t.feature && <span className="chip">feat:{t.feature}</span>}
               {t.twin && <span className="chip" title={`twin in ${t.twin.list}`}>↔ {t.twin.list}</span>}
             </div>
           </Fragment>
         );
       })}
+      {l.doneHidden > 0 && (
+        <div className="doit-section doit-section-row">
+          <span>done ({l.doneHidden})</span>
+          <button className="toggle-pill" onClick={() => d.setShowDone(true)} title="z">
+            show
+          </button>
+        </div>
+      )}
     </>
   );
 }
 
+const EMPTY_EDIT: main.DoitEdit = {
+  text: "",
+  description: "",
+  priority: "",
+  due: "",
+  type: "",
+  deps: "",
+  claude: false,
+  sequence: 0,
+  worktree: "",
+  feature: "",
+};
+
 export function DoitDetail({ d }: { d: Doit }) {
   const t = d.todo;
-  const [form, setForm] = useState<main.DoitEdit>({ text: "", description: "", priority: "", due: "" });
+  const [form, setForm] = useState<main.DoitEdit>(EMPTY_EDIT);
   useEffect(() => {
     if (d.editing && t) {
-      setForm({ text: t.text, description: t.description, priority: t.priorities || "", due: t.due_date || "" });
+      const p = parseText(t.text);
+      setForm({
+        text: p.body,
+        description: t.description,
+        priority: t.priorities || "",
+        due: t.due_date || "",
+        type: p.type,
+        deps: p.deps,
+        claude: p.claude,
+        sequence: t.done || t.in_progress ? 0 : t.sequence || 0,
+        worktree: t.worktree || "",
+        feature: t.feature || "",
+      });
     }
   }, [d.editing]);
 
@@ -430,7 +655,10 @@ export function DoitDetail({ d }: { d: Doit }) {
   if (!t || !d.list) return <div className="detail-empty">{d.list ? "pick an item" : "pick a list"}</div>;
 
   const st = status(t);
+  const p = parseText(t.text);
   const save = () => d.save(t, form);
+  const field = (k: keyof main.DoitEdit) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    setForm({ ...form, [k]: e.target.type === "checkbox" ? (e.target as HTMLInputElement).checked : e.target.value });
   return (
     <>
       <header className="detail-head">
@@ -446,6 +674,10 @@ export function DoitDetail({ d }: { d: Doit }) {
             </span>
           )}
           {t.sequence > 0 && <span className="chip">seq {t.sequence}</span>}
+          {p.rank && <span className="chip">#{p.rank}</span>}
+          {p.deps && <span className="chip">dep on {p.deps}</span>}
+          {t.worktree && <span className="chip">wt:{t.worktree}</span>}
+          {t.feature && <span className="chip">feat:{t.feature}</span>}
           <span>{d.list.name}</span>
           {t.created_at > 0 && <span>created: {when(t.created_at)}</span>}
           {t.done && t.completed_at > 0 && <span>completed: {when(t.completed_at)}</span>}
@@ -472,6 +704,16 @@ export function DoitDetail({ d }: { d: Doit }) {
           <button onClick={() => d.setEditing(true)} title="e">
             edit
           </button>
+          <select value="" onChange={(e) => e.target.value && d.move(t, e.target.value)} title="move to another list">
+            <option value="">move to…</option>
+            {d.names
+              .filter((n) => n !== d.list!.name)
+              .map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+          </select>
           <button
             className={d.armed === t.id ? "doit-danger" : ""}
             onClick={() => d.remove(t)}
@@ -490,18 +732,30 @@ export function DoitDetail({ d }: { d: Doit }) {
           }}
         >
           <label>
-            text
-            <input
-              type="text"
-              autoFocus
-              value={form.text}
-              onChange={(e) => setForm({ ...form, text: e.target.value })}
-            />
+            text{p.rank ? ` (rank #${p.rank} stays)` : ""}
+            <input type="text" autoFocus value={form.text} onChange={field("text")} />
           </label>
           <div className="doit-edit-row">
             <label>
+              type
+              <input type="text" value={form.type} onChange={field("type")} placeholder="bug, chore, gate…" />
+            </label>
+            <label>
+              dep on
+              <input type="text" value={form.deps} onChange={field("deps")} placeholder="12, 28" />
+            </label>
+            <label>
+              sequence
+              <input type="number" min={0} value={form.sequence} onChange={(e) => setForm({ ...form, sequence: Number(e.target.value) || 0 })} />
+            </label>
+            <label className="doit-check">
+              <input type="checkbox" checked={form.claude} onChange={field("claude")} /> claude:
+            </label>
+          </div>
+          <div className="doit-edit-row">
+            <label>
               priority
-              <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+              <select value={form.priority} onChange={field("priority")}>
                 <option value="">none</option>
                 {PRIOS.map((p) => (
                   <option key={p} value={p}>
@@ -512,8 +766,26 @@ export function DoitDetail({ d }: { d: Doit }) {
             </label>
             <label>
               due
-              <input type="date" value={form.due} onChange={(e) => setForm({ ...form, due: e.target.value })} />
+              <input type="date" value={form.due} onChange={field("due")} />
             </label>
+            <label>
+              worktree
+              <input type="text" value={form.worktree} onChange={field("worktree")} list="doit-worktrees" />
+            </label>
+            <label>
+              feature
+              <input type="text" value={form.feature} onChange={field("feature")} list="doit-features" />
+            </label>
+            <datalist id="doit-worktrees">
+              {d.facets.worktree.map((v) => (
+                <option key={v} value={v} />
+              ))}
+            </datalist>
+            <datalist id="doit-features">
+              {d.facets.feature.map((v) => (
+                <option key={v} value={v} />
+              ))}
+            </datalist>
           </div>
           <label>
             notes
@@ -619,7 +891,8 @@ function KeyHint() {
       <span className="kbd">j</span>/<span className="kbd">k</span> item · <span className="kbd">J</span>/
       <span className="kbd">K</span> list · <span className="kbd">space</span> cycle ·{" "}
       <span className="kbd">x</span> complete · <span className="kbd">e</span> edit ·{" "}
-      <span className="kbd">d</span> delete · <span className="kbd">n</span> new note
+      <span className="kbd">d</span> delete · <span className="kbd">n</span> new note ·{" "}
+      <span className="kbd">N</span> new list · <span className="kbd">z</span> show/hide done
     </div>
   );
 }

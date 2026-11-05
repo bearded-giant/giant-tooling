@@ -260,3 +260,199 @@ func TestDoitListsAndGuards(t *testing.T) {
 		t.Fatal("missing dir should hide doit")
 	}
 }
+
+func quietTmux(t *testing.T) {
+	t.Helper()
+	orig := retagDoitWindows
+	retagDoitWindows = func(string, string) {}
+	t.Cleanup(func() { retagDoitWindows = orig })
+}
+
+func TestDoitStartPerWorktreeSlot(t *testing.T) {
+	lists := doitFixture(t)
+	a := &App{}
+	id, err := a.DoitAdd("proj", "other worktree")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.DoitUpdate("proj", id, DoitEdit{Text: "other worktree", Worktree: "wt2"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.DoitSetStatus("proj", id, "in_progress"); err != nil {
+		t.Fatal(err)
+	}
+	d := readDoitRaw(t, lists, "proj")
+	if rawTodo(d, "a")["in_progress"] != true || rawTodo(d, id)["in_progress"] != true {
+		t.Fatalf("a start in another worktree must leave the first slot alone: %v", d["todos"])
+	}
+	if err := a.DoitSetStatus("proj", "b", "in_progress"); err != nil {
+		t.Fatal(err)
+	}
+	d = readDoitRaw(t, lists, "proj")
+	if rawTodo(d, "a")["in_progress"] != false || rawTodo(d, "b")["in_progress"] != true || rawTodo(d, id)["in_progress"] != true {
+		t.Fatalf("start should stop only the same slot: %v", d["todos"])
+	}
+}
+
+func TestDoitUpdateComposesText(t *testing.T) {
+	lists := doitFixture(t)
+	a := &App{}
+	e := DoitEdit{Text: "second", Type: "bug", Deps: "3, #7", Claude: true, Sequence: 1, Worktree: "wt1", Feature: "f1"}
+	if err := a.DoitUpdate("proj", "b", e); err != nil {
+		t.Fatal(err)
+	}
+	b := rawTodo(readDoitRaw(t, lists, "proj"), "b")
+	if b["text"] != "claude: [bug] second (dep on #3, #7)" || b["worktree"] != "wt1" || b["feature"] != "f1" || b["sequence"] != float64(1) {
+		t.Fatalf("composed = %v", b)
+	}
+	if err := a.DoitUpdate("proj", "c", DoitEdit{Text: "child", Sequence: 1}); err != nil {
+		t.Fatal(err)
+	}
+	d := readDoitRaw(t, lists, "proj")
+	if rawTodo(d, "c")["sequence"] != float64(1) || rawTodo(d, "b")["sequence"] != float64(2) {
+		t.Fatalf("a colliding sequence should shift the other item down: %v", d["todos"])
+	}
+	if err := a.DoitUpdate("proj", "b", DoitEdit{Text: "second", Sequence: 0}); err != nil {
+		t.Fatal(err)
+	}
+	b = rawTodo(readDoitRaw(t, lists, "proj"), "b")
+	if b["text"] != "second" || b["sequence"] != nil || b["worktree"] != nil {
+		t.Fatalf("cleared fields should drop: %v", b)
+	}
+	if err := a.DoitUpdate("daily", "da", DoitEdit{Text: "rotate", Type: "gate"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := rawTodo(readDoitRaw(t, lists, "daily"), "da")["text"]; got != "[gate] 1. rotate" {
+		t.Fatalf("rank should carry over: %v", got)
+	}
+	if err := a.DoitUpdate("daily", "da", DoitEdit{Text: "[chore] 9. typed prefix", Type: "gate"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := rawTodo(readDoitRaw(t, lists, "daily"), "da")["text"]; got != "[chore] 9. typed prefix" {
+		t.Fatalf("a prefix typed into the body should win: %v", got)
+	}
+	if err := a.DoitUpdate("proj", "b", DoitEdit{Text: "x", Sequence: -1}); err == nil {
+		t.Fatal("negative sequence should be rejected")
+	}
+}
+
+func TestDoitListCreateRenameDelete(t *testing.T) {
+	lists := doitFixture(t)
+	quietTmux(t)
+	a := &App{}
+	session := filepath.Join(filepath.Dir(lists), "session.json")
+	os.WriteFile(session, []byte(`{"sessions": {"w1": "proj", "w2": "daily"}, "active_list": "proj"}`), 0o644)
+
+	if err := a.DoitListCreate(" fresh-list "); err != nil {
+		t.Fatal(err)
+	}
+	if d := readDoitRaw(t, lists, "fresh-list"); len(d["todos"].([]any)) != 0 || d["_metadata"].(map[string]any)["created_at"] == nil {
+		t.Fatalf("created list = %v", d)
+	}
+	for _, bad := range []string{"fresh-list", "a b", "../x", "", strings.Repeat("x", 25)} {
+		if err := a.DoitListCreate(bad); err == nil {
+			t.Errorf("create %q should fail", bad)
+		}
+	}
+
+	if err := a.DoitListRename("proj", "proj2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(lists, "proj.json")); err == nil {
+		t.Fatal("old file should be gone")
+	}
+	da := rawTodo(readDoitRaw(t, lists, "daily"), "da")
+	if da["text"] != "1. proj2: rotate key" || da["twin"].(map[string]any)["list"] != "proj2" {
+		t.Fatalf("twin should be relabeled and relinked: %v", da)
+	}
+	if rawTodo(readDoitRaw(t, lists, "proj2"), "a")["twin"].(map[string]any)["list"] != "daily" {
+		t.Fatal("project side twin ref should be untouched")
+	}
+	s := readDoitRaw(t, filepath.Dir(lists), "session")
+	if s["sessions"].(map[string]any)["w1"] != "proj2" || s["sessions"].(map[string]any)["w2"] != "daily" || s["active_list"] != "proj2" {
+		t.Fatalf("session links should follow the rename: %v", s)
+	}
+	for _, c := range [][2]string{{"daily", "x"}, {"nope", "x"}, {"proj2", "daily"}, {"proj2", "bad name"}} {
+		if err := a.DoitListRename(c[0], c[1]); err == nil {
+			t.Errorf("rename %v should fail", c)
+		}
+	}
+
+	if err := a.DoitListDelete("proj2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(lists, "proj2.json")); err == nil {
+		t.Fatal("deleted list should leave lists/")
+	}
+	if archived, _ := filepath.Glob(filepath.Join(filepath.Dir(lists), "deleted", "proj2-*.json")); len(archived) != 1 {
+		t.Fatalf("deleted list should be archived: %v", archived)
+	}
+	da = rawTodo(readDoitRaw(t, lists, "daily"), "da")
+	desc, _ := da["description"].(string)
+	if da["twin"] != nil || !strings.Contains(desc, `notes from "proj2":`+"\nwhy") || !strings.Contains(desc, `list "proj2" deleted`) {
+		t.Fatalf("surviving twin should be detached with the notes: %v", da)
+	}
+	if s := readDoitRaw(t, filepath.Dir(lists), "session"); s["sessions"].(map[string]any)["w1"] != nil {
+		t.Fatalf("window link to the deleted list should drop: %v", s)
+	}
+	if err := a.DoitListDelete("daily"); err == nil {
+		t.Fatal("daily is permanent")
+	}
+	if err := a.DoitListDelete("nope"); err == nil {
+		t.Fatal("missing list should error")
+	}
+}
+
+func TestDoitMove(t *testing.T) {
+	lists := doitFixture(t)
+	a := &App{}
+	write := func(name, body string) {
+		if err := os.WriteFile(filepath.Join(lists, name+".json"), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("src", `{"todos": [
+  {"id": "s1", "text": "claude: [bug] 2. fix it (dep on #1, #9)", "done": false, "in_progress": true, "order_index": 1, "sequence": 1, "description": "keep\n\n\n----------\nlast modified: 2026-01-01: 00:00"},
+  {"id": "s2", "text": "[x] 1. dep", "done": false, "order_index": 2}
+], "_metadata": {}}`)
+	write("dst", `{"todos": [
+  {"id": "d1", "text": "7. existing", "done": false, "in_progress": true, "order_index": 3}
+], "_metadata": {}}`)
+
+	if err := a.DoitMove("src", "s1", "dst"); err != nil {
+		t.Fatal(err)
+	}
+	if rawTodo(readDoitRaw(t, lists, "src"), "s1") != nil {
+		t.Fatal("moved item should leave the source")
+	}
+	m := rawTodo(readDoitRaw(t, lists, "dst"), "s1")
+	if m == nil || m["text"] != "claude: [bug] 8. fix it" || m["order_index"] != float64(4) || m["sequence"] != nil {
+		t.Fatalf("moved item should take the next rank and order, lose its sequence: %v", m)
+	}
+	if desc, _ := m["description"].(string); !strings.HasPrefix(desc, "keep\n\nmoved from src #2; its deps there: #1, #9\n\n\n----------\nlast modified: ") {
+		t.Fatalf("dropped deps should be noted: %q", desc)
+	}
+	if rawTodo(readDoitRaw(t, lists, "dst"), "d1")["in_progress"] != false {
+		t.Fatal("an in-progress mover takes the slot")
+	}
+
+	if err := a.DoitMove("proj", "b", "dst"); err != nil {
+		t.Fatal(err)
+	}
+	c := rawTodo(readDoitRaw(t, lists, "proj"), "c")
+	if c["parent_id"] != nil || c["depth"] != float64(0) {
+		t.Fatalf("children stay behind, promoted: %v", c)
+	}
+	if err := a.DoitMove("proj", "a", "dst"); err != nil {
+		t.Fatal(err)
+	}
+	da := rawTodo(readDoitRaw(t, lists, "daily"), "da")
+	if da["text"] != "1. dst: rotate key" || da["twin"].(map[string]any)["list"] != "dst" {
+		t.Fatalf("owed twin should follow the move: %v", da)
+	}
+	for _, c := range [][3]string{{"dst", "s1", "dst"}, {"dst", "s1", "nope"}, {"dst", "zz", "src"}} {
+		if err := a.DoitMove(c[0], c[1], c[2]); err == nil {
+			t.Errorf("move %v should fail", c)
+		}
+	}
+}

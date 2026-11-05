@@ -34,8 +34,24 @@ export function DoitDelete(arg1, arg2) {
   return window['go']['main']['App']['DoitDelete'](arg1, arg2);
 }
 
+export function DoitListCreate(arg1) {
+  return window['go']['main']['App']['DoitListCreate'](arg1);
+}
+
+export function DoitListDelete(arg1) {
+  return window['go']['main']['App']['DoitListDelete'](arg1);
+}
+
+export function DoitListRename(arg1, arg2) {
+  return window['go']['main']['App']['DoitListRename'](arg1, arg2);
+}
+
 export function DoitLists() {
   return window['go']['main']['App']['DoitLists']();
+}
+
+export function DoitMove(arg1, arg2, arg3) {
+  return window['go']['main']['App']['DoitMove'](arg1, arg2, arg3);
 }
 
 export function DoitMtime() {

@@ -23,7 +23,15 @@ export function DoitAvailable():Promise<boolean>;
 
 export function DoitDelete(arg1:string,arg2:string):Promise<void>;
 
+export function DoitListCreate(arg1:string):Promise<void>;
+
+export function DoitListDelete(arg1:string):Promise<void>;
+
+export function DoitListRename(arg1:string,arg2:string):Promise<void>;
+
 export function DoitLists():Promise<Array<main.DoitList>>;
+
+export function DoitMove(arg1:string,arg2:string,arg3:string):Promise<void>;
 
 export function DoitMtime():Promise<number>;
 

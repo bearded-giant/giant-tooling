@@ -394,6 +394,12 @@ export namespace main {
 	    description: string;
 	    priority: string;
 	    due: string;
+	    type: string;
+	    deps: string;
+	    claude: boolean;
+	    sequence: number;
+	    worktree: string;
+	    feature: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new DoitEdit(source);
@@ -405,6 +411,12 @@ export namespace main {
 	        this.description = source["description"];
 	        this.priority = source["priority"];
 	        this.due = source["due"];
+	        this.type = source["type"];
+	        this.deps = source["deps"];
+	        this.claude = source["claude"];
+	        this.sequence = source["sequence"];
+	        this.worktree = source["worktree"];
+	        this.feature = source["feature"];
 	    }
 	}
 	export class DoitNote {
@@ -454,6 +466,10 @@ export namespace main {
 	    created_at: number;
 	    completed_at: number;
 	    source: string;
+	    worktree: string;
+	    feature: string;
+	    parent_id: string;
+	    depth: number;
 	    twin?: DoitTwin;
 	
 	    static createFrom(source: any = {}) {
@@ -474,6 +490,10 @@ export namespace main {
 	        this.created_at = source["created_at"];
 	        this.completed_at = source["completed_at"];
 	        this.source = source["source"];
+	        this.worktree = source["worktree"];
+	        this.feature = source["feature"];
+	        this.parent_id = source["parent_id"];
+	        this.depth = source["depth"];
 	        this.twin = this.convertValues(source["twin"], DoitTwin);
 	    }
 	
