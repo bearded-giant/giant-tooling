@@ -519,6 +519,7 @@ export namespace main {
 	    name: string;
 	    todos: DoitTodo[];
 	    notes: DoitNote[];
+	    updated_at: number;
 	    error?: string;
 	
 	    static createFrom(source: any = {}) {
@@ -530,6 +531,7 @@ export namespace main {
 	        this.name = source["name"];
 	        this.todos = this.convertValues(source["todos"], DoitTodo);
 	        this.notes = this.convertValues(source["notes"], DoitNote);
+	        this.updated_at = source["updated_at"];
 	        this.error = source["error"];
 	    }
 	

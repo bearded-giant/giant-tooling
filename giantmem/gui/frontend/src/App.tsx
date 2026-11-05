@@ -129,6 +129,10 @@ const TABS: { id: Tab; label: string; icon: JSX.Element }[] = [
   },
 ];
 
+// g then a letter jumps to a tab; single letters would collide with the doit tab's own keys
+const TAB_KEYS: Record<string, Tab> = { a: "activity", s: "sessions", y: "day", r: "artifacts", t: "tools", d: "doit" };
+const TAB_KEY = Object.fromEntries(Object.entries(TAB_KEYS).map(([k, v]) => [v, k])) as Record<Tab, string>;
+
 function Icon({ children }: { children: React.ReactNode }) {
   return (
     <svg
@@ -784,6 +788,38 @@ function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, [tab, sidebarCollapsed, refreshAll]);
 
+  // capture phase so a pending g swallows the letter before the doit tab's own handler sees it
+  useEffect(() => {
+    let pending = 0;
+    const onKey = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (pending) {
+        window.clearTimeout(pending);
+        pending = 0;
+        const next = TAB_KEYS[e.key];
+        if (next && (next !== "doit" || doitOn)) {
+          setTab(next);
+          setSelection(null);
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if (e.key === "g") {
+        pending = window.setTimeout(() => (pending = 0), 1000);
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      window.clearTimeout(pending);
+    };
+  }, [doitOn]);
+
   useEffect(() => {
     const t = setTimeout(() => setDebouncedQuery(query), 200);
     return () => clearTimeout(t);
@@ -1302,7 +1338,9 @@ function App() {
             <span className="kbd">/</span> focus search ·{" "}
             <span className="kbd">j</span>/<span className="kbd">k</span> nav ·{" "}
             <span className="kbd">r</span> refresh ·{" "}
-            <span className="kbd">esc</span> clear
+            <span className="kbd">g</span>+<span className="kbd">a</span>/<span className="kbd">s</span>/
+            <span className="kbd">y</span>/<span className="kbd">r</span>/<span className="kbd">t</span>/
+            <span className="kbd">d</span> tab · <span className="kbd">esc</span> clear
           </span>
         )}
       </div>
@@ -1310,7 +1348,7 @@ function App() {
       <nav className="ribbon">
         <button
           className="ribbon-btn"
-          title={sidebarCollapsed ? "expand sidebar" : "collapse sidebar"}
+          data-tip={sidebarCollapsed ? "expand sidebar" : "collapse sidebar"}
           onClick={() => setSidebarCollapsed((c) => !c)}
         >
           <Icon>
@@ -1326,7 +1364,7 @@ function App() {
             <button
               key={t.id}
               className={`ribbon-btn${tab === t.id ? " active" : ""}`}
-              title={t.label}
+              data-tip={`${t.label}   g ${TAB_KEY[t.id]}`}
               onClick={() => {
                 setTab(t.id);
                 setSelection(null);

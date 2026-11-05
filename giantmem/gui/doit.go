@@ -50,10 +50,11 @@ type DoitNote struct {
 }
 
 type DoitList struct {
-	Name  string     `json:"name"`
-	Todos []DoitTodo `json:"todos"`
-	Notes []DoitNote `json:"notes"`
-	Error string     `json:"error,omitempty"`
+	Name      string     `json:"name"`
+	Todos     []DoitTodo `json:"todos"`
+	Notes     []DoitNote `json:"notes"`
+	UpdatedAt int64      `json:"updated_at"`
+	Error     string     `json:"error,omitempty"`
 }
 
 // Text is the body only; Type, Deps and Claude are composed around it and the
@@ -99,6 +100,10 @@ func (a *App) DoitLists() ([]DoitList, error) {
 	out := make([]DoitList, 0, len(paths))
 	for _, p := range paths {
 		l := DoitList{Name: strings.TrimSuffix(filepath.Base(p), ".json")}
+		// file mtime, not _metadata.updated_at: every surface bumps the file, not all stamp the metadata
+		if st, err := os.Stat(p); err == nil {
+			l.UpdatedAt = st.ModTime().Unix()
+		}
 		// one corrupt list should not blank the whole view
 		if b, err := os.ReadFile(p); err != nil {
 			l.Error = err.Error()

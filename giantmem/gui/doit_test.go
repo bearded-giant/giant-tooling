@@ -244,7 +244,7 @@ func TestDoitListsAndGuards(t *testing.T) {
 	if err != nil || len(ls) != 3 {
 		t.Fatalf("lists = %v, %v", ls, err)
 	}
-	if ls[0].Name != "broken" || ls[0].Error == "" || ls[2].Name != "proj" || len(ls[2].Todos) != 3 || ls[2].Todos[0].Twin.List != "daily" {
+	if ls[0].Name != "broken" || ls[0].Error == "" || ls[2].Name != "proj" || len(ls[2].Todos) != 3 || ls[2].Todos[0].Twin.List != "daily" || ls[2].UpdatedAt == 0 {
 		t.Fatalf("a corrupt list should carry its error, not sink the rest: %+v", ls)
 	}
 	if a.DoitMtime() == 0 {

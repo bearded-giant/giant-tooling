@@ -1744,9 +1744,45 @@ button.doit-danger {
 .doit-list-head .doit-name {
   flex: 1;
 }
-.doit-list-head .toggle-pill {
+.doit-list-head .toggle-pill,
+.doit-section-tools .toggle-pill {
   font-size: 13px;
   padding: 0 8px;
+}
+.doit-section-tools {
+  display: flex;
+  gap: 4px;
+}
+.doit-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--border);
+}
+.doit-list-row.empty {
+  color: var(--fg-muted);
+}
+.doit-list-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.doit-list-right {
+  flex: none;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+.doit-age {
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.5em;
+  text-align: right;
+}
+.tok-active {
+  color: var(--accent);
+  margin-right: 4px;
 }
 .doit-facets {
   display: flex;
@@ -1764,37 +1800,277 @@ button.doit-danger {
   font-size: 13px;
   padding: 2px 6px;
 }
+.doit-facets select.on {
+  border-color: var(--accent);
+  color: var(--accent-2);
+}
+
+/* tokens: one strong color (claude), state colors (status, priority, due), everything else dim text */
+.tok {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 18px;
+  padding: 0 6px;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  background: var(--chip);
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: 1px;
+}
+.doit-text .tok,
+.doit-title .tok {
+  margin-right: 6px;
+}
+.tok-claude {
+  background: var(--accent);
+  color: var(--bg);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.tok-type {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  cursor: pointer;
+}
+.tok-type:hover,
+.tok-scope:hover {
+  color: var(--fg);
+  background: var(--bg-3);
+}
+.tok-type.on,
+.tok-scope.on {
+  color: var(--accent-2);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.tok-rank {
+  background: none;
+  padding: 0;
+  font-variant-numeric: tabular-nums;
+}
+.tok-deps {
+  background: none;
+  padding: 0;
+  margin-left: 6px;
+  font-style: italic;
+}
+.tok-scope {
+  background: none;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.tok.due-over {
+  color: var(--danger);
+  background: rgba(248, 81, 73, 0.12);
+}
+.tok.due-today {
+  color: var(--warn);
+  background: rgba(210, 153, 34, 0.14);
+}
+.tok.due-soon {
+  color: var(--fg);
+}
+.tok.prio-critical {
+  color: var(--danger);
+  background: rgba(248, 81, 73, 0.12);
+}
+.tok.prio-urgent {
+  color: var(--warn);
+  background: rgba(210, 153, 34, 0.14);
+}
+.tok.prio-important {
+  color: var(--accent-2);
+  background: rgba(88, 166, 255, 0.12);
+}
+.tok.status-in_progress {
+  color: var(--accent-2);
+  background: rgba(88, 166, 255, 0.12);
+}
+.tok.status-done {
+  color: var(--success);
+  background: rgba(86, 211, 100, 0.12);
+}
+.doit-section.in_progress,
+.doit-section.sequence {
+  color: var(--accent-2);
+}
+.doit-section.prio-critical {
+  color: var(--danger);
+}
+.doit-section.prio-urgent {
+  color: var(--warn);
+}
+.doit-section.prio-important {
+  color: var(--accent-2);
+}
 .doit-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: 6px;
   margin-top: 3px;
 }
-.doit-row .chip {
-  max-width: 200px;
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  font-size: 12px;
-  padding: 0 6px;
-  text-transform: none;
-  letter-spacing: 0;
+.doit-row.done .tok {
+  opacity: 0.6;
 }
-.chip.scope {
-  text-transform: none;
-  letter-spacing: 0;
+
+/* detail header: one text size, meta in one size */
+.doit-head h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+.doit-title .tok {
+  vertical-align: 3px;
+}
+.doit-meta {
+  align-items: center;
+  font-size: 13px;
+}
+.doit-meta .toggle-pill {
+  font-size: 12px;
+}
+.doit-dim {
+  color: var(--fg-muted);
+}
+
+/* edit form: every control the same height */
+.doit-edit label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.doit-edit label > input,
+.doit-edit label > select,
+.doit-edit label > button,
+.doit-edit label > textarea {
+  margin-top: 3px;
+}
+.doit-edit input[type="text"],
+.doit-edit input[type="number"],
+.doit-edit input[type="date"],
+.doit-edit select,
+.doit-edit textarea {
+  display: block;
+  width: 100%;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 8px;
+  color: var(--fg);
+  font-size: 14px;
+}
+.doit-edit input[type="text"],
+.doit-edit input[type="number"],
+.doit-edit input[type="date"],
+.doit-edit select {
+  height: 30px;
+  line-height: 28px;
+}
+.doit-edit select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 24px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238b949e' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+}
+.doit-edit textarea {
+  padding: 6px 8px;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  font-size: 14px;
+  resize: vertical;
+}
+.doit-edit-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-end;
 }
 .doit-edit-row label {
   flex: 1;
   min-width: 0;
 }
-.doit-edit-row input[type="text"],
-.doit-edit-row input[type="number"],
-.doit-edit-row select {
-  width: 100%;
-}
-.doit-edit label.doit-check {
+.doit-edit-row label.doit-edit-fixed {
   flex: none;
-  align-self: flex-end;
-  padding-bottom: 6px;
+  width: 150px;
+}
+.doit-edit .doit-claude {
+  display: block;
+  width: 100%;
+  height: 30px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 4px;
+}
+.doit-edit .doit-claude.on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+}
+.doit-deps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin-top: 3px;
+}
+.doit-deps .tok-dep {
+  max-width: none;
+  color: var(--fg);
+  padding-right: 2px;
+}
+.doit-deps .tok-dep button {
+  margin-left: 4px;
+  padding: 0 4px;
+  border: none;
+  background: none;
+  color: var(--fg-muted);
+}
+.doit-deps .tok-dep button:hover {
+  color: var(--danger);
+}
+.doit-deps select {
+  width: auto;
+  max-width: 420px;
+  height: 24px;
+  line-height: 22px;
+  font-size: 13px;
+}
+.doit-keys {
+  display: block;
+  margin-top: 12px;
+}
+.doit-section-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.doit-section-row .toggle-pill {
+  font-size: 13px;
+  padding: 0 8px;
+  text-transform: none;
+}
+
+/* ribbon tooltips: instant, readable, with the g-chord key */
+.ribbon-btn[data-tip]::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 42px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: var(--fg);
+  color: var(--bg);
+  font-size: 13px;
+  font-weight: 500;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  z-index: 50;
+}
+.ribbon-btn[data-tip]:hover::after {
+  opacity: 1;
 }
