@@ -463,7 +463,7 @@ export function DoitItems({ d }: { d: Doit }) {
   const l = d.list;
   if (!l) return null;
   const armed = d.armed === `list:${l.name}`;
-  const hasFacets = FACETS.some((f) => d.facets[f].length > 0);
+  const hasFacets = FACETS.some((f) => d.facets[f].length > 1);
   return (
     <>
       <div className="doit-list-head">
@@ -506,7 +506,7 @@ export function DoitItems({ d }: { d: Doit }) {
         <div className="doit-facets">
           {FACETS.map(
             (f) =>
-              d.facets[f].length > 0 && (
+              d.facets[f].length > 1 && (
                 <select key={f} value={d.facet[f]} onChange={(e) => d.setFacet(f, e.target.value)} title={f}>
                   <option value="">{f}: all</option>
                   {d.facets[f].map((v) => (
@@ -560,6 +560,9 @@ export function DoitItems({ d }: { d: Doit }) {
       {l.todos.map((t, i) => {
         const st = status(t);
         const snip = d.q && !t.text.toLowerCase().includes(d.q) ? snippet(t.description, d.q) : "";
+        // a list where every item shares the value says it once in the facet row, not on every row
+        const showWt = Boolean(t.worktree) && d.facets.worktree.length > 1 && !d.facet.worktree;
+        const showFeat = Boolean(t.feature) && d.facets.feature.length > 1 && !d.facet.feature;
         return (
           <Fragment key={t.id}>
             {(i === 0 || bucket(t) !== bucket(l.todos[i - 1])) && (
@@ -595,12 +598,15 @@ export function DoitItems({ d }: { d: Doit }) {
                     <Hl text={snip} q={d.q} />
                   </div>
                 )}
+                {(t.due_date || showWt || showFeat || t.twin) && (
+                  <div className="doit-chips">
+                    {t.due_date && <span className="chip">{dueLabel(t.due_date)}</span>}
+                    {showWt && <span className="chip scope" title={t.worktree}>wt:{t.worktree}</span>}
+                    {showFeat && <span className="chip scope" title={t.feature}>feat:{t.feature}</span>}
+                    {t.twin && <span className="chip" title={`twin in ${t.twin.list}`}>↔ {t.twin.list}</span>}
+                  </div>
+                )}
               </div>
-              {t.priorities && <span className={`chip prio-${t.priorities}`}>{t.priorities}</span>}
-              {t.due_date && <span className="chip">{dueLabel(t.due_date)}</span>}
-              {t.worktree && <span className="chip">wt:{t.worktree}</span>}
-              {t.feature && <span className="chip">feat:{t.feature}</span>}
-              {t.twin && <span className="chip" title={`twin in ${t.twin.list}`}>↔ {t.twin.list}</span>}
             </div>
           </Fragment>
         );
@@ -676,8 +682,8 @@ export function DoitDetail({ d }: { d: Doit }) {
           {t.sequence > 0 && <span className="chip">seq {t.sequence}</span>}
           {p.rank && <span className="chip">#{p.rank}</span>}
           {p.deps && <span className="chip">dep on {p.deps}</span>}
-          {t.worktree && <span className="chip">wt:{t.worktree}</span>}
-          {t.feature && <span className="chip">feat:{t.feature}</span>}
+          {t.worktree && <span className="chip scope">wt:{t.worktree}</span>}
+          {t.feature && <span className="chip scope">feat:{t.feature}</span>}
           <span>{d.list.name}</span>
           {t.created_at > 0 && <span>created: {when(t.created_at)}</span>}
           {t.done && t.completed_at > 0 && <span>completed: {when(t.completed_at)}</span>}

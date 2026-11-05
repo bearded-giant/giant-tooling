@@ -1755,8 +1755,34 @@ button.doit-danger {
   padding: 6px 14px;
   border-bottom: 1px solid var(--border);
 }
+.doit-facets select,
+.doit-actions select {
+  width: auto;
+  max-width: 220px;
+}
 .doit-facets select {
+  font-size: 13px;
+  padding: 2px 6px;
+}
+.doit-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+.doit-row .chip {
   max-width: 200px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  padding: 0 6px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.chip.scope {
+  text-transform: none;
+  letter-spacing: 0;
 }
 .doit-edit-row label {
   flex: 1;
