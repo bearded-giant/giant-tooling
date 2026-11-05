@@ -460,7 +460,12 @@ function App() {
   const [pruneOpen, setPruneOpen] = useState(false);
   const [uiZoom, setUiZoom] = useState<number>(() => {
     const n = Number(localStorage.getItem("gm.uiZoom"));
-    return Number.isFinite(n) && n >= 80 && n <= 150 ? n : 90;
+    // the default moved from 90 to 100; a stored 90 from before that was the default, not a choice
+    if (!localStorage.getItem("gm.uiZoom100")) {
+      localStorage.setItem("gm.uiZoom100", "1");
+      if (n === 90) return 100;
+    }
+    return Number.isFinite(n) && n >= 80 && n <= 150 ? n : 100;
   });
   useEffect(() => {
     loadPref("uiZoom")
@@ -2001,11 +2006,11 @@ function ConfirmDeleteModal({
 // purpose (hierarchy), so one fixed size would flatten it. Each step
 // scales everything proportionally.
 const TEXT_SIZES: { label: string; zoom: number }[] = [
-  { label: "Small", zoom: 80 },
-  { label: "Default", zoom: 90 },
-  { label: "Large", zoom: 100 },
-  { label: "X-Large", zoom: 110 },
-  { label: "Huge", zoom: 120 },
+  { label: "Small", zoom: 90 },
+  { label: "Default", zoom: 100 },
+  { label: "Large", zoom: 110 },
+  { label: "X-Large", zoom: 120 },
+  { label: "Huge", zoom: 130 },
 ];
 
 function Switch({
