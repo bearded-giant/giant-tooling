@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardSetText } from "../wailsjs/runtime/runtime";
 import {
   DoitAdd,
@@ -19,7 +19,8 @@ import { main } from "../wailsjs/go/models";
 
 type Status = "pending" | "in_progress" | "done";
 type Facet = { worktree: string; feature: string; type: string };
-type ListSort = "recent" | "oldest" | "name";
+type SortBy = "updated" | "name";
+type Order = "desc" | "asc";
 type ListView = {
   name: string;
   error?: string;
@@ -43,8 +44,11 @@ const BUCKET_CLASS = ["in_progress", "sequence", "prio-critical", "prio-urgent",
 const PRIOS = ["critical", "urgent", "important"];
 const FACETS: (keyof Facet)[] = ["worktree", "feature", "type"];
 const NO_FACET: Facet = { worktree: "", feature: "", type: "" };
-const SORTS: ListSort[] = ["recent", "oldest", "name"];
-const SORT_LABEL: Record<ListSort, string> = { recent: "recent first", oldest: "oldest first", name: "a-z" };
+const SORT_LABEL: Record<SortBy, string> = { updated: "last updated", name: "name" };
+const ORDER_LABEL: Record<SortBy, Record<Order, string>> = {
+  updated: { desc: "newest first", asc: "oldest first" },
+  name: { asc: "a → z", desc: "z → a" },
+};
 const NEW_NOTE = "note:new";
 const OWED_LIST = "daily";
 
@@ -147,13 +151,22 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
   const [armed, setArmed] = useState("");
   const [facet, setFacet] = useState<Facet>(NO_FACET);
   const [listEdit, setListEdit] = useState<"" | "new" | "rename">("");
-  const [sort, setSortState] = useState<ListSort>(() => {
-    const s = localStorage.getItem("gm.doit.sort") as ListSort | null;
-    return s && SORTS.includes(s) ? s : "recent";
+  const [sortBy, setSortByState] = useState<SortBy>(() =>
+    localStorage.getItem("gm.doit.sortBy") === "name" ? "name" : "updated",
+  );
+  const [order, setOrderState] = useState<Order>(() => {
+    const o = localStorage.getItem("gm.doit.order");
+    return o === "asc" || o === "desc" ? o : sortBy === "name" ? "asc" : "desc";
   });
-  const setSort = (s: ListSort) => {
-    localStorage.setItem("gm.doit.sort", s);
-    setSortState(s);
+  const setSortBy = (s: SortBy) => {
+    localStorage.setItem("gm.doit.sortBy", s);
+    setSortByState(s);
+    // each key has its natural first page: newest lists, a before z
+    setOrder(s === "name" ? "asc" : "desc");
+  };
+  const setOrder = (o: Order) => {
+    localStorage.setItem("gm.doit.order", o);
+    setOrderState(o);
   };
   // long lists: done items stay folded until asked for
   const [showDone, setShowDoneState] = useState(() => localStorage.getItem("gm.doit.showDone") === "1");
@@ -215,13 +228,14 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
       else if (hit(l.name)) out.push({ ...base, todos, notes, hits: 0 });
     }
     // daily is the owed inbox and stays pinned on top
+    const dir = order === "asc" ? 1 : -1;
     return out.sort(
       (a, b) =>
         Number(b.name === OWED_LIST) - Number(a.name === OWED_LIST) ||
-        (sort === "name" ? 0 : sort === "recent" ? b.updated - a.updated : a.updated - b.updated) ||
+        (sortBy === "updated" ? dir * (a.updated - b.updated) : dir * a.name.localeCompare(b.name)) ||
         a.name.localeCompare(b.name),
     );
-  }, [lists, q, facet, showDone, sort]);
+  }, [lists, q, facet, showDone, sortBy, order]);
 
   const list = views.find((v) => v.name === selList) || views[0];
   const names = lists.map((l) => l.name);
@@ -272,7 +286,8 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
     note,
     facet,
     facets,
-    sort,
+    sortBy,
+    order,
     showDone,
     listEdit,
     creatingNote: key === NEW_NOTE,
@@ -280,8 +295,8 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
     armed,
     setEditing,
     setFacet: (f: keyof Facet, v: string) => setFacet({ ...facet, [f]: facet[f] === v ? "" : v }),
-    setSort,
-    cycleSort: () => setSort(SORTS[(SORTS.indexOf(sort) + 1) % SORTS.length]),
+    setSortBy,
+    setOrder,
     setShowDone,
     setListEdit,
     pickList,
@@ -442,15 +457,47 @@ function NameInput({
   );
 }
 
+function SortMenu({ d }: { d: Doit }) {
+  const [open, setOpen] = useState(false);
+  const btn = useRef<HTMLButtonElement>(null);
+  const r = btn.current?.getBoundingClientRect();
+  const check = (on: boolean) => <span className="ctx-check">{on ? "✓" : ""}</span>;
+  return (
+    <>
+      <button ref={btn} className="toggle-pill" onClick={() => setOpen(true)} title="sort lists">
+        ↕ {SORT_LABEL[d.sortBy]} ▾
+      </button>
+      {open && r && (
+        <div className="ctx-backdrop" onClick={() => setOpen(false)}>
+          <div className="ctx-menu" style={{ left: r.left, top: r.bottom + 4 }} onClick={(e) => e.stopPropagation()}>
+            <div className="ctx-title">sort by</div>
+            {(["updated", "name"] as SortBy[]).map((s) => (
+              <button key={s} type="button" className="ctx-item" onClick={() => d.setSortBy(s)}>
+                {check(d.sortBy === s)}
+                {SORT_LABEL[s]}
+              </button>
+            ))}
+            <div className="ctx-title">order</div>
+            {(d.sortBy === "name" ? (["asc", "desc"] as Order[]) : (["desc", "asc"] as Order[])).map((o) => (
+              <button key={o} type="button" className="ctx-item" onClick={() => d.setOrder(o)}>
+                {check(d.order === o)}
+                {ORDER_LABEL[d.sortBy][o]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 export function DoitSidebar({ d }: { d: Doit }) {
   return (
     <>
       <div className="doit-section doit-section-row">
         <span>lists</span>
         <span className="doit-section-tools">
-          <button className="toggle-pill" onClick={d.cycleSort} title="sort lists">
-            {SORT_LABEL[d.sort]}
-          </button>
+          <SortMenu d={d} />
           <button className="toggle-pill" onClick={() => d.setListEdit("new")} title="new list">
             + list
           </button>

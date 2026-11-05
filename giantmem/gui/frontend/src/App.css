@@ -2110,3 +2110,16 @@ button.doit-danger {
   margin: 0;
   color: var(--fg);
 }
+
+.ctx-check {
+  display: inline-block;
+  width: 18px;
+  color: var(--accent-2);
+}
+.ctx-title + .ctx-title,
+.ctx-item + .ctx-title {
+  margin-top: 6px;
+  border-top: 1px solid var(--border);
+  border-bottom: none;
+  padding-top: 8px;
+}
