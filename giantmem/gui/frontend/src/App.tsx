@@ -54,6 +54,7 @@ import {
 import { artifacts, hub, main, search, sessions } from "../wailsjs/go/models";
 import PruneModal from "./PruneModal";
 import { DoitDetail, DoitItems, DoitSidebar, useDoit } from "./DoitView";
+import { Switch } from "./Switch";
 import giantImg from "./assets/images/giant.jpg";
 
 // save effects run on mount with the localStorage seed; a fresh webview's
@@ -1221,7 +1222,7 @@ function App() {
       </div>
 
       <div
-        className={`filter-chips${hasActiveFilters ? " has-filters" : ""}`}
+        className={`filter-chips${hasActiveFilters ? " has-filters" : " empty"}`}
       >
         {hasActiveFilters && (
           <span className="filter-active-label">
@@ -1328,15 +1329,6 @@ function App() {
             style={{ color: "var(--fg-muted)" }}
           >
             clear all
-          </span>
-        )}
-        {!hasActiveFilters && (
-          <span className="filter-hint">
-            <span className="kbd">/</span> focus search ·{" "}
-            <span className="kbd">j</span>/<span className="kbd">k</span> nav ·{" "}
-            <span className="kbd">r</span> refresh ·{" "}
-            <span className="kbd">esc</span> clear ·{" "}
-            <span className="kbd">?</span> all shortcuts
           </span>
         )}
       </div>
@@ -2012,26 +2004,6 @@ const TEXT_SIZES: { label: string; zoom: number }[] = [
   { label: "X-Large", zoom: 120 },
   { label: "Huge", zoom: 130 },
 ];
-
-function Switch({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      role="switch"
-      aria-checked={checked}
-      className={`switch ${checked ? "on" : ""}`}
-      onClick={() => onChange(!checked)}
-    >
-      <span className="switch-knob" />
-    </button>
-  );
-}
 
 function SettingsModal({
   uiZoom,

@@ -16,6 +16,7 @@ import {
   DoitUpdate,
 } from "../wailsjs/go/main/App";
 import { main } from "../wailsjs/go/models";
+import { Switch } from "./Switch";
 
 type Status = "pending" | "in_progress" | "done";
 type Facet = { worktree: string; feature: string; type: string };
@@ -38,7 +39,7 @@ type ListView = {
 const NEXT: Record<Status, Status> = { pending: "in_progress", in_progress: "done", done: "pending" };
 const CYCLE_LABEL: Record<Status, string> = { pending: "▸ start", in_progress: "✓ complete", done: "↺ reopen" };
 const STATUS_LABEL: Record<Status, string> = { pending: "pending", in_progress: "in progress", done: "done" };
-const GLYPH: Record<Status, string> = { pending: "·", in_progress: "▸", done: "✓" };
+const GLYPH: Record<Status, string> = { pending: "○", in_progress: "▶", done: "✓" };
 const BUCKETS = ["in progress", "sequence", "critical", "urgent", "important", "default", "done"];
 const BUCKET_CLASS = ["in_progress", "sequence", "prio-critical", "prio-urgent", "prio-important", "", "done"];
 const PRIOS = ["critical", "urgent", "important"];
@@ -109,7 +110,25 @@ function dueInfo(due: string): { label: string; cls: string } {
   return { label: `in ${days}d`, cls: days <= 7 ? "due-soon" : "" };
 }
 
-const when = (n: number) => (n ? new Date(n > 1e12 ? n : n * 1000).toLocaleString() : "");
+const when = (n: number) =>
+  n
+    ? new Date(n > 1e12 ? n : n * 1000).toLocaleString(undefined, {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "";
+
+// the footer every surface stamps on a description; shown as a fact, not as text
+const FOOTER = /\n*----------\nlast (?:updated|modified):\s*([^\n]*)[\s\S]*$/;
+const stripFooter = (desc: string) => (desc || "").replace(FOOTER, "").replace(/\s+$/, "");
+// "2026-10-15: 12:04" as the surfaces write it, shown like created_at
+function footerStamp(desc: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2}):?\s+(\d{2}):(\d{2})/.exec(FOOTER.exec(desc || "")?.[1]?.trim() || "");
+  return m ? when(new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]).getTime()) : "";
+}
 
 function age(unix: number): string {
   if (!unix) return "";
@@ -582,6 +601,9 @@ export function DoitItems({ d }: { d: Doit }) {
         <span className="doit-snip">
           {l.open} open · {l.all.length - l.open} done
         </span>
+        <button className="toggle-pill" onClick={d.newNote} title="new list note">
+          + note
+        </button>
         {l.name !== OWED_LIST && d.listEdit !== "rename" && (
           <>
             <button className="toggle-pill" onClick={() => d.setListEdit("rename")}>
@@ -628,14 +650,7 @@ export function DoitItems({ d }: { d: Doit }) {
         </div>
       )}
       {l.error && <div className="doit-section doit-err">unreadable: {l.error}</div>}
-      {(!d.q || l.notes.length > 0) && (
-        <div className="doit-section doit-section-row">
-          <span>list notes</span>
-          <button className="toggle-pill" onClick={d.newNote} title="new list note">
-            + note
-          </button>
-        </div>
-      )}
+      {(l.notes.length > 0 || d.creatingNote) && <div className="doit-section">list notes</div>}
       {d.creatingNote && (
         <div className="doit-row selected">
           <span className="doit-glyph">✎</span>
@@ -796,7 +811,7 @@ function TodoPane({
       const p = parseText(t.text);
       setForm({
         text: p.body,
-        description: t.description,
+        description: stripFooter(t.description),
         priority: t.priorities || "",
         due: t.due_date || "",
         type: p.type,
@@ -823,25 +838,32 @@ function TodoPane({
   const depOptions = pool
     .map((o) => ({ o, p: parseText(o.text) }))
     .filter(({ o, p: op }) => o.id !== t.id && !o.done && op.rank && !deps.includes(op.rank));
+  const stamp = footerStamp(t.description);
+  const notes = stripFooter(t.description);
   const meta = (
-    <div className="meta doit-meta">
-      <span className={`tok status-${st}`}>{STATUS_LABEL[st]}</span>
-      {t.priorities && <span className={`tok prio-${t.priorities}`}>{t.priorities}</span>}
-      {due.label && (
-        <span className={`tok ${due.cls}`}>
-          {t.due_date} · {due.label}
-        </span>
-      )}
-      {t.sequence > 0 && !t.done && !t.in_progress && <span className="tok">seq {t.sequence}</span>}
-      {t.worktree && <ScopeTok f="worktree" v={t.worktree} d={d} />}
-      {t.feature && <ScopeTok f="feature" v={t.feature} d={d} />}
-      {!twin && <span className="doit-dim">{list}</span>}
-      {t.created_at > 0 && <span className="doit-dim">created {when(t.created_at)}</span>}
-      {t.done && t.completed_at > 0 && <span className="doit-dim">completed {when(t.completed_at)}</span>}
-      <button className="toggle-pill" onClick={() => ClipboardSetText(t.id)} title={t.id}>
-        copy id
-      </button>
-    </div>
+    <>
+      <div className="meta doit-meta">
+        <span className={`tok status-${st}`}>{STATUS_LABEL[st]}</span>
+        {t.priorities && <span className={`tok prio-${t.priorities}`}>{t.priorities}</span>}
+        {due.label && (
+          <span className={`tok ${due.cls}`}>
+            {t.due_date} · {due.label}
+          </span>
+        )}
+        {t.sequence > 0 && !t.done && !t.in_progress && <span className="tok">seq {t.sequence}</span>}
+        {t.worktree && <ScopeTok f="worktree" v={t.worktree} d={d} />}
+        {t.feature && <ScopeTok f="feature" v={t.feature} d={d} />}
+      </div>
+      <div className="doit-facts">
+        <span>{list}</span>
+        {t.created_at > 0 && <span>created {when(t.created_at)}</span>}
+        {stamp && <span>modified {stamp}</span>}
+        {t.done && t.completed_at > 0 && <span>completed {when(t.completed_at)}</span>}
+        <button type="button" className="doit-link" onClick={() => ClipboardSetText(t.id)} title="copy the id">
+          id {t.id} ⧉
+        </button>
+      </div>
+    </>
   );
   return (
     <>
@@ -901,16 +923,9 @@ function TodoPane({
             <input type="text" autoFocus value={form.text} onChange={field("text")} />
           </label>
           <div className="doit-edit-row">
-            <label className="doit-edit-fixed">
-              burn-down
-              <button
-                type="button"
-                className={`toggle-pill doit-claude ${form.claude ? "on" : ""}`}
-                onClick={() => setForm({ ...form, claude: !form.claude })}
-                title="the claude: marker: /burn works this item"
-              >
-                {form.claude ? "claude: on" : "claude: off"}
-              </button>
+            <label className="doit-edit-fixed doit-switch" title="the claude: marker: /burn works this item">
+              <Switch checked={form.claude} onChange={(v) => setForm({ ...form, claude: v })} />
+              <span className={form.claude ? "on" : ""}>claude: burn-down</span>
             </label>
             <label>
               type
@@ -1015,7 +1030,7 @@ function TodoPane({
           </div>
         </div>
       ) : (
-        <pre className="doit-notes">{t.description ? <Hl text={t.description} q={d.q} /> : "no notes"}</pre>
+        <pre className="doit-notes">{notes ? <Hl text={notes} q={d.q} /> : "no notes"}</pre>
       )}
     </>
   );
