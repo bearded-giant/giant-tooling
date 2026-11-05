@@ -1599,8 +1599,8 @@ mark {
   border-bottom: 1px solid var(--border);
 }
 .doit-section {
-  padding: 3px 14px;
-  font-size: 14px;
+  padding: 5px 14px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--fg-muted);
@@ -1611,7 +1611,8 @@ mark {
   display: flex;
   gap: 8px;
   align-items: baseline;
-  padding: 6px 14px;
+  padding: 8px 14px;
+  line-height: 1.4;
   border-bottom: 1px solid var(--border);
   cursor: pointer;
 }
@@ -1758,6 +1759,9 @@ button.doit-danger {
   margin: 4px 8px;
   background: var(--border);
 }
+.doit-list-row {
+  padding: 4px 6px;
+}
 .doit-list-row.empty {
   color: var(--fg-muted);
 }
@@ -1775,7 +1779,7 @@ button.doit-danger {
 }
 .doit-age {
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
   min-width: 2.5em;
   text-align: right;
@@ -1808,9 +1812,9 @@ button.doit-danger {
 /* tokens: one strong color (claude), state colors (status, priority, due), everything else dim text */
 .tok {
   display: inline-block;
-  font-size: 12px;
-  line-height: 18px;
-  padding: 0 6px;
+  font-size: 13px;
+  line-height: 20px;
+  padding: 0 7px;
   border-radius: 4px;
   color: var(--fg-muted);
   background: var(--chip);
@@ -1856,8 +1860,6 @@ button.doit-danger {
   font-style: italic;
 }
 .tok-scope {
-  background: none;
-  padding: 0 2px;
   cursor: pointer;
 }
 .tok.due-over {
@@ -1908,28 +1910,42 @@ button.doit-danger {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 3px;
+  margin-top: 5px;
 }
 .doit-row.done .tok {
   opacity: 0.6;
 }
 
 /* detail header: one text size, meta in one size */
+.doit-head {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+}
 .doit-head h1 {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
 }
 .doit-title .tok {
-  vertical-align: 3px;
+  vertical-align: middle;
+  position: relative;
+  top: -1px;
 }
 .doit-meta {
   align-items: center;
+  gap: 8px;
+  row-gap: 6px;
+  margin-top: 10px;
   font-size: 13px;
 }
 .doit-meta .toggle-pill {
-  font-size: 12px;
+  font-size: 13px;
+  padding: 0 9px;
+}
+.doit-actions {
+  gap: 8px;
+  margin: 14px 0;
 }
 .doit-dim {
   color: var(--fg-muted);
@@ -2126,28 +2142,29 @@ button.doit-danger {
 
 /* an owed item and its twin read as one page: item, rule, twin */
 .doit-twin {
-  margin-top: 18px;
-  padding-top: 12px;
+  margin-top: 28px;
+  padding-top: 18px;
   border-top: 1px solid var(--border);
 }
 .doit-twin-head {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 10px;
   align-items: center;
-  margin-bottom: 8px;
-  font-size: 13px;
+  margin-bottom: 12px;
+  font-size: 14px;
   color: var(--fg-muted);
 }
 .doit-twin-head strong {
   color: var(--fg);
 }
 .doit-twin-head .toggle-pill {
-  font-size: 12px;
+  font-size: 13px;
+  padding: 0 9px;
 }
 .doit-twin h2 {
-  margin: 0 0 6px;
-  font-size: 15px;
+  margin: 0;
+  font-size: 16px;
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
 }
