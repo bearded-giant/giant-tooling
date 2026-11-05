@@ -375,7 +375,7 @@
 }
 .result-row .row-path {
   color: var(--fg-muted);
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -649,7 +649,7 @@
 }
 .tool-call .tool-desc {
   color: var(--fg-muted);
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -708,7 +708,7 @@
   border-radius: 3px;
   margin: 4px 0;
   padding: 6px 10px;
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   font-size: 14px;
   white-space: pre-wrap;
   word-break: break-word;
@@ -803,7 +803,7 @@
   border: 1px solid var(--border);
   border-radius: 3px;
   padding: 0 4px;
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   font-size: 14px;
   color: var(--fg-muted);
 }
@@ -848,7 +848,7 @@
   color: var(--accent);
 }
 .status-version {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   color: var(--fg-muted);
   opacity: 0.7;
 }
@@ -907,7 +907,7 @@
 }
 .about-version {
   margin-top: 2px;
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   font-size: 14px;
   color: var(--fg-muted);
 }
@@ -1043,7 +1043,7 @@
 .browse-group-head {
   font-size: 13px;
   color: var(--fg-muted);
-  font-family: ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   padding: 14px 8px 6px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   position: sticky;
@@ -1131,7 +1131,7 @@
   margin: 0;
 }
 .settings-brand {
-  font-family: ui-monospace, Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   font-size: 14px;
   color: var(--fg-muted);
 }
@@ -1461,7 +1461,7 @@
   border: 1px solid var(--border);
   border-radius: 5px;
   padding: 8px 10px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   font-size: 13.5px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -1547,7 +1547,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, monospace;
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
 }
 .hub-files {
   max-height: 40vh;

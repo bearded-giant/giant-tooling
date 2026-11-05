@@ -1709,7 +1709,7 @@ function App() {
                 {detailArt.updated && (
                   <span>updated: {formatTime(detailArt.updated)}</span>
                 )}
-                <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>
+                <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace', opacity: 0.7 }}>
                   {detailArt.path}
                 </span>
                 <CopyButton
@@ -2307,7 +2307,7 @@ function FileDetail({
               session {row.sessionId.slice(0, 8)} ›
             </a>
           )}
-          <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{path}</span>
+          <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace', opacity: 0.7 }}>{path}</span>
           <CopyButton text={path} label={isURL ? "copy url" : "copy absolute path"} />
         </div>
       </header>
@@ -2771,7 +2771,7 @@ function ToolUseRow({
         {hit.sessionId && (
           <>
             {" · "}
-            <span style={{ fontFamily: "ui-monospace" }}>
+            <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace' }}>
               {hit.sessionId.slice(0, 8)}
             </span>
           </>
@@ -2833,7 +2833,7 @@ function ToolUseDetail({
           )}
           <span>#{hit.turnIndex}</span>
           {hit.timestamp && <span>{formatTime(hit.timestamp)}</span>}
-          <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>
+          <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace', opacity: 0.7 }}>
             {hit.sessionPath}
           </span>
           <CopyButton text={hit.sessionPath} label="copy session path" />
@@ -2971,7 +2971,7 @@ function ActivityList({
                         {f.dirType}
                       </span>
                     )}
-                    <span style={{ fontFamily: "ui-monospace" }}>
+                    <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace' }}>
                       {trimWorktree(f.path, r.worktreePath)}
                     </span>
                   </div>
@@ -3368,7 +3368,7 @@ function SessionRow({
         {hit.project && <strong>{hit.project}</strong>}
         {hit.cwd && <> · {hit.cwd}</>}
         {hit.session_id && (
-          <> · <span style={{ fontFamily: "ui-monospace" }}>{hit.session_id.slice(0, 8)}</span></>
+          <> · <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace' }}>{hit.session_id.slice(0, 8)}</span></>
         )}
       </div>
       <div className="row-path">{hit.filepath}</div>
@@ -3703,7 +3703,7 @@ function SessionDetail({
       <header className="detail-head">
         <h2 style={{ marginTop: 0, marginBottom: 0 }}>{path.split("/").pop()}</h2>
         <div className="meta">
-          <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{path}</span>
+          <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace', opacity: 0.7 }}>{path}</span>
           <CopyButton text={path} label="copy file path" />
           <CopyButton text={hubData?.link || ""} label="copy deep link" />
           {turns && (
@@ -4195,14 +4195,14 @@ function SessionHubHeader({ data }: { data: main.SessionHubData | null }) {
           </>
         )}
         {b.branch && <span>branch: {b.branch}</span>}
-        <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{shortPath(b.dir)}</span>
+        <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace', opacity: 0.7 }}>{shortPath(b.dir)}</span>
         <CopyButton text={b.dir} label="copy bundle path" />
         <button className="mini-btn" onClick={() => OpenPath(b.dir, false)}>
           open bundle
         </button>
         {resume && (
           <>
-            <span style={{ fontFamily: "ui-monospace", opacity: 0.7 }}>{b.resume}</span>
+            <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace', opacity: 0.7 }}>{b.resume}</span>
             <CopyButton text={resume} label="copy resume command" />
           </>
         )}
@@ -4511,7 +4511,7 @@ function DaySessionRow({ row, onClick }: { row: hub.DaySession; onClick: () => v
         {row.active_sec > 0 && ` · active ${fmtSecs(row.active_sec)}`}
         {row.errors > 0 && <span style={{ color: "var(--danger)" }}>{` · ${row.errors} errors`}</span>}
         {` · ${row.files} files · ${row.links} links · `}
-        <span style={{ fontFamily: "ui-monospace" }}>{row.session_id.slice(0, 8)}</span>
+        <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace' }}>{row.session_id.slice(0, 8)}</span>
       </div>
     </div>
   );
