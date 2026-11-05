@@ -148,6 +148,7 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
   const [selList, setSelList] = useState("");
   const [selKey, setSelKey] = useState("");
   const [editing, setEditing] = useState(false);
+  const [editingTwin, setEditingTwin] = useState(false);
   const [armed, setArmed] = useState("");
   const [facet, setFacet] = useState<Facet>(NO_FACET);
   const [listEdit, setListEdit] = useState<"" | "new" | "rename">("");
@@ -254,6 +255,7 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
 
   useEffect(() => {
     setEditing(false);
+    setEditingTwin(false);
     setArmed("");
   }, [list?.name, key]);
 
@@ -292,8 +294,11 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
     listEdit,
     creatingNote: key === NEW_NOTE,
     editing,
+    editingTwin,
     armed,
     setEditing,
+    setEditingTwin,
+    todosOf: (name: string) => lists.find((x) => x.name === name)?.todos || [],
     setFacet: (f: keyof Facet, v: string) => setFacet({ ...facet, [f]: facet[f] === v ? "" : v }),
     setSortBy,
     setOrder,
@@ -312,25 +317,34 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
       setSelKey(id);
       setFacet(NO_FACET);
     },
-    cycle: (t: main.DoitTodo) => list && run(DoitSetStatus(list.name, t.id, NEXT[status(t)])),
-    setStatus: (t: main.DoitTodo, s: Status) => list && run(DoitSetStatus(list.name, t.id, s)),
-    save: (t: main.DoitTodo, e: main.DoitEdit) =>
-      list && run(DoitUpdate(list.name, t.id, e)).then((ok) => ok && setEditing(false)),
-    move: (t: main.DoitTodo, to: string) =>
-      list &&
-      run(DoitMove(list.name, t.id, to)).then((ok) => {
-        if (ok) d.jump(to, t.id);
+    cycle: (t: main.DoitTodo) => list && d.cycleIn(list.name, t),
+    // the twin pane acts on its own list; the backend syncs done, priority and due to the other half
+    cycleIn: (name: string, t: main.DoitTodo) => run(DoitSetStatus(name, t.id, NEXT[status(t)])),
+    setStatusIn: (name: string, t: main.DoitTodo, s: Status) => run(DoitSetStatus(name, t.id, s)),
+    saveIn: (name: string, t: main.DoitTodo, e: main.DoitEdit) =>
+      run(DoitUpdate(name, t.id, e)).then((ok) => {
+        if (ok) {
+          setEditing(false);
+          setEditingTwin(false);
+        }
+        return ok;
       }),
-    remove: (t: main.DoitTodo) => {
-      if (!list) return;
-      if (armed !== t.id) {
-        setArmed(t.id);
+    moveIn: (name: string, t: main.DoitTodo, to: string) =>
+      run(DoitMove(name, t.id, to)).then((ok) => {
+        if (ok && list && name === list.name) d.jump(to, t.id);
+      }),
+    removeIn: (name: string, t: main.DoitTodo) => {
+      const k = `${name}:${t.id}`;
+      if (armed !== k) {
+        setArmed(k);
         return;
       }
-      const i = keys.indexOf(t.id);
-      setSelKey(keys[i + 1] || keys[i - 1] || "");
+      if (list && name === list.name) {
+        const i = keys.indexOf(t.id);
+        setSelKey(keys[i + 1] || keys[i - 1] || "");
+      }
       setArmed("");
-      run(DoitDelete(list.name, t.id));
+      run(DoitDelete(name, t.id));
     },
     newNote: () => list && setSelKey(NEW_NOTE),
     saveNote: async (n: main.DoitNote | undefined, title: string, body: string) => {
@@ -737,9 +751,48 @@ const EMPTY_EDIT: main.DoitEdit = {
 
 export function DoitDetail({ d }: { d: Doit }) {
   const t = d.todo;
+  if (d.note || d.creatingNote) return <NoteDetail key={d.key} d={d} n={d.note} />;
+  if (!t || !d.list) return <div className="detail-empty">{d.list ? "pick an item" : "pick a list"}</div>;
+  const twin = d.twinOf(t);
+  return (
+    <>
+      <TodoPane key={`${d.list.name}:${t.id}`} list={d.list.name} t={t} d={d} editing={d.editing} setEditing={d.setEditing} />
+      {t.twin && !twin && <div className="doit-twin doit-dim">twin in {t.twin.list} is gone</div>}
+      {twin && (
+        <section className="doit-twin">
+          <TodoPane
+            key={`${twin.list}:${twin.todo.id}`}
+            list={twin.list}
+            t={twin.todo}
+            d={d}
+            editing={d.editingTwin}
+            setEditing={d.setEditingTwin}
+            twin
+          />
+        </section>
+      )}
+    </>
+  );
+}
+
+function TodoPane({
+  list,
+  t,
+  d,
+  editing,
+  setEditing,
+  twin,
+}: {
+  list: string;
+  t: main.DoitTodo;
+  d: Doit;
+  editing: boolean;
+  setEditing: (v: boolean) => void;
+  twin?: boolean;
+}) {
   const [form, setForm] = useState<main.DoitEdit>(EMPTY_EDIT);
   useEffect(() => {
-    if (d.editing && t) {
+    if (editing) {
       const p = parseText(t.text);
       setForm({
         text: p.body,
@@ -754,87 +807,93 @@ export function DoitDetail({ d }: { d: Doit }) {
         feature: t.feature || "",
       });
     }
-  }, [d.editing]);
-
-  if (d.note || d.creatingNote) return <NoteDetail key={d.key} d={d} n={d.note} />;
-  if (!t || !d.list) return <div className="detail-empty">{d.list ? "pick an item" : "pick a list"}</div>;
+  }, [editing]);
 
   const st = status(t);
   const p = parseText(t.text);
   const due = dueInfo(t.due_date);
-  const twin = d.twinOf(t);
-  const save = () => d.save(t, form);
+  const armed = d.armed === `${list}:${t.id}`;
+  const save = () => d.saveIn(list, t, form);
   const field = (k: keyof main.DoitEdit) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [k]: e.target.value });
+  const pool = d.todosOf(list);
+  const vals = (f: keyof Facet) => [...new Set(pool.map((x) => facetOf(x, f)).filter(Boolean))].sort();
   // deps are rank numbers on this list; done items are not offered, a dep on one is stale
   const deps = splitDeps(form.deps);
-  const depOptions = d.list.all
+  const depOptions = pool
     .map((o) => ({ o, p: parseText(o.text) }))
     .filter(({ o, p: op }) => o.id !== t.id && !o.done && op.rank && !deps.includes(op.rank));
+  const meta = (
+    <div className="meta doit-meta">
+      <span className={`tok status-${st}`}>{STATUS_LABEL[st]}</span>
+      {t.priorities && <span className={`tok prio-${t.priorities}`}>{t.priorities}</span>}
+      {due.label && (
+        <span className={`tok ${due.cls}`}>
+          {t.due_date} · {due.label}
+        </span>
+      )}
+      {t.sequence > 0 && !t.done && !t.in_progress && <span className="tok">seq {t.sequence}</span>}
+      {t.worktree && <ScopeTok f="worktree" v={t.worktree} d={d} />}
+      {t.feature && <ScopeTok f="feature" v={t.feature} d={d} />}
+      {!twin && <span className="doit-dim">{list}</span>}
+      {t.created_at > 0 && <span className="doit-dim">created {when(t.created_at)}</span>}
+      {t.done && t.completed_at > 0 && <span className="doit-dim">completed {when(t.completed_at)}</span>}
+      <button className="toggle-pill" onClick={() => ClipboardSetText(t.id)} title={t.id}>
+        copy id
+      </button>
+    </div>
+  );
   return (
     <>
-      <header className="detail-head doit-head">
-        <h1>
-          <TodoText t={t} q={d.q} d={d} big />
-        </h1>
-        <div className="meta doit-meta">
-          <span className={`tok status-${st}`}>{STATUS_LABEL[st]}</span>
-          {t.priorities && <span className={`tok prio-${t.priorities}`}>{t.priorities}</span>}
-          {due.label && (
-            <span className={`tok ${due.cls}`}>
-              {t.due_date} · {due.label}
+      {twin ? (
+        <>
+          <div className="doit-twin-head">
+            <span>
+              twin in <strong>{list}</strong>
             </span>
-          )}
-          {t.sequence > 0 && !t.done && !t.in_progress && <span className="tok">seq {t.sequence}</span>}
-          {t.worktree && <ScopeTok f="worktree" v={t.worktree} d={d} />}
-          {t.feature && <ScopeTok f="feature" v={t.feature} d={d} />}
-          <span className="doit-dim">{d.list.name}</span>
-          {t.created_at > 0 && <span className="doit-dim">created {when(t.created_at)}</span>}
-          {t.done && t.completed_at > 0 && <span className="doit-dim">completed {when(t.completed_at)}</span>}
-          {t.twin && !twin && <span className="tok due-over">twin in {t.twin.list} is gone</span>}
-          <button className="toggle-pill" onClick={() => ClipboardSetText(t.id)} title={t.id}>
-            copy id
-          </button>
-        </div>
-      </header>
-      {!d.editing && (
-        <div className="doit-actions">
-          <button onClick={() => d.cycle(t)}>
-            {CYCLE_LABEL[st]}
-          </button>
-          {st === "pending" && (
-            <button onClick={() => d.setStatus(t, "done")}>
-              ✓ complete
+            <button className="toggle-pill" onClick={() => d.jump(list, t.id)}>
+              open in {list} ›
             </button>
-          )}
-          <button onClick={() => d.setEditing(true)}>
-            edit
-          </button>
-          <select value="" onChange={(e) => e.target.value && d.move(t, e.target.value)} title="move to another list">
+          </div>
+          <h2>
+            <TodoText t={t} q={d.q} d={d} big />
+          </h2>
+          {meta}
+        </>
+      ) : (
+        <header className="detail-head doit-head">
+          <h1>
+            <TodoText t={t} q={d.q} d={d} big />
+          </h1>
+          {meta}
+        </header>
+      )}
+      {!editing && (
+        <div className="doit-actions">
+          <button onClick={() => d.cycleIn(list, t)}>{CYCLE_LABEL[st]}</button>
+          {st === "pending" && <button onClick={() => d.setStatusIn(list, t, "done")}>✓ complete</button>}
+          <button onClick={() => setEditing(true)}>edit</button>
+          <select value="" onChange={(e) => e.target.value && d.moveIn(list, t, e.target.value)} title="move to another list">
             <option value="">move to…</option>
             {d.names
-              .filter((n) => n !== d.list!.name)
+              .filter((n) => n !== list)
               .map((n) => (
                 <option key={n} value={n}>
                   {n}
                 </option>
               ))}
           </select>
-          <button
-            className={d.armed === t.id ? "doit-danger" : ""}
-            onClick={() => d.remove(t)}
-            title="click twice to confirm"
-          >
-            {d.armed === t.id ? (t.twin ? `confirm: delete here and in ${t.twin.list}` : "confirm delete") : "delete"}
+          <button className={armed ? "doit-danger" : ""} onClick={() => d.removeIn(list, t)} title="click twice to confirm">
+            {armed ? (t.twin ? `confirm: delete here and in ${t.twin.list}` : "confirm delete") : "delete"}
           </button>
         </div>
       )}
-      {d.editing ? (
+      {editing ? (
         <div
           className="doit-edit"
           onKeyDown={(e) => {
             if (e.key === "Enter" && e.metaKey) save();
-            if (e.key === "Escape") d.setEditing(false);
+            if (e.key === "Escape") setEditing(false);
           }}
         >
           <label>
@@ -855,7 +914,7 @@ export function DoitDetail({ d }: { d: Doit }) {
             </label>
             <label>
               type
-              <input type="text" value={form.type} onChange={field("type")} placeholder="bug, chore, gate…" list="doit-types" />
+              <input type="text" value={form.type} onChange={field("type")} placeholder="bug, chore, gate…" list={`doit-types-${list}`} />
             </label>
             <label>
               priority
@@ -885,18 +944,18 @@ export function DoitDetail({ d }: { d: Doit }) {
             </label>
             <label>
               worktree
-              <input type="text" value={form.worktree} onChange={field("worktree")} list="doit-worktrees" />
+              <input type="text" value={form.worktree} onChange={field("worktree")} list={`doit-worktrees-${list}`} />
             </label>
             <label>
               feature
-              <input type="text" value={form.feature} onChange={field("feature")} list="doit-features" />
+              <input type="text" value={form.feature} onChange={field("feature")} list={`doit-features-${list}`} />
             </label>
           </div>
           <label>
-            dep on (items of {d.list.name})
+            dep on (items of {list})
             <div className="doit-deps">
               {deps.map((r) => {
-                const dep = d.list!.all.find((o) => parseText(o.text).rank === r);
+                const dep = pool.find((o) => parseText(o.text).rank === r);
                 return (
                   <span key={r} className="tok tok-dep">
                     #{r} {dep ? parseText(dep.text).body.slice(0, 40) : "(not on this list)"}
@@ -923,25 +982,25 @@ export function DoitDetail({ d }: { d: Doit }) {
               </select>
             </div>
           </label>
-          <datalist id="doit-types">
-            {d.facets.type.map((v) => (
+          <datalist id={`doit-types-${list}`}>
+            {vals("type").map((v) => (
               <option key={v} value={v} />
             ))}
           </datalist>
-          <datalist id="doit-worktrees">
-            {d.facets.worktree.map((v) => (
+          <datalist id={`doit-worktrees-${list}`}>
+            {vals("worktree").map((v) => (
               <option key={v} value={v} />
             ))}
           </datalist>
-          <datalist id="doit-features">
-            {d.facets.feature.map((v) => (
+          <datalist id={`doit-features-${list}`}>
+            {vals("feature").map((v) => (
               <option key={v} value={v} />
             ))}
           </datalist>
           <label>
             notes
             <textarea
-              rows={18}
+              rows={twin ? 10 : 18}
               value={form.description}
               onChange={(e) => setForm({ ...form, description: e.target.value })}
             />
@@ -950,36 +1009,13 @@ export function DoitDetail({ d }: { d: Doit }) {
             <button className="active" onClick={save} title="⌘ enter">
               save
             </button>
-            <button onClick={() => d.setEditing(false)} title="esc">
+            <button onClick={() => setEditing(false)} title="esc">
               cancel
             </button>
           </div>
         </div>
       ) : (
-        <>
-          <pre className="doit-notes">{t.description ? <Hl text={t.description} q={d.q} /> : "no notes"}</pre>
-          {twin && (
-            <section className="doit-twin">
-              <div className="doit-twin-head">
-                <span>
-                  twin in <strong>{twin.list}</strong>
-                </span>
-                <span className={`tok status-${status(twin.todo)}`}>{STATUS_LABEL[status(twin.todo)]}</span>
-                {twin.todo.worktree && <span className="tok tok-scope">wt {twin.todo.worktree}</span>}
-                {twin.todo.feature && <span className="tok tok-scope">feat {twin.todo.feature}</span>}
-                <button className="toggle-pill" onClick={() => d.jump(twin.list, twin.todo.id)}>
-                  open in {twin.list} ›
-                </button>
-              </div>
-              <h2>
-                <TodoText t={twin.todo} q={d.q} d={d} big />
-              </h2>
-              <pre className="doit-notes">
-                {twin.todo.description ? <Hl text={twin.todo.description} q={d.q} /> : "no notes"}
-              </pre>
-            </section>
-          )}
-        </>
+        <pre className="doit-notes">{t.description ? <Hl text={t.description} q={d.q} /> : "no notes"}</pre>
       )}
     </>
   );
