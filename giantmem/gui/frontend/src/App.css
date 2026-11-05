@@ -2123,3 +2123,31 @@ button.doit-danger {
   border-bottom: none;
   padding-top: 8px;
 }
+
+/* an owed item and its twin read as one page: item, rule, twin */
+.doit-twin {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.doit-twin-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
+.doit-twin-head strong {
+  color: var(--fg);
+}
+.doit-twin-head .toggle-pill {
+  font-size: 12px;
+}
+.doit-twin h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+}

@@ -300,6 +300,12 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
     setShowDone,
     setListEdit,
     pickList,
+    // the raw lists, not views: a search can drop the twin's list from the sidebar
+    twinOf: (t: main.DoitTodo) => {
+      const l = t.twin && lists.find((x) => x.name === t.twin!.list);
+      const tw = l && (l.todos || []).find((x) => x.id === t.twin!.id);
+      return tw ? { list: l!.name, todo: tw } : undefined;
+    },
     pick: (k: string) => setSelKey(k),
     jump: (name: string, id: string) => {
       setSelList(name);
@@ -756,6 +762,7 @@ export function DoitDetail({ d }: { d: Doit }) {
   const st = status(t);
   const p = parseText(t.text);
   const due = dueInfo(t.due_date);
+  const twin = d.twinOf(t);
   const save = () => d.save(t, form);
   const field = (k: keyof main.DoitEdit) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm({ ...form, [k]: e.target.value });
@@ -784,11 +791,7 @@ export function DoitDetail({ d }: { d: Doit }) {
           <span className="doit-dim">{d.list.name}</span>
           {t.created_at > 0 && <span className="doit-dim">created {when(t.created_at)}</span>}
           {t.done && t.completed_at > 0 && <span className="doit-dim">completed {when(t.completed_at)}</span>}
-          {t.twin && (
-            <button className="toggle-pill" onClick={() => d.jump(t.twin!.list, t.twin!.id)}>
-              twin in {t.twin.list} ›
-            </button>
-          )}
+          {t.twin && !twin && <span className="tok due-over">twin in {t.twin.list} is gone</span>}
           <button className="toggle-pill" onClick={() => ClipboardSetText(t.id)} title={t.id}>
             copy id
           </button>
@@ -953,7 +956,30 @@ export function DoitDetail({ d }: { d: Doit }) {
           </div>
         </div>
       ) : (
-        <pre className="doit-notes">{t.description ? <Hl text={t.description} q={d.q} /> : "no notes"}</pre>
+        <>
+          <pre className="doit-notes">{t.description ? <Hl text={t.description} q={d.q} /> : "no notes"}</pre>
+          {twin && (
+            <section className="doit-twin">
+              <div className="doit-twin-head">
+                <span>
+                  twin in <strong>{twin.list}</strong>
+                </span>
+                <span className={`tok status-${status(twin.todo)}`}>{STATUS_LABEL[status(twin.todo)]}</span>
+                {twin.todo.worktree && <span className="tok tok-scope">wt {twin.todo.worktree}</span>}
+                {twin.todo.feature && <span className="tok tok-scope">feat {twin.todo.feature}</span>}
+                <button className="toggle-pill" onClick={() => d.jump(twin.list, twin.todo.id)}>
+                  open in {twin.list} ›
+                </button>
+              </div>
+              <h2>
+                <TodoText t={twin.todo} q={d.q} d={d} big />
+              </h2>
+              <pre className="doit-notes">
+                {twin.todo.description ? <Hl text={twin.todo.description} q={d.q} /> : "no notes"}
+              </pre>
+            </section>
+          )}
+        </>
       )}
     </>
   );
