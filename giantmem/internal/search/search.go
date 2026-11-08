@@ -13,18 +13,19 @@ import (
 
 // Params is a structured search query. All fields except Query are optional.
 type Params struct {
-	Query       string
-	Project     string
-	DirType     string
-	SourceType  string
-	Feature     string
-	Latest      bool
-	LiveOnly    bool
-	ArchiveOnly bool
-	Since       string
-	Until       string
-	Limit       int
-	IncludeFull bool
+	Query        string
+	Project      string
+	DirType      string
+	SourceType   string
+	Feature      string
+	PathPrefixes []string
+	Latest       bool
+	LiveOnly     bool
+	ArchiveOnly  bool
+	Since        string
+	Until        string
+	Limit        int
+	IncludeFull  bool
 }
 
 // Hit is one search result row, suitable for JSON-RPC and CLI rendering.
@@ -179,6 +180,14 @@ func QueryLive(d *sql.DB, p Params) ([]Hit, error) {
 		conds = append(conds, "ld.dir_type = ?")
 		args = append(args, p.DirType)
 	}
+	if len(p.PathPrefixes) > 0 {
+		ors := make([]string, len(p.PathPrefixes))
+		for i, pre := range p.PathPrefixes {
+			ors[i] = `ld.path LIKE ? ESCAPE '\'`
+			args = append(args, likePrefix(pre))
+		}
+		conds = append(conds, "("+strings.Join(ors, " OR ")+")")
+	}
 	if p.Feature != "" {
 		conds = append(conds, "ld.feature = ?")
 		args = append(args, p.Feature)
@@ -229,6 +238,11 @@ func QueryLive(d *sql.DB, p Params) ([]Hit, error) {
 		out = append(out, h)
 	}
 	return out, rows.Err()
+}
+
+func likePrefix(s string) string {
+	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return r.Replace(s) + "%"
 }
 
 func parseSinceUntil(s string) (time.Time, error) {
