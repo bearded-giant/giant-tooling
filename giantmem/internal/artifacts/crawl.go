@@ -1,84 +1,46 @@
 package artifacts
 
 import (
-	"io/fs"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
+
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/workspaces"
 )
 
+var discoverCache struct {
+	sync.Mutex
+	key string
+	at  time.Time
+	out []string
+}
+
 // DiscoverWorkspaces returns absolute paths to every `.giantmem/` directory
-// found under the configured dev roots. Default roots: $GIANTMEM_DEV_ROOTS
-// (colon-separated) or $HOME/dev.
-//
-// Walk is depth-bounded (default 4) — typical layout is ~/dev/{lang}/repo/...,
-// occasionally with `-wt` worktree siblings. We never follow symlinks.
+// under workspaces.Roots() ($GIANTMEM_DEV_ROOTS or $HOME), depth-bounded
+// (default workspaces.DefaultDepth).
 func DiscoverWorkspaces(maxDepth int) []string {
 	if maxDepth <= 0 {
-		maxDepth = 4
+		maxDepth = workspaces.DefaultDepth
 	}
-	roots := discoveryRoots()
-
-	seen := map[string]bool{}
-	var out []string
-	for _, root := range roots {
-		walkForWorkspaces(root, maxDepth, seen, &out)
+	roots := workspaces.Roots()
+	key := fmt.Sprintf("%d\x00%s", maxDepth, strings.Join(roots, ":"))
+	discoverCache.Lock()
+	defer discoverCache.Unlock()
+	// the $HOME walk costs ~1s and some callers resolve once per artifact row
+	if discoverCache.key == key && time.Since(discoverCache.at) < 30*time.Second {
+		return append([]string(nil), discoverCache.out...)
 	}
-	sort.Strings(out)
-	return out
-}
-
-func discoveryRoots() []string {
-	if env := os.Getenv("GIANTMEM_DEV_ROOTS"); env != "" {
-		var roots []string
-		for _, p := range strings.Split(env, ":") {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				roots = append(roots, p)
-			}
-		}
-		return roots
+	dirs := workspaces.Find(roots, maxDepth)
+	out := make([]string, len(dirs))
+	for i, d := range dirs {
+		out[i] = filepath.Join(d, ".giantmem")
 	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil
-	}
-	return []string{filepath.Join(home, "dev")}
-}
-
-func walkForWorkspaces(root string, maxDepth int, seen map[string]bool, out *[]string) {
-	absRoot, err := filepath.Abs(root)
-	if err != nil {
-		return
-	}
-	rootDepth := strings.Count(absRoot, string(os.PathSeparator))
-
-	_ = filepath.WalkDir(absRoot, func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return nil
-		}
-		if !d.IsDir() {
-			return nil
-		}
-		depth := strings.Count(p, string(os.PathSeparator)) - rootDepth
-		if depth > maxDepth {
-			return fs.SkipDir
-		}
-		base := d.Name()
-		if base == ".git" || base == "node_modules" || base == "venv" || base == ".venv" || base == "__pycache__" {
-			return fs.SkipDir
-		}
-		if base == ".giantmem" {
-			abs, _ := filepath.Abs(p)
-			if !seen[abs] {
-				seen[abs] = true
-				*out = append(*out, abs)
-			}
-			return fs.SkipDir
-		}
-		return nil
-	})
+	discoverCache.key, discoverCache.at, discoverCache.out = key, time.Now(), out
+	return append([]string(nil), out...)
 }
 
 // LoadOrScan returns a workspace's Index. Prefers the on-disk artifacts.json
