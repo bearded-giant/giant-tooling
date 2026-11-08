@@ -36,31 +36,35 @@ func TestRun_IndexesUsageWithSubagentOrg(t *testing.T) {
 	defer d.Close()
 	src := &claudeJSONLSource{cfg: SourceConfig{Name: "claude-jsonl", Kind: "builtin", Enabled: true}}
 	opts := EmitOptions{ClaudeProjects: projects, DB: d}
+	// the subagent dir sorts before <sid>.jsonl, so one run must still fill the subagent orgs
+	readOrgs := func() map[string]string {
+		orgs := map[string]string{}
+		rows, err := d.Query(`SELECT message_id, org FROM usage WHERE session_id = ?`, hubSID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id, org string
+			rows.Scan(&id, &org)
+			orgs[id] = org
+		}
+		return orgs
+	}
+	want := map[string]string{"m1": "org-a", "m2": "org-b", "s1": "org-a", "s2": "org-b"}
 	for _, force := range []bool{false, true} {
 		opts.Force = force
 		if st, err := Run(context.Background(), d, src, opts); err != nil || st.Errs != 0 {
 			t.Fatalf("run: %+v %v", st, err)
 		}
-	}
-
-	orgs := map[string]string{}
-	rows, err := d.Query(`SELECT message_id, org FROM usage WHERE session_id = ?`, hubSID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for rows.Next() {
-		var id, org string
-		rows.Scan(&id, &org)
-		orgs[id] = org
-	}
-	rows.Close()
-	want := map[string]string{"m1": "org-a", "m2": "org-b", "s1": "org-a", "s2": "org-b"}
-	if len(orgs) != len(want) {
-		t.Fatalf("usage rows = %v, want %v", orgs, want)
-	}
-	for id, org := range want {
-		if orgs[id] != org {
-			t.Errorf("%s org = %q, want %q", id, orgs[id], org)
+		orgs := readOrgs()
+		if len(orgs) != len(want) {
+			t.Fatalf("force=%v: usage rows = %v, want %v", force, orgs, want)
+		}
+		for id, org := range want {
+			if orgs[id] != org {
+				t.Errorf("force=%v: %s org = %q, want %q", force, id, orgs[id], org)
+			}
 		}
 	}
 
@@ -73,7 +77,7 @@ func TestRun_IndexesUsageWithSubagentOrg(t *testing.T) {
 		cost    float64
 	}
 	var got []daily
-	rows, err = d.Query(`SELECT account, messages, cost_usd FROM usage_daily WHERE model = 'claude-opus-5-5' ORDER BY account`)
+	rows, err := d.Query(`SELECT account, messages, cost_usd FROM usage_daily WHERE model = 'claude-opus-5-5' ORDER BY account`)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -67,6 +67,7 @@ func (r *Registry) Filter(names []string) []Source {
 // emit channel and upserts each doc.
 func Run(ctx context.Context, db *sql.DB, src Source, opts EmitOptions) (Stats, error) {
 	var st Stats
+	transcripts := false
 	docCh, errCh := src.Emit(ctx, opts)
 	for docCh != nil || errCh != nil {
 		select {
@@ -87,6 +88,7 @@ func Run(ctx context.Context, db *sql.DB, src Source, opts EmitOptions) (Stats, 
 				if err := IndexUsage(db, d); err != nil {
 					st.Errs++
 				}
+				transcripts = true
 			}
 		case e, ok := <-errCh:
 			if !ok {
@@ -98,6 +100,11 @@ func Run(ctx context.Context, db *sql.DB, src Source, opts EmitOptions) (Stats, 
 			}
 		case <-ctx.Done():
 			return st, ctx.Err()
+		}
+	}
+	if transcripts {
+		if err := FillUsageOrgs(db); err != nil {
+			st.Errs++
 		}
 	}
 	return st, nil
