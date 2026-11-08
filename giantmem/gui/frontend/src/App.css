@@ -2198,3 +2198,155 @@ button.doit-danger {
 .doit-link:hover {
   color: var(--fg);
 }
+
+/* workspace files tab: doit chrome, editor-style tree */
+.ws-side-filter {
+  padding: 8px 6px;
+}
+.ws-side-filter input[type="search"] {
+  font-size: 14px;
+  padding: 5px 8px;
+}
+.ws-tree {
+  position: relative;
+  min-height: 100%;
+}
+.ws-tree .doit-add input {
+  width: 100%;
+}
+.ws-rows {
+  padding: 4px 0 12px;
+}
+.ws-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 14px 0 10px;
+  font-size: 14px;
+  white-space: nowrap;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  min-width: 0;
+}
+.ws-row:hover,
+.ws-row:focus,
+.ws-row.focused {
+  background: var(--bg-2);
+  outline: none;
+}
+.ws-row.selected {
+  background: var(--bg-3);
+  border-left-color: var(--accent);
+  color: var(--accent-2);
+}
+.ws-indent {
+  flex: none;
+  width: 20px;
+  align-self: stretch;
+  position: relative;
+}
+.ws-indent::before {
+  content: "";
+  position: absolute;
+  left: 9px;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border);
+}
+.ws-chev {
+  flex: none;
+  width: 14px;
+  display: inline-flex;
+  color: var(--fg-muted);
+}
+.ws-icon {
+  flex: none;
+  width: 18px;
+  display: inline-flex;
+  justify-content: center;
+  color: var(--fg-muted);
+}
+.ws-dir .ws-icon {
+  color: var(--accent-2);
+}
+.ws-ws .ws-icon {
+  color: var(--accent);
+}
+.ws-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ws-ws .ws-name,
+.ws-removed .ws-name {
+  font-weight: 600;
+}
+.ws-ws .ws-name,
+.ws-mono,
+.ws-mono-head {
+  font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+.ws-mono-head {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.ws-right {
+  margin-left: auto;
+  padding-left: 10px;
+  color: var(--fg-muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.ws-dim {
+  opacity: 0.55;
+}
+.ws-star {
+  background: none;
+  border: none;
+  padding: 0 4px 0 0;
+  color: var(--warn);
+  cursor: pointer;
+  font-size: 13px;
+  opacity: 0;
+}
+.facet-row:hover .ws-star,
+.ws-row:hover .ws-star,
+.ws-star.on {
+  opacity: 1;
+}
+.ws-unindexed {
+  flex: none;
+  color: var(--fg-muted);
+  font-size: 12px;
+  opacity: 0.8;
+}
+.ws-proj {
+  color: var(--accent-2);
+}
+.ws-starred-row .toggle-pill {
+  margin-left: auto;
+  font-size: 13px;
+  padding: 0 8px;
+}
+.ws-row.wails-drop-target-active {
+  outline: 1px dashed var(--accent);
+  background: rgba(88, 166, 255, 0.12);
+}
+.ws-row.wails-drop-target-active::after {
+  content: "drop to upload here";
+  color: var(--accent);
+  font-size: 12px;
+  margin-left: 8px;
+}
+.ws-toast {
+  position: sticky;
+  bottom: 10px;
+  margin: 8px auto 0;
+  width: fit-content;
+  background: var(--bg-3);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 12px;
+  font-size: 13px;
+}

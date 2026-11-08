@@ -18,6 +18,7 @@ import {
   BrowseTree,
   DaySessions,
   DeleteProject,
+  DownloadFile,
   DoitAvailable,
   FacetCounts,
   GetArtifactBody,
@@ -54,6 +55,7 @@ import {
 import { artifacts, hub, main, search, sessions } from "../wailsjs/go/models";
 import PruneModal from "./PruneModal";
 import { DoitDetail, DoitItems, DoitSidebar, useDoit } from "./DoitView";
+import { WsSidebar, WsTree, useWorkspace } from "./WorkspaceView";
 import { Switch } from "./Switch";
 import giantImg from "./assets/images/giant.jpg";
 
@@ -65,7 +67,7 @@ const savePref = (key: string, value: string) => {
   if (loadedPrefs.has(key)) SetPref(key, value).catch(() => {});
 };
 
-type Tab = "artifacts" | "sessions" | "tools" | "activity" | "day" | "doit";
+type Tab = "artifacts" | "workspace" | "sessions" | "tools" | "activity" | "day" | "doit";
 
 // lucide icon paths, the set obsidian's ribbon uses
 const TABS: { id: Tab; label: string; icon: JSX.Element }[] = [
@@ -106,6 +108,11 @@ const TABS: { id: Tab; label: string; icon: JSX.Element }[] = [
     ),
   },
   {
+    id: "workspace",
+    label: "workspace files",
+    icon: <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />,
+  },
+  {
     id: "tools",
     label: "tools",
     icon: (
@@ -131,7 +138,7 @@ const TABS: { id: Tab; label: string; icon: JSX.Element }[] = [
 ];
 
 // capital letters jump to a tab; lowercase stays free for the cursor keys
-const TAB_KEYS: Record<string, Tab> = { A: "activity", S: "sessions", Y: "day", R: "artifacts", T: "tools", D: "doit" };
+const TAB_KEYS: Record<string, Tab> = { A: "activity", S: "sessions", Y: "day", R: "artifacts", W: "workspace", T: "tools", D: "doit" };
 const TAB_KEY = Object.fromEntries(Object.entries(TAB_KEYS).map(([k, v]) => [v, k])) as Record<Tab, string>;
 
 function Icon({ children }: { children: React.ReactNode }) {
@@ -490,6 +497,13 @@ function App() {
       .catch(() => {});
   }, []);
   const doit = useDoit(tab === "doit", debouncedQuery, reloadKey, setErr);
+  const ws = useWorkspace(
+    tab === "workspace",
+    reloadKey,
+    selection?.kind === "file" ? selection.path : "",
+    (path) => setSelection({ kind: "file", path }),
+    setErr,
+  );
   const searchRef = useRef<HTMLInputElement>(null);
   const sidebarFilterRef = useRef<HTMLInputElement>(null);
   const navCol = useRef<"sidebar" | "results" | "detail">("results");
@@ -754,6 +768,10 @@ function App() {
       const inField = tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
       if (e.key === "/" && !inField) {
         e.preventDefault();
+        if (tab === "workspace") {
+          ws.searchRef.current?.focus();
+          return;
+        }
         // activity and day have no topbar search; their sidebar filter is the
         // one that narrows the list, so open the sidebar to reach it
         if (tab !== "activity" && tab !== "day") {
@@ -841,7 +859,7 @@ function App() {
   // refetch results when inputs change
   useEffect(() => {
     setErr(null);
-    if (tab === "doit") return;
+    if (tab === "doit" || tab === "workspace") return;
     setLoading(true);
     const run = async () => {
       try {
@@ -1034,7 +1052,9 @@ function App() {
   }, []);
 
   const totalRows =
-    tab === "artifacts"
+    tab === "workspace"
+      ? ws.fileCount
+      : tab === "artifacts"
       ? searching
         ? hybridView.length + pubView.length
         : browsePaths.length
@@ -1103,7 +1123,7 @@ function App() {
             <button onClick={() => setDay(shiftDay(day, 1))}>next ›</button>
           </div>
         )}
-        <div className="search-wrap" style={tab === "day" ? { display: "none" } : undefined}>
+        <div className="search-wrap" style={tab === "day" || tab === "workspace" ? { display: "none" } : undefined}>
           <input
             ref={searchRef}
             type="search"
@@ -1121,7 +1141,7 @@ function App() {
         {tab === "artifacts" && (
           <TypeAhead counts={typeCounts} value={selType} onChange={setSelType} />
         )}
-        {tab !== "activity" && tab !== "day" && tab !== "doit" && (
+        {tab !== "activity" && tab !== "day" && tab !== "doit" && tab !== "workspace" && (
           <div className="date-range" title="filter results by date range">
             <select
               value={dateRange.preset}
@@ -1373,6 +1393,7 @@ function App() {
         onMouseDownCapture={() => (navCol.current = "sidebar")}
       >
         {tab === "doit" && <DoitSidebar d={doit} />}
+        {tab === "workspace" && <WsSidebar w={ws} />}
         {tab === "artifacts" && (
           <>
             <div className="sidebar-filter">
@@ -1538,6 +1559,7 @@ function App() {
 
       <section className="results" onMouseDownCapture={() => (navCol.current = "results")}>
         {tab === "doit" && <DoitItems d={doit} />}
+        {tab === "workspace" && <WsTree w={ws} />}
         {tab === "artifacts" && searching && pubView.length > 0 && (
           <BrowseList
             groups={[{ dir: `published · ${pubView.length}`, files: pubView }]}
@@ -1733,7 +1755,7 @@ function App() {
         {selection?.kind === "file" && (
           <FileDetail
             path={selection.path}
-            row={detailFile}
+            row={detailFile || (tab === "workspace" ? ws.rowFor(selection.path) : null)}
             body={detailBody}
             onOpenSession={async (sid) => {
               try {
@@ -2249,6 +2271,19 @@ function parseCSV(text: string): string[][] {
   return rows;
 }
 
+function splitFrontmatter(body: string): { fm: Record<string, string>; rest: string } {
+  if (!body.startsWith("---\n")) return { fm: {}, rest: body };
+  const end = body.indexOf("\n---", 3);
+  if (end < 0) return { fm: {}, rest: body };
+  const fm: Record<string, string> = {};
+  for (const line of body.slice(4, end).split("\n")) {
+    const m = /^([A-Za-z_][\w-]*):\s*(.+)$/.exec(line);
+    if (m) fm[m[1]] = m[2].trim().replace(/^["']|["']$/g, "");
+  }
+  const nl = body.indexOf("\n", end + 4);
+  return { fm, rest: nl < 0 ? "" : body.slice(nl + 1) };
+}
+
 function FileDetail({
   path,
   row,
@@ -2269,12 +2304,24 @@ function FileDetail({
     () => (ext === "csv" ? parseCSV(body).slice(0, 500) : null),
     [ext, body],
   );
+  const [raw, setRaw] = useState(false);
+  const md = ext === "md" || ext === "mmd";
+  const { fm, rest } = useMemo(() => (md ? splitFrontmatter(body) : { fm: {} as Record<string, string>, rest: body }), [md, body]);
+  const gmAt = path.indexOf("/.giantmem/");
+  const relPath = gmAt >= 0 ? path.slice(gmAt + 1) : "";
+  const onDisk = !isURL && !row?.dead;
   return (
     <>
       <header className="detail-head">
         <h1 style={{ marginBottom: 0 }}>{name}</h1>
         <div className="meta">
-          {row?.type && <span className={`chip type-${row.type}`}>{row.type}</span>}
+          {row?.type ? (
+            <span className={`chip type-${row.type}`}>{row.type}</span>
+          ) : (
+            fm.type && <span className={`chip type-${fm.type}`}>{fm.type}</span>
+          )}
+          {fm.status && <span className="chip">{fm.status}</span>}
+          {fm.lifecycle && <span className="chip">{fm.lifecycle}</span>}
           {row?.dead && <span className="chip dead">{published ? "deleted from disk" : "worktree gone"}</span>}
           {published ? (
             row?.project && <span>project: {row.project}</span>
@@ -2309,14 +2356,37 @@ function FileDetail({
           )}
           <span style={{ fontFamily: '"JetBrains Mono", ui-monospace, Menlo, Consolas, monospace', opacity: 0.7 }}>{path}</span>
           <CopyButton text={path} label={isURL ? "copy url" : "copy absolute path"} />
+          {relPath && <CopyButton text={relPath} label="copy relative path" caption="rel" />}
+          {onDisk && (
+            <button className="mini-btn" onClick={() => OpenPath(path, true)}>
+              reveal
+            </button>
+          )}
+          {onDisk && !published && (
+            <button className="mini-btn" onClick={() => OpenPath(path, false)}>
+              open
+            </button>
+          )}
+          {!isURL && (
+            <button className="mini-btn" onClick={() => DownloadFile(path).catch((e: unknown) => console.error(e))}>
+              download
+            </button>
+          )}
+          {md && (
+            <button className="mini-btn" onClick={() => setRaw((r) => !r)}>
+              {raw ? "rendered" : "raw"}
+            </button>
+          )}
         </div>
       </header>
-      {isURL ? null : ext === "md" || ext === "mmd" ? (
+      {isURL ? null : md && raw ? (
+        <pre className="raw-body">{body}</pre>
+      ) : md ? (
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
           rehypePlugins={[rehypeHighlight as any]}
         >
-          {body}
+          {rest}
         </ReactMarkdown>
       ) : csvRows ? (
         <div className="csv-wrap">
@@ -2428,7 +2498,7 @@ function StarButton({
   );
 }
 
-function CopyButton({ text, label }: { text: string; label?: string }) {
+function CopyButton({ text, label, caption }: { text: string; label?: string; caption?: string }) {
   const [copied, setCopied] = useState(false);
   if (!text) return null;
   const onClick = async (e: React.MouseEvent) => {
@@ -2452,7 +2522,7 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
       title={label || `copy: ${text}`}
       aria-label="copy"
     >
-      {copied ? "✓" : "⎘"}
+      {copied ? "✓" : caption || "⎘"}
     </button>
   );
 }

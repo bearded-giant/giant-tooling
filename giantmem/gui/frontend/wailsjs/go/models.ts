@@ -1194,7 +1194,6 @@ export namespace search {
 	    DirType: string;
 	    SourceType: string;
 	    Feature: string;
-	    PathPrefixes: string[];
 	    Latest: boolean;
 	    LiveOnly: boolean;
 	    ArchiveOnly: boolean;
@@ -1214,7 +1213,6 @@ export namespace search {
 	        this.DirType = source["DirType"];
 	        this.SourceType = source["SourceType"];
 	        this.Feature = source["Feature"];
-	        this.PathPrefixes = source["PathPrefixes"];
 	        this.Latest = source["Latest"];
 	        this.LiveOnly = source["LiveOnly"];
 	        this.ArchiveOnly = source["ArchiveOnly"];

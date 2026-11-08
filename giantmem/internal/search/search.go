@@ -18,7 +18,7 @@ type Params struct {
 	DirType      string
 	SourceType   string
 	Feature      string
-	PathPrefixes []string
+	PathPrefixes []string `json:",omitempty"`
 	Latest       bool
 	LiveOnly     bool
 	ArchiveOnly  bool

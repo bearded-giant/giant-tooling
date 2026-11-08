@@ -105,6 +105,7 @@ func TestWorkspaceFilesDiskAndRemoved(t *testing.T) {
 	gone := filepath.Join(root, "repo-wt/old")
 	write(t, filepath.Join(disk, ".giantmem/plans/current.md"), "plan")
 	write(t, filepath.Join(disk, ".giantmem/research/diagram.png"), "\x89PNG")
+	write(t, filepath.Join(disk, ".giantmem/research/.gitkeep"), "")
 	if err := os.MkdirAll(filepath.Join(disk, ".giantmem/reviews"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -131,6 +132,9 @@ func TestWorkspaceFilesDiskAndRemoved(t *testing.T) {
 	}
 	if n := got[disk+"|research/diagram.png"]; n.Indexed || n.Size != 4 {
 		t.Fatalf("unindexed disk file: %+v", n)
+	}
+	if _, ok := got[disk+"|research/.gitkeep"]; ok {
+		t.Fatal(".gitkeep should not list")
 	}
 	if n := got[disk+"|reviews"]; !n.Dir {
 		t.Fatalf("empty dir missing: %+v", got)
@@ -183,6 +187,11 @@ func TestWorkspaceProjectsWithRemovedWorktree(t *testing.T) {
 	if _, err := live.Exec(`INSERT INTO live_docs(path, project, worktree_path, feature, dir_type, session_id, git_sha, mtime, ingested_at, content)
 	                        VALUES (?, 'x-wt', '', '', '', '', '', 9, '2026-01-01T00:00:00Z', 'b')`,
 		filepath.Join(container, "gone/.giantmem/notes.md")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := live.Exec(`INSERT INTO live_docs(path, project, worktree_path, feature, dir_type, session_id, git_sha, mtime, ingested_at, content)
+	                        VALUES (?, 'x-wt', '', '', '', '', '', 9, '2026-01-01T00:00:00Z', 'b')`,
+		filepath.Join(container, ".bare/.giantmem/notes.md")); err != nil {
 		t.Fatal(err)
 	}
 

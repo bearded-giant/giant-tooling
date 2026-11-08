@@ -83,7 +83,7 @@ func (a *App) WorkspaceProjects() ([]WsProject, error) {
 		for rows.Next() {
 			var ws string
 			var s stat
-			if rows.Scan(&ws, &s.n, &s.m) != nil || !strings.HasPrefix(ws+"/", home+"/") {
+			if rows.Scan(&ws, &s.n, &s.m) != nil || !strings.HasPrefix(ws+"/", home+"/") || hiddenBelow(home, ws) {
 				continue
 			}
 			indexed[ws] = s
@@ -127,6 +127,18 @@ func (a *App) WorkspaceProjects() ([]WsProject, error) {
 	return out, nil
 }
 
+// the disk walk never enters hidden dirs (.bare, .claude/worktrees); rows indexed from there stay out too
+func hiddenBelow(home, ws string) bool {
+	for _, seg := range strings.Split(strings.TrimPrefix(ws, home), "/") {
+		if strings.HasPrefix(seg, ".") {
+			return true
+		}
+	}
+	return false
+}
+
+var skipFiles = map[string]bool{".DS_Store": true, ".gitkeep": true}
+
 func sortWorkspaces(ws []WsWorkspace) {
 	rank := func(w WsWorkspace) int {
 		if w.Label == workspaces.RootLabel {
@@ -152,7 +164,7 @@ func diskStats(g string) (int, int64) {
 	var n int
 	var m int64
 	_ = filepath.WalkDir(g, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || d.Name() == ".DS_Store" {
+		if err != nil || d.IsDir() || skipFiles[d.Name()] {
 			return nil
 		}
 		n++
@@ -233,7 +245,7 @@ func (a *App) WorkspaceFiles(dirs []string) ([]WsNode, error) {
 			continue
 		}
 		_ = filepath.WalkDir(g, func(p string, d fs.DirEntry, err error) error {
-			if err != nil || p == g || d.Name() == ".DS_Store" {
+			if err != nil || p == g || skipFiles[d.Name()] {
 				return nil
 			}
 			info, err := d.Info()
@@ -264,10 +276,11 @@ func (a *App) indexedUnder(g string) (map[string]indexedRow, error) {
 	if a.live == nil {
 		return out, nil
 	}
+	// a range on the primary key; a LIKE scan touched every row's content once per workspace
 	rows, err := a.live.Query(`
         SELECT path, COALESCE(session_id, ''), mtime, COALESCE(length(content), 0)
           FROM live_docs
-         WHERE path LIKE ? ESCAPE '\'`, search.LikePrefix(g+"/"))
+         WHERE path >= ? AND path < ?`, g+"/", g+"0")
 	if err != nil {
 		return nil, err
 	}
