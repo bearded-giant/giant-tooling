@@ -184,7 +184,7 @@ func QueryLive(d *sql.DB, p Params) ([]Hit, error) {
 		ors := make([]string, len(p.PathPrefixes))
 		for i, pre := range p.PathPrefixes {
 			ors[i] = `ld.path LIKE ? ESCAPE '\'`
-			args = append(args, likePrefix(pre))
+			args = append(args, LikePrefix(pre))
 		}
 		conds = append(conds, "("+strings.Join(ors, " OR ")+")")
 	}
@@ -240,7 +240,7 @@ func QueryLive(d *sql.DB, p Params) ([]Hit, error) {
 	return out, rows.Err()
 }
 
-func likePrefix(s string) string {
+func LikePrefix(s string) string {
 	r := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 	return r.Replace(s) + "%"
 }

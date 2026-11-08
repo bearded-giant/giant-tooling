@@ -78,6 +78,10 @@ export function DoitUpdate(arg1, arg2, arg3) {
   return window['go']['main']['App']['DoitUpdate'](arg1, arg2, arg3);
 }
 
+export function DownloadFile(arg1) {
+  return window['go']['main']['App']['DownloadFile'](arg1);
+}
+
 export function FacetCounts() {
   return window['go']['main']['App']['FacetCounts']();
 }
@@ -122,6 +126,10 @@ export function OpenPath(arg1, arg2) {
   return window['go']['main']['App']['OpenPath'](arg1, arg2);
 }
 
+export function PickUploadFiles() {
+  return window['go']['main']['App']['PickUploadFiles']();
+}
+
 export function ProjectHeatmap(arg1, arg2) {
   return window['go']['main']['App']['ProjectHeatmap'](arg1, arg2);
 }
@@ -152,6 +160,10 @@ export function RecentFiles(arg1, arg2) {
 
 export function RecentRepos(arg1) {
   return window['go']['main']['App']['RecentRepos'](arg1);
+}
+
+export function ReindexWorkspaces(arg1) {
+  return window['go']['main']['App']['ReindexWorkspaces'](arg1);
 }
 
 export function ResolveTranscript(arg1) {
@@ -218,6 +230,22 @@ export function TranscriptForSession(arg1) {
   return window['go']['main']['App']['TranscriptForSession'](arg1);
 }
 
+export function UploadFiles(arg1, arg2, arg3) {
+  return window['go']['main']['App']['UploadFiles'](arg1, arg2, arg3);
+}
+
 export function Version() {
   return window['go']['main']['App']['Version']();
+}
+
+export function WorkspaceFiles(arg1) {
+  return window['go']['main']['App']['WorkspaceFiles'](arg1);
+}
+
+export function WorkspaceProjects() {
+  return window['go']['main']['App']['WorkspaceProjects']();
+}
+
+export function WorkspaceSearch(arg1, arg2, arg3) {
+  return window['go']['main']['App']['WorkspaceSearch'](arg1, arg2, arg3);
 }

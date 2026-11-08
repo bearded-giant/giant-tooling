@@ -1,6 +1,3 @@
-// Package workspaces finds every .giantmem/ directory under the dev roots and
-// groups them into projects: worktree containers (a dir holding .bare), git
-// repos, and _other for workspaces outside any repo.
 package workspaces
 
 import (
@@ -52,7 +49,6 @@ type Project struct {
 	Members []Member `json:"members"`
 }
 
-// Roots is $GIANTMEM_DEV_ROOTS (colon-separated) or $HOME.
 func Roots() []string {
 	if env := os.Getenv("GIANTMEM_DEV_ROOTS"); env != "" {
 		var roots []string
@@ -70,8 +66,6 @@ func Roots() []string {
 	return []string{home}
 }
 
-// Find returns every directory holding a .giantmem/ under roots, sorted. Hidden
-// and pruned dirs are skipped; symlinks are never followed.
 func Find(roots []string, maxDepth int) []string {
 	if maxDepth <= 0 {
 		maxDepth = DefaultDepth
@@ -127,8 +121,7 @@ func Find(roots []string, maxDepth int) []string {
 	return out
 }
 
-// Group buckets workspace dirs into projects. Dirs need not exist on disk: a
-// removed worktree still lands under its container when the container is there.
+// dirs need not exist: a removed worktree still lands under its container while the container is on disk
 func Group(home string, dirs []string) []Project {
 	byRoot := map[string]*Project{}
 	var other *Project

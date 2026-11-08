@@ -6,6 +6,7 @@ import {project} from '../models';
 import {artifacts} from '../models';
 import {search} from '../models';
 import {prune} from '../models';
+import {backfill} from '../models';
 
 export function ActivityCounts():Promise<main.ActivityCounts>;
 
@@ -45,6 +46,8 @@ export function DoitSetStatus(arg1:string,arg2:string,arg3:string):Promise<void>
 
 export function DoitUpdate(arg1:string,arg2:string,arg3:main.DoitEdit):Promise<void>;
 
+export function DownloadFile(arg1:string):Promise<string>;
+
 export function FacetCounts():Promise<main.FacetCountsResult>;
 
 export function FeaturesByRepo():Promise<Array<main.FeatureRow>>;
@@ -67,6 +70,8 @@ export function LiveMtime():Promise<number>;
 
 export function OpenPath(arg1:string,arg2:boolean):Promise<void>;
 
+export function PickUploadFiles():Promise<Array<string>>;
+
 export function ProjectHeatmap(arg1:number,arg2:number):Promise<Array<main.HeatmapCell>>;
 
 export function ProjectSparkline(arg1:string,arg2:number):Promise<Array<main.SparklinePoint>>;
@@ -82,6 +87,8 @@ export function ReadFileHead(arg1:string,arg2:number):Promise<main.FileHead>;
 export function RecentFiles(arg1:string,arg2:number):Promise<Array<main.FileActivity>>;
 
 export function RecentRepos(arg1:number):Promise<Array<main.RepoActivity>>;
+
+export function ReindexWorkspaces(arg1:Array<string>):Promise<backfill.Stats>;
 
 export function ResolveTranscript(arg1:string):Promise<string>;
 
@@ -115,4 +122,12 @@ export function ToolMix(arg1:number):Promise<Array<hub.ToolCount>>;
 
 export function TranscriptForSession(arg1:string):Promise<string>;
 
+export function UploadFiles(arg1:string,arg2:Array<string>,arg3:string):Promise<main.UploadResult>;
+
 export function Version():Promise<string>;
+
+export function WorkspaceFiles(arg1:Array<string>):Promise<Array<main.WsNode>>;
+
+export function WorkspaceProjects():Promise<Array<main.WsProject>>;
+
+export function WorkspaceSearch(arg1:string,arg2:Array<string>,arg3:number):Promise<Array<search.Hit>>;

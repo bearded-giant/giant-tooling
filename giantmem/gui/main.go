@@ -30,9 +30,13 @@ func main() {
 			Assets: assets,
 		},
 		BackgroundColour: &options.RGBA{R: 27, G: 38, B: 54, A: 1},
-		Menu:             appMenu(app),
-		OnStartup:        app.startup,
-		OnShutdown:       app.shutdown,
+		DragAndDrop: &options.DragAndDrop{
+			EnableFileDrop:     true,
+			DisableWebViewDrop: true,
+		},
+		Menu:       appMenu(app),
+		OnStartup:  app.startup,
+		OnShutdown: app.shutdown,
 		Mac: &mac.Options{
 			OnUrlOpen: app.onURLOpen,
 		},

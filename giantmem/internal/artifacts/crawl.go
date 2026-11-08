@@ -19,9 +19,6 @@ var discoverCache struct {
 	out []string
 }
 
-// DiscoverWorkspaces returns absolute paths to every `.giantmem/` directory
-// under workspaces.Roots() ($GIANTMEM_DEV_ROOTS or $HOME), depth-bounded
-// (default workspaces.DefaultDepth).
 func DiscoverWorkspaces(maxDepth int) []string {
 	if maxDepth <= 0 {
 		maxDepth = workspaces.DefaultDepth

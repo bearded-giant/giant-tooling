@@ -85,6 +85,37 @@ export namespace artifacts {
 
 }
 
+export namespace backfill {
+	
+	export class Stats {
+	    workspaces: number;
+	    scanned: number;
+	    upserted: number;
+	    skipped: number;
+	    empty: number;
+	    too_large: number;
+	    binary: number;
+	    errors: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new Stats(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.workspaces = source["workspaces"];
+	        this.scanned = source["scanned"];
+	        this.upserted = source["upserted"];
+	        this.skipped = source["skipped"];
+	        this.empty = source["empty"];
+	        this.too_large = source["too_large"];
+	        this.binary = source["binary"];
+	        this.errors = source["errors"];
+	    }
+	}
+
+}
+
 export namespace hub {
 	
 	export class Agent {
@@ -862,6 +893,110 @@ export namespace main {
 	        this.starred = source["starred"];
 	    }
 	}
+	export class UploadResult {
+	    written: string[];
+	    conflicts: string[];
+	    skipped: string[];
+	
+	    static createFrom(source: any = {}) {
+	        return new UploadResult(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.written = source["written"];
+	        this.conflicts = source["conflicts"];
+	        this.skipped = source["skipped"];
+	    }
+	}
+	export class WsNode {
+	    ws: string;
+	    rel: string;
+	    dir: boolean;
+	    size: number;
+	    mtime: number;
+	    indexed: boolean;
+	    sessionId: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new WsNode(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.ws = source["ws"];
+	        this.rel = source["rel"];
+	        this.dir = source["dir"];
+	        this.size = source["size"];
+	        this.mtime = source["mtime"];
+	        this.indexed = source["indexed"];
+	        this.sessionId = source["sessionId"];
+	    }
+	}
+	export class WsWorkspace {
+	    dir: string;
+	    label: string;
+	    dead: boolean;
+	    files: number;
+	    mtime: number;
+	    activeFeature: string;
+	    features: Record<string, string>;
+	
+	    static createFrom(source: any = {}) {
+	        return new WsWorkspace(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.dir = source["dir"];
+	        this.label = source["label"];
+	        this.dead = source["dead"];
+	        this.files = source["files"];
+	        this.mtime = source["mtime"];
+	        this.activeFeature = source["activeFeature"];
+	        this.features = source["features"];
+	    }
+	}
+	export class WsProject {
+	    name: string;
+	    root: string;
+	    kind: string;
+	    flat: boolean;
+	    mtime: number;
+	    workspaces: WsWorkspace[];
+	
+	    static createFrom(source: any = {}) {
+	        return new WsProject(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.name = source["name"];
+	        this.root = source["root"];
+	        this.kind = source["kind"];
+	        this.flat = source["flat"];
+	        this.mtime = source["mtime"];
+	        this.workspaces = this.convertValues(source["workspaces"], WsWorkspace);
+	    }
+	
+		convertValues(a: any, classs: any, asMap: boolean = false): any {
+		    if (!a) {
+		        return a;
+		    }
+		    if (a.slice && a.map) {
+		        return (a as any[]).map(elem => this.convertValues(elem, classs));
+		    } else if ("object" === typeof a) {
+		        if (asMap) {
+		            for (const key of Object.keys(a)) {
+		                a[key] = new classs(a[key]);
+		            }
+		            return a;
+		        }
+		        return new classs(a);
+		    }
+		    return a;
+		}
+	}
 
 }
 
@@ -1059,6 +1194,7 @@ export namespace search {
 	    DirType: string;
 	    SourceType: string;
 	    Feature: string;
+	    PathPrefixes: string[];
 	    Latest: boolean;
 	    LiveOnly: boolean;
 	    ArchiveOnly: boolean;
@@ -1078,6 +1214,7 @@ export namespace search {
 	        this.DirType = source["DirType"];
 	        this.SourceType = source["SourceType"];
 	        this.Feature = source["Feature"];
+	        this.PathPrefixes = source["PathPrefixes"];
 	        this.Latest = source["Latest"];
 	        this.LiveOnly = source["LiveOnly"];
 	        this.ArchiveOnly = source["ArchiveOnly"];
