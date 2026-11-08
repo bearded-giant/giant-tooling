@@ -11,6 +11,7 @@ import (
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/sources"
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/usage"
 	"github.com/spf13/cobra"
 )
 
@@ -47,6 +48,11 @@ durable in archives.db (the SessionStart hook runs it detached).
 			return err
 		}
 		defer d.Close()
+
+		uc := loadUserConfig().Usage
+		if err := usage.Sync(d, uc.Prices, uc.Orgs); err != nil {
+			return err
+		}
 
 		cfg, err := sources.LoadConfig(sources.DefaultConfigPath())
 		if err != nil {

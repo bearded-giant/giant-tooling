@@ -124,6 +124,7 @@ Claude's scratchpad and background task output live under `/private/tmp`, which 
 | `giantmem tools find "glab mr" --links` | add a `giantmem://tool/...` column that opens each call in the GUI |
 | `giantmem tools stats --since 7d --by-server` | rank tool calls by name with share and error rate; MCP tools fold to one row per server |
 | `giantmem tools stats -p remi --agent main` | one project's main-thread mix (`--session <id>` for one session, `--tool 'mcp__%'`, `--json`) |
+| `giantmem usage --since 7d` | tokens and API list-price cost per local day, account, and model with a running total per pair (`--until`, `--account rc-inc`, `--model 'claude-opus%'`, `--json`); `[usage.orgs]` in config.toml labels org uuids, `[usage.prices.<model>]` overrides the built-in prices; the same numbers are the `usage_daily` view for `query_db` |
 | `giantmem tools find --starred` | the calls you starred in the GUI, newest first (add a query to narrow them) |
 | `giantmem find "churn baseline" -s bundle` | search the archived scripts and drafts themselves |
 
@@ -338,7 +339,7 @@ You should rarely need this; the live indexing hook handles ongoing writes and t
 
 `db` also holds the rest of the plumbing: `db embed`, `db backup`, `db access`, `db tail`, `db watch` — same flags as their old top-level forms.
 
-Sources are configured at `~/.config/giantmem/sources.toml`. Without that file the builtins (`workspace-md`, `claude-jsonl`, `domain-json`, `memory-md`, `session-bundle`) are used. `claude-jsonl` also indexes subagent transcripts (as `source_type='subagent'`) and fills `tool_uses` and `session_links`. Add an `[[source]]` block with `kind = "external"`, `ingest_cmd = "..."`, and a `mapping` table to plug in any subprocess that emits JSONL on stdout — see `PLAN-2.md` §12.
+Sources are configured at `~/.config/giantmem/sources.toml`. Without that file the builtins (`workspace-md`, `claude-jsonl`, `domain-json`, `memory-md`, `session-bundle`) are used. `claude-jsonl` also indexes subagent transcripts (as `source_type='subagent'`) and fills `tool_uses`, `session_links`, and `usage`. Add an `[[source]]` block with `kind = "external"`, `ingest_cmd = "..."`, and a `mapping` table to plug in any subprocess that emits JSONL on stdout — see `PLAN-2.md` §12.
 
 ## Daemon mode
 

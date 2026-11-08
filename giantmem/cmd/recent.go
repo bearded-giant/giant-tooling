@@ -499,6 +499,7 @@ func jsonStdout(v any) error {
 type userConfig struct {
 	Recent   recentConfig   `toml:"recent"`
 	Sessions sessionsConfig `toml:"sessions"`
+	Usage    usageConfig    `toml:"usage"`
 }
 
 type sessionsConfig struct {

@@ -193,6 +193,61 @@ var archiveMigrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: 8,
+		Name:    "usage: tokens per message, prices, org labels, usage_daily view",
+		Apply: func(tx *sql.Tx) error {
+			stmts := []string{
+				// message_id is the API message id: a forked transcript repeats its parent's messages
+				`CREATE TABLE IF NOT EXISTS usage (
+                    message_id TEXT PRIMARY KEY,
+                    session_id TEXT NOT NULL,
+                    agent_id TEXT NOT NULL DEFAULT '',
+                    ts TEXT NOT NULL,
+                    day TEXT NOT NULL,
+                    org TEXT NOT NULL DEFAULT '',
+                    model TEXT NOT NULL,
+                    input INTEGER NOT NULL DEFAULT 0,
+                    cache_5m INTEGER NOT NULL DEFAULT 0,
+                    cache_1h INTEGER NOT NULL DEFAULT 0,
+                    cache_read INTEGER NOT NULL DEFAULT 0,
+                    output INTEGER NOT NULL DEFAULT 0
+                )`,
+				`CREATE INDEX IF NOT EXISTS idx_usage_session ON usage(session_id, agent_id)`,
+				`CREATE INDEX IF NOT EXISTS idx_usage_day ON usage(day, org, model)`,
+				`CREATE TABLE IF NOT EXISTS usage_prices (
+                    model TEXT PRIMARY KEY,
+                    input REAL NOT NULL,
+                    cache_5m REAL NOT NULL,
+                    cache_1h REAL NOT NULL,
+                    cache_read REAL NOT NULL,
+                    output REAL NOT NULL
+                )`,
+				`CREATE TABLE IF NOT EXISTS usage_orgs (
+                    org TEXT PRIMARY KEY,
+                    label TEXT NOT NULL
+                )`,
+				`CREATE VIEW IF NOT EXISTS usage_daily AS
+                    SELECT u.day, COALESCE(o.label, u.org) AS account, u.model,
+                        COUNT(*) AS messages,
+                        SUM(u.input) AS input, SUM(u.cache_5m) AS cache_5m, SUM(u.cache_1h) AS cache_1h,
+                        SUM(u.cache_read) AS cache_read, SUM(u.output) AS output,
+                        ROUND((SUM(u.input) * COALESCE(p.input, 0) + SUM(u.cache_5m) * COALESCE(p.cache_5m, 0)
+                            + SUM(u.cache_1h) * COALESCE(p.cache_1h, 0) + SUM(u.cache_read) * COALESCE(p.cache_read, 0)
+                            + SUM(u.output) * COALESCE(p.output, 0)) / 1000000.0, 2) AS cost_usd
+                    FROM usage u
+                    LEFT JOIN usage_orgs o ON o.org = u.org
+                    LEFT JOIN usage_prices p ON p.model = u.model
+                    GROUP BY u.day, account, u.model`,
+			}
+			for _, s := range stmts {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // liveMigrations is the canonical list for live.db.

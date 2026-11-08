@@ -84,6 +84,9 @@ func Run(ctx context.Context, db *sql.DB, src Source, opts EmitOptions) (Stats, 
 				if err := IndexToolCalls(db, d, opts.VaultRoot); err != nil {
 					st.Errs++
 				}
+				if err := IndexUsage(db, d); err != nil {
+					st.Errs++
+				}
 			}
 		case e, ok := <-errCh:
 			if !ok {
