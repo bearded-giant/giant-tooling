@@ -15,7 +15,6 @@ var pruned = map[string]bool{
 	"OrbStack":         true,
 	"google-cloud-sdk": true,
 	"cache":            true,
-	"giantmem-vault":   true,
 	"giantmem_archive": true,
 	"node_modules":     true,
 	"target":           true,
