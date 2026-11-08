@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,6 +10,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/backfill"
@@ -54,6 +57,35 @@ type UploadResult struct {
 
 var baseBranchRank = map[string]int{"main": 1, "master": 1, "develop": 2, "stage": 3}
 
+var guiDiscover struct {
+	sync.Mutex
+	key string
+	at  time.Time
+	out []string
+}
+
+// the $HOME walk takes about a second and the tab reloads on every live.db write
+func guiWorkspaceDirs() []string {
+	roots := workspaces.Roots()
+	key := strings.Join(roots, ":")
+	guiDiscover.Lock()
+	defer guiDiscover.Unlock()
+	if guiDiscover.key != key || time.Since(guiDiscover.at) > 30*time.Second {
+		guiDiscover.key, guiDiscover.at, guiDiscover.out = key, time.Now(), workspaces.Find(roots, 0)
+	}
+	return guiDiscover.out
+}
+
+// the tab sees all of $HOME, but live.db (and so the cli) only holds the cli's own
+// discovery scope; workspaces outside it are never written there
+func indexScope() map[string]bool {
+	m := map[string]bool{}
+	for _, g := range artifacts.DiscoverWorkspaces(0) {
+		m[filepath.Dir(g)] = true
+	}
+	return m
+}
+
 func (a *App) WorkspaceProjects() ([]WsProject, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
@@ -61,8 +93,7 @@ func (a *App) WorkspaceProjects() ([]WsProject, error) {
 	}
 	seen := map[string]bool{}
 	var dirs []string
-	for _, g := range artifacts.DiscoverWorkspaces(0) {
-		d := filepath.Dir(g)
+	for _, d := range guiWorkspaceDirs() {
 		seen[d] = true
 		dirs = append(dirs, d)
 	}
@@ -300,18 +331,80 @@ func (a *App) WorkspaceSearch(query string, dirs []string, limit int) ([]search.
 	if a.live == nil {
 		return nil, fmt.Errorf("live db not open")
 	}
-	q := search.SanitizeFTSQuery(query)
-	if q == "" || len(dirs) == 0 {
-		return nil, nil
-	}
 	if limit <= 0 {
 		limit = 200
 	}
-	prefixes := make([]string, len(dirs))
-	for i, d := range dirs {
-		prefixes[i] = filepath.Join(d, ".giantmem") + "/"
+	scope := indexScope()
+	var indexed, onDisk []string
+	for _, d := range dirs {
+		if !scope[d] && isPlainDir(filepath.Join(d, ".giantmem")) {
+			onDisk = append(onDisk, d)
+		} else {
+			indexed = append(indexed, d)
+		}
 	}
-	return search.QueryLive(a.live, search.Params{Query: q, PathPrefixes: prefixes, Limit: limit, IncludeFull: true})
+	var hits []search.Hit
+	if q := search.SanitizeFTSQuery(query); q != "" && len(indexed) > 0 {
+		prefixes := make([]string, len(indexed))
+		for i, d := range indexed {
+			prefixes[i] = filepath.Join(d, ".giantmem") + "/"
+		}
+		h, err := search.QueryLive(a.live, search.Params{Query: q, PathPrefixes: prefixes, Limit: limit, IncludeFull: true})
+		if err != nil {
+			return nil, err
+		}
+		hits = h
+	}
+	terms := strings.Fields(strings.ToLower(strings.ReplaceAll(query, `"`, "")))
+	if len(terms) > 0 && len(onDisk) > 0 && len(hits) < limit {
+		hits = append(hits, diskSearch(terms, onDisk, limit-len(hits))...)
+	}
+	return hits, nil
+}
+
+func diskSearch(terms, dirs []string, limit int) []search.Hit {
+	var out []search.Hit
+	for _, ws := range dirs {
+		_ = filepath.WalkDir(filepath.Join(ws, ".giantmem"), func(p string, d fs.DirEntry, err error) error {
+			if len(out) >= limit {
+				return fs.SkipAll
+			}
+			if err != nil || d.IsDir() || skipFiles[d.Name()] {
+				return nil
+			}
+			info, err := d.Info()
+			if err != nil || info.Size() == 0 || info.Size() > 1<<20 {
+				return nil
+			}
+			body, err := os.ReadFile(p)
+			if err != nil || bytes.IndexByte(body[:min(len(body), 8000)], 0) >= 0 {
+				return nil
+			}
+			low := strings.ToLower(string(body))
+			at := -1
+			for _, t := range terms {
+				i := strings.Index(low, t)
+				if i < 0 {
+					return nil
+				}
+				if at < 0 {
+					at = i
+				}
+			}
+			out = append(out, search.Hit{Source: "disk", Filepath: p, Filename: d.Name(), Snippet: snippetAround(string(body), at, len(terms[0]))})
+			return nil
+		})
+	}
+	return out
+}
+
+// same < > markers as the fts5 snippet() the frontend already renders
+func snippetAround(body string, at, n int) string {
+	at = min(max(at, 0), len(body))
+	end := min(at+n, len(body))
+	from, to := max(at-60, 0), min(end+60, len(body))
+	s := "..." + body[from:at] + "<" + body[at:end] + ">" + body[end:to] + "..."
+	return strings.Join(strings.Fields(s), " ")
 }
 
 // edits made outside claude (vim, git, finder) otherwise reach live.db only on daemon start
@@ -320,9 +413,10 @@ func (a *App) ReindexWorkspaces(dirs []string) (backfill.Stats, error) {
 	if a.live == nil {
 		return total, fmt.Errorf("live db not open")
 	}
+	scope := indexScope()
 	for _, d := range dirs {
 		g := filepath.Join(d, ".giantmem")
-		if !isPlainDir(g) {
+		if !scope[d] || !isPlainDir(g) {
 			continue
 		}
 		st, err := backfill.RunOnWorkspace(a.live, archiveBase(), g)
@@ -405,7 +499,7 @@ func (a *App) UploadFiles(destDir string, srcs []string, onConflict string) (Upl
 		}
 		res.Written = append(res.Written, target)
 	}
-	if len(res.Written) > 0 && a.live != nil {
+	if len(res.Written) > 0 && a.live != nil && indexScope()[filepath.Dir(g)] {
 		if _, err := backfill.RunOnWorkspace(a.live, archiveBase(), g); err != nil {
 			return res, fmt.Errorf("uploaded, reindex failed: %w", err)
 		}

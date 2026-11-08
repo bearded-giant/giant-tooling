@@ -475,9 +475,8 @@ func dirTypeFromPath(p string) string {
 var indexBackfillCmd = &cobra.Command{
 	Use:   "backfill",
 	Short: "Crawl .giantmem/ on disk and upsert all non-empty files into live.db",
-	Long: `Default: walks ` + "`$GIANTMEM_DEV_ROOTS`" + ` (or $HOME, depth 7, skipping hidden dirs,
-Library, caches, node_modules) and upserts every .giantmem/ workspace's non-empty
-text files into live_docs: markdown up to 1MB, anything else up to 64KB
+	Long: `Default: walks ` + "`$GIANTMEM_DEV_ROOTS`" + ` (or ~/dev, depth 4) and upserts every
+.giantmem/ workspace's non-empty text files into live_docs: markdown up to 1MB, anything else up to 64KB
 (GIANTMEM_MAX_DOC_BYTES / GIANTMEM_MAX_DATA_BYTES override).
 
 ` + "`--workspace <path>`" + ` scopes the walk to one workspace — the .giantmem/

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
@@ -222,5 +223,53 @@ func TestWorkspaceProjectsWithRemovedWorktree(t *testing.T) {
 	sort.Strings(names)
 	if len(names) != 2 {
 		t.Fatalf("projects = %v", names)
+	}
+}
+
+func TestOutOfScopeWorkspaceNeverIndexed(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("GIANTMEM_DEV_ROOTS", filepath.Join(root, "dev"))
+	inside := filepath.Join(root, "dev/repo")
+	outside := filepath.Join(root, "Desktop/notes")
+	write(t, filepath.Join(inside, ".giantmem/plans/current.md"), "the needle is here")
+	write(t, filepath.Join(outside, ".giantmem/context/x.md"), "a Needle in a haystack")
+	write(t, filepath.Join(outside, ".giantmem/context/bin.dat"), "needle\x00binary")
+	live, err := db.Open(filepath.Join(root, "live.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer live.Close()
+	a := &App{live: live}
+
+	if _, err := a.ReindexWorkspaces([]string{inside, outside}); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := live.QueryRow(`SELECT COUNT(*) FROM live_docs WHERE path LIKE ?`, outside+"/%").Scan(&n); err != nil || n != 0 {
+		t.Fatalf("out-of-scope rows = %d, %v", n, err)
+	}
+	if err := live.QueryRow(`SELECT COUNT(*) FROM live_docs WHERE path LIKE ?`, inside+"/%").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("in-scope rows = %d, %v", n, err)
+	}
+
+	hits, err := a.WorkspaceSearch("needle", []string{inside, outside}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, h := range hits {
+		got[h.Filepath] = h.Snippet
+	}
+	if _, ok := got[filepath.Join(inside, ".giantmem/plans/current.md")]; !ok {
+		t.Fatalf("indexed hit missing: %v", got)
+	}
+	if s := got[filepath.Join(outside, ".giantmem/context/x.md")]; !strings.Contains(s, "<Needle>") {
+		t.Fatalf("disk hit snippet = %q (all: %v)", s, got)
+	}
+	if _, ok := got[filepath.Join(outside, ".giantmem/context/bin.dat")]; ok {
+		t.Fatal("binary file matched")
 	}
 }
