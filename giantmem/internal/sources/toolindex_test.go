@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 )
@@ -18,6 +19,11 @@ func writeJSONL(t *testing.T, path string, lines ...string) {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// indexed_at has second precision: a file written in the same second as its ingest would re-emit once
+	past := time.Now().Add(-2 * time.Second)
+	if err := os.Chtimes(path, past, past); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -60,14 +66,18 @@ func TestRun_IndexesToolUsesForSessionsAndSubagents(t *testing.T) {
 	src := &claudeJSONLSource{cfg: SourceConfig{Name: "claude-jsonl", Kind: "builtin", Enabled: true}}
 	opts := EmitOptions{ClaudeProjects: projects, DB: d}
 
-	run := func(force bool) {
+	run := func(force bool) Stats {
 		opts.Force = force
 		st, err := Run(context.Background(), d, src, opts)
 		if err != nil || st.Errs != 0 {
 			t.Fatalf("run: %+v %v", st, err)
 		}
+		return st
 	}
 	run(false)
+	if st := run(false); st.Count != 0 {
+		t.Fatalf("unchanged transcripts re-emitted: %+v", st)
+	}
 
 	var sessions, subagents int
 	d.QueryRow(`SELECT COUNT(*) FROM documents WHERE source_type = 'session' AND session_id = ?`, hubSID).Scan(&sessions)

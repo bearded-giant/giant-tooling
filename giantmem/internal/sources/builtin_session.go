@@ -46,7 +46,8 @@ func (s *claudeJSONLSource) Emit(ctx context.Context, opts EmitOptions) (<-chan 
 				for rows.Next() {
 					var fp, ia string
 					if err := rows.Scan(&fp, &ia); err == nil {
-						if t, err := time.Parse(time.RFC3339, ia); err == nil {
+						// indexed_at is sqlite's datetime('now'): UTC, no zone
+						if t, err := time.Parse(time.DateTime, ia); err == nil {
 							existing[fp] = t
 						}
 					}
