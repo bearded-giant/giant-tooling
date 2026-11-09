@@ -74,6 +74,10 @@ export function DoitSetStatus(arg1, arg2, arg3) {
   return window['go']['main']['App']['DoitSetStatus'](arg1, arg2, arg3);
 }
 
+export function DoitSyncState() {
+  return window['go']['main']['App']['DoitSyncState']();
+}
+
 export function DoitUpdate(arg1, arg2, arg3) {
   return window['go']['main']['App']['DoitUpdate'](arg1, arg2, arg3);
 }

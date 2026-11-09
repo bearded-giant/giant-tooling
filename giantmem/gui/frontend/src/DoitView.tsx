@@ -13,6 +13,7 @@ import {
   DoitNoteDelete,
   DoitNoteUpdate,
   DoitSetStatus,
+  DoitSyncState,
   DoitUpdate,
 } from "../wailsjs/go/main/App";
 import { main } from "../wailsjs/go/models";
@@ -190,6 +191,8 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
   };
   // long lists: done items stay folded until asked for
   const [showDone, setShowDoneState] = useState(() => localStorage.getItem("gm.doit.showDone") === "1");
+  // doitd's sync badge: offline / queued / conflicts, empty in local mode
+  const [sync, setSync] = useState("");
   const setShowDone = (v: boolean) => {
     localStorage.setItem("gm.doit.showDone", v ? "1" : "0");
     setShowDoneState(v);
@@ -215,6 +218,14 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
         const m = await DoitMtime();
         if (last && m !== last) load();
         last = m;
+        const s = await DoitSyncState();
+        setSync(
+          s.mode !== "sync"
+            ? ""
+            : [s.online ? "" : "offline", s.queue > 0 ? `queued ${s.queue}` : "", s.conflicts > 0 ? `conflicts ${s.conflicts}` : ""]
+                .filter(Boolean)
+                .join(" · "),
+        );
       } catch {}
     }, 2000);
     return () => window.clearInterval(id);
@@ -310,6 +321,7 @@ export function useDoit(active: boolean, query: string, reloadKey: number, onErr
     sortBy,
     order,
     showDone,
+    sync,
     listEdit,
     creatingNote: key === NEW_NOTE,
     editing,
@@ -534,7 +546,10 @@ export function DoitSidebar({ d }: { d: Doit }) {
   return (
     <>
       <div className="doit-section doit-section-row">
-        <span>lists</span>
+        <span>
+          lists
+          {d.sync && <span className="doit-err"> {d.sync}</span>}
+        </span>
         <span className="doit-section-tools">
           <SortMenu d={d} />
           <button className="toggle-pill" onClick={() => d.setListEdit("new")} title="new list">

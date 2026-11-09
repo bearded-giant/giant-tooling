@@ -470,6 +470,26 @@ export namespace main {
 	        this.updated_at = source["updated_at"];
 	    }
 	}
+	export class DoitSync {
+	    mode: string;
+	    online: boolean;
+	    queue: number;
+	    conflicts: number;
+	    error: string;
+
+	    static createFrom(source: any = {}) {
+	        return new DoitSync(source);
+	    }
+
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.mode = source["mode"];
+	        this.online = source["online"];
+	        this.queue = source["queue"];
+	        this.conflicts = source["conflicts"];
+	        this.error = source["error"];
+	    }
+	}
 	export class DoitTwin {
 	    list: string;
 	    id: string;

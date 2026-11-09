@@ -44,6 +44,8 @@ export function DoitNoteUpdate(arg1:string,arg2:string,arg3:string,arg4:string):
 
 export function DoitSetStatus(arg1:string,arg2:string,arg3:string):Promise<void>;
 
+export function DoitSyncState():Promise<main.DoitSync>;
+
 export function DoitUpdate(arg1:string,arg2:string,arg3:main.DoitEdit):Promise<void>;
 
 export function DownloadFile(arg1:string):Promise<string>;
