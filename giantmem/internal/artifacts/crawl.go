@@ -76,6 +76,13 @@ func walkForWorkspaces(root string, maxDepth int, seen map[string]bool, out *[]s
 		if err != nil {
 			return nil
 		}
+		if d.Name() == ".giantmem" && d.Type()&os.ModeSymlink != 0 {
+			if info, err := os.Stat(p); err == nil && info.IsDir() && !seen[p] {
+				seen[p] = true
+				*out = append(*out, p)
+			}
+			return nil
+		}
 		if !d.IsDir() {
 			return nil
 		}

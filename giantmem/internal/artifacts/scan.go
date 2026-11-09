@@ -67,11 +67,19 @@ func Scan(workspace string) (*Index, error) {
 		IndexedAt: time.Now().UTC().Format(time.RFC3339),
 	}
 
-	err := filepath.WalkDir(workspace, func(p string, d fs.DirEntry, err error) error {
+	// a .giantmem symlinked into the archive is a symlink entry, which WalkDir never descends
+	root := workspace
+	if resolved, err := filepath.EvalSymlinks(workspace); err == nil {
+		root = resolved
+	}
+	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 		if d.IsDir() {
+			if p == root {
+				return nil
+			}
 			name := d.Name()
 			if name == ".giantmem" {
 				return nil
@@ -87,7 +95,7 @@ func Scan(workspace string) (*Index, error) {
 		if d.Type()&os.ModeSymlink != 0 {
 			return nil
 		}
-		rel, err := filepath.Rel(workspace, p)
+		rel, err := filepath.Rel(root, p)
 		if err != nil {
 			return nil
 		}
