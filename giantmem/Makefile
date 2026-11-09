@@ -29,6 +29,12 @@ install: build install-completions
 	mkdir -p $(INSTALL_DIR)
 	install -m 0755 $(BIN) $(INSTALL_DIR)/$(BIN)
 	@echo "installed -> $(INSTALL_DIR)/$(BIN)"
+	@for p in $(HOME)/Library/LaunchAgents/*.plist; do \
+		grep -q "<string>$(INSTALL_DIR)/$(BIN)</string>" "$$p" 2>/dev/null || continue; \
+		l=$$(basename "$$p" .plist); \
+		launchctl print "gui/$$(id -u)/$$l" >/dev/null 2>&1 || continue; \
+		launchctl bootout "gui/$$(id -u)/$$l" && launchctl bootstrap "gui/$$(id -u)" "$$p" && echo "reloaded $$l"; \
+	done
 
 install-completions: build
 	@if [ -d "$(BASH_COMPLETION_DIR)" ]; then \

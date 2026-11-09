@@ -2,6 +2,8 @@
 
 macOS LaunchAgents for giantmem background sweeps.
 
+launchd pins a loaded agent to the code signature of the binary it first ran. A rebuilt `giantmem` has a new ad-hoc signature, so launchd refuses to start the agent (exit code 78, `Unable to get updated LWCR` in the system log) until it is booted out and bootstrapped again. `make install` does that for every loaded agent whose plist runs the installed binary.
+
 > Repo note: giant-tooling has two push remotes — `origin` (github.com/bearded-giant) and `gitlab` (gitlab.rechargeapps.net). After committing, push BOTH: `git push origin main && git push gitlab main`.
 
 ## session-sweep
