@@ -33,7 +33,9 @@ install: build install-completions
 		grep -q "<string>$(INSTALL_DIR)/$(BIN)</string>" "$$p" 2>/dev/null || continue; \
 		l=$$(basename "$$p" .plist); \
 		launchctl print "gui/$$(id -u)/$$l" >/dev/null 2>&1 || continue; \
-		launchctl bootout "gui/$$(id -u)/$$l" && launchctl bootstrap "gui/$$(id -u)" "$$p" && echo "reloaded $$l"; \
+		launchctl bootout "gui/$$(id -u)/$$l"; \
+		for i in 1 2 3 4 5 6 7 8 9 10; do launchctl print "gui/$$(id -u)/$$l" >/dev/null 2>&1 || break; sleep 0.5; done; \
+		launchctl bootstrap "gui/$$(id -u)" "$$p" && echo "reloaded $$l"; \
 	done
 
 install-completions: build
