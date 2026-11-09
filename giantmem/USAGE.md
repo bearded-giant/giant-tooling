@@ -124,7 +124,8 @@ Claude's scratchpad and background task output live under `/private/tmp`, which 
 | `giantmem tools find "glab mr" --links` | add a `giantmem://tool/...` column that opens each call in the GUI |
 | `giantmem tools stats --since 7d --by-server` | rank tool calls by name with share and error rate; MCP tools fold to one row per server |
 | `giantmem tools stats -p remi --agent main` | one project's main-thread mix (`--session <id>` for one session, `--tool 'mcp__%'`, `--json`) |
-| `giantmem usage --since 7d` | tokens and API list-price cost per local day, account, and model with a running total per pair (`--until`, `--account rc-inc`, `--model 'claude-opus%'`, `--json`); `[usage.orgs]` in config.toml labels org uuids, `[usage.prices.<model>]` overrides the built-in prices; the same numbers are the `usage_daily` view for `query_db` |
+| `giantmem usage --since 7d` | tokens and API list-price cost per local day, account, and model with a running total per pair (`--until`, `--account rc-inc`, `--model 'claude-opus%'`, `--json`); `[usage.orgs]` in config.toml labels org uuids, `[usage.prices.<model>]` overrides the built-in and fetched prices; the same numbers are the `usage_daily` view for `query_db` |
+| `giantmem usage prices --fetch` | download Anthropic's pricing page into `prices.toml` under the archive base and print the per-model USD per MTok the ledger prices with (`--json`); without `--fetch` prints the current table; the `price-sync` launchd agent runs the fetch weekly |
 | `giantmem tools find --starred` | the calls you starred in the GUI, newest first (add a query to narrow them) |
 | `giantmem find "churn baseline" -s bundle` | search the archived scripts and drafts themselves |
 

@@ -50,7 +50,7 @@ durable in archives.db (the SessionStart hook runs it detached).
 		defer d.Close()
 
 		uc := loadUserConfig().Usage
-		if err := usage.Sync(d, uc.Prices, uc.Orgs); err != nil {
+		if err := usage.Sync(d, effectivePrices(uc), uc.Orgs); err != nil {
 			return err
 		}
 

@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -21,6 +22,9 @@ var (
 	usageAccount string
 	usageModel   string
 	usageJSON    bool
+
+	usagePricesFetch bool
+	usagePricesJSON  bool
 )
 
 // usageConfig is [usage] in config.toml: org uuid labels and per-model price overrides.
@@ -57,7 +61,7 @@ rows; [usage] in config.toml labels orgs and overrides prices.`,
 		}
 		defer a.Close()
 		uc := loadUserConfig().Usage
-		if err := usage.Sync(a, uc.Prices, uc.Orgs); err != nil {
+		if err := usage.Sync(a, effectivePrices(uc), uc.Orgs); err != nil {
 			return err
 		}
 		since, err := search.ParseSince(usageSince)
@@ -112,6 +116,82 @@ rows; [usage] in config.toml labels orgs and overrides prices.`,
 	},
 }
 
+type priceRow struct {
+	Model string `json:"model"`
+	usage.Price
+}
+
+var usagePricesCmd = &cobra.Command{
+	Use:   "prices",
+	Short: "USD per MTok each model is priced at; --fetch refreshes from Anthropic's pricing page",
+	Long: `Prints usage_prices after syncing it: the built-in table, then prices.toml
+under the archive base (written by --fetch from ` + usage.DocsURL + `),
+then [usage.prices] in config.toml.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		if usagePricesFetch {
+			p, err := usage.Fetch(usage.DocsURL)
+			if err != nil {
+				return err
+			}
+			if err := usage.SaveFile(pricesPath(), p); err != nil {
+				return err
+			}
+			fmt.Printf("fetched %d models from %s\n", len(p), usage.DocsURL)
+		}
+		a, err := db.Open(archiveDBPath())
+		if err != nil {
+			return err
+		}
+		defer a.Close()
+		uc := loadUserConfig().Usage
+		if err := usage.Sync(a, effectivePrices(uc), uc.Orgs); err != nil {
+			return err
+		}
+		rows, err := a.Query(`SELECT model, input, cache_5m, cache_1h, cache_read, output FROM usage_prices ORDER BY model`)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		var out []priceRow
+		for rows.Next() {
+			var r priceRow
+			if err := rows.Scan(&r.Model, &r.Input, &r.Cache5m, &r.Cache1h, &r.CacheRead, &r.Output); err != nil {
+				return err
+			}
+			out = append(out, r)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if usagePricesJSON {
+			return output.JSON(out)
+		}
+		if st, err := os.Stat(pricesPath()); err == nil {
+			fmt.Printf("%s fetched %s\n", pricesPath(), st.ModTime().Format("2006-01-02 15:04"))
+		}
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(w, "MODEL\tINPUT\tCACHE_5M\tCACHE_1H\tCACHE_R\tOUTPUT")
+		for _, r := range out {
+			fmt.Fprintf(w, "%s\t%g\t%g\t%g\t%g\t%g\n", r.Model, r.Input, r.Cache5m, r.Cache1h, r.CacheRead, r.Output)
+		}
+		return w.Flush()
+	},
+}
+
+func pricesPath() string { return filepath.Join(archiveBasePath(), "prices.toml") }
+
+// effectivePrices layers the fetched table under the config overrides; Sync puts the built-ins beneath both.
+func effectivePrices(uc usageConfig) map[string]usage.Price {
+	p, err := usage.LoadFile(pricesPath())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: %v\n", err)
+	}
+	for k, v := range uc.Prices {
+		p[k] = v
+	}
+	return p
+}
+
 func printUsage(rows []usageRow) {
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "DAY\tACCOUNT\tMODEL\tMSGS\tINPUT\tCACHE_W\tCACHE_R\tOUTPUT\tCOST\tRUNNING")
@@ -159,5 +239,8 @@ func init() {
 	usageCmd.Flags().StringVar(&usageAccount, "account", "", "one account label (e.g. rc-inc)")
 	usageCmd.Flags().StringVar(&usageModel, "model", "", "models matching (SQL LIKE, e.g. 'claude-opus%')")
 	usageCmd.Flags().BoolVar(&usageJSON, "json", false, "emit JSON")
+	usagePricesCmd.Flags().BoolVar(&usagePricesFetch, "fetch", false, "download the pricing page and write prices.toml first")
+	usagePricesCmd.Flags().BoolVar(&usagePricesJSON, "json", false, "emit JSON")
+	usageCmd.AddCommand(usagePricesCmd)
 	rootCmd.AddCommand(usageCmd)
 }

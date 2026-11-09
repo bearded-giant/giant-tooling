@@ -26,6 +26,27 @@ launchctl unload ~/Library/LaunchAgents/com.bryan.giantmem-session-sweep.plist
 rm ~/Library/LaunchAgents/com.bryan.giantmem-session-sweep.plist
 ```
 
+## price-sync
+
+Fetches Anthropic's pricing page every Monday at 07:00 with `giantmem usage prices --fetch` and writes `prices.toml` under the archive base, so `giantmem usage` and the `usage_daily` view price a new model without a code change. A `[usage.prices]` entry in config.toml still wins over a fetched price.
+
+Install:
+
+```bash
+cp giantmem/launchd/com.bryan.giantmem-price-sync.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.bryan.giantmem-price-sync.plist
+launchctl list | grep giantmem  # confirm loaded
+```
+
+Logs land at `~/.cache/giantmem/price-sync.{out,err}`.
+
+Uninstall:
+
+```bash
+launchctl unload ~/Library/LaunchAgents/com.bryan.giantmem-price-sync.plist
+rm ~/Library/LaunchAgents/com.bryan.giantmem-price-sync.plist
+```
+
 ## db-backup
 
 Local-first encrypted backup of `live.db` + `archives.db` every 2 hours, via `../scripts/giantmem-db-backup.sh`. Per db: `sqlite3 .backup` (consistent online snapshot under WAL) -> `PRAGMA integrity_check` -> `gpg --encrypt` to key `33F36CDDD530C52910A4608D61258A79557ECB4A` -> publish to iCloud Drive (`~/Library/Mobile Documents/com~apple~CloudDocs/giantmem-db-backups/`), overwriting the single current `.gpg` only after validation. One `.prev` is kept for rollback. No network/VPS/tailscale. Replaced the old restic-to-VPS job.

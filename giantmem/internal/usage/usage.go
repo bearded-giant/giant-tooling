@@ -5,11 +5,11 @@ import "database/sql"
 
 // Price is USD per million tokens for one model.
 type Price struct {
-	Input     float64 `toml:"input"`
-	Cache5m   float64 `toml:"cache_5m"`
-	Cache1h   float64 `toml:"cache_1h"`
-	CacheRead float64 `toml:"cache_read"`
-	Output    float64 `toml:"output"`
+	Input     float64 `toml:"input" json:"input"`
+	Cache5m   float64 `toml:"cache_5m" json:"cache_5m"`
+	Cache1h   float64 `toml:"cache_1h" json:"cache_1h"`
+	CacheRead float64 `toml:"cache_read" json:"cache_read"`
+	Output    float64 `toml:"output" json:"output"`
 }
 
 // DefaultPrices is the first-party API list; cache writes are 1.25x (5m) and 2x (1h) input.
@@ -22,7 +22,7 @@ var DefaultPrices = map[string]Price{
 	"claude-opus-4-8":   {Input: 5, Cache5m: 6.25, Cache1h: 10, CacheRead: 0.5, Output: 25},
 	"claude-opus-4-7":   {Input: 5, Cache5m: 6.25, Cache1h: 10, CacheRead: 0.5, Output: 25},
 	"claude-opus-4-6":   {Input: 5, Cache5m: 6.25, Cache1h: 10, CacheRead: 0.5, Output: 25},
-	"claude-sonnet-5-5": {Input: 2, Cache5m: 2.5, Cache1h: 4, CacheRead: 0.2, Output: 10},
+	"claude-sonnet-5-5": {Input: 2, Cache5m: 2.5, Cache1h: 4, CacheRead: 0.1, Output: 10},
 	"claude-sonnet-5":   {Input: 2, Cache5m: 2.5, Cache1h: 4, CacheRead: 0.2, Output: 10},
 	"claude-sonnet-4-6": {Input: 3, Cache5m: 3.75, Cache1h: 6, CacheRead: 0.3, Output: 15},
 	"claude-haiku-5-5":  {Input: 0.1, Cache5m: 0.125, Cache1h: 0.2, CacheRead: 0.01, Output: 0.5},

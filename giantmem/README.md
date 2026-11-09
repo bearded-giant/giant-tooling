@@ -91,6 +91,7 @@ giantmem find <query>                       # FTS5: live + archive + sessions
 giantmem find -h                            # any subcommand: -h works at every level
 giantmem stats                              # counts by project / source / dir_type
 giantmem usage --since 7d                   # tokens + cost per day by account and model
+giantmem usage prices --fetch               # refresh per-model prices from Anthropic's pricing page
 
 giantmem session list -p chat-orchestrator  # recent sessions for a project (LIKE)
 giantmem session find "hub and spoke"       # FTS over session transcripts
