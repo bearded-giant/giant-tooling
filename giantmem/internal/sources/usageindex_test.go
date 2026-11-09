@@ -22,6 +22,7 @@ func TestRun_IndexesUsageWithSubagentOrg(t *testing.T) {
 		opus("m1", "2026-11-01T12:00:01Z", `{"input_tokens":1000000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}`),
 		`{"type":"attachment","timestamp":"2026-11-01T13:00:00Z","attachment":{"type":"credential_org","organizationUuid":"org-b"}}`,
 		opus("m2", "2026-11-01T13:00:01Z", `{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":1000000}`),
+		`{"type":"assistant","timestamp":"2026-11-01T13:00:02Z","message":{"id":"m3","model":"claude-haiku-4-5-20251001","content":[{"type":"text","text":"x"}],"usage":{"input_tokens":1000000,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}`,
 	)
 	writeJSONL(t, filepath.Join(projects, slug, hubSID, "subagents", "agent-a1.jsonl"),
 		`{"type":"user","cwd":"/Users/me/dev/proj","timestamp":"2026-11-01T12:00:05Z","message":{"content":"helper"}}`,
@@ -51,7 +52,7 @@ func TestRun_IndexesUsageWithSubagentOrg(t *testing.T) {
 		}
 		return orgs
 	}
-	want := map[string]string{"m1": "org-a", "m2": "org-b", "s1": "org-a", "s2": "org-b"}
+	want := map[string]string{"m1": "org-a", "m2": "org-b", "m3": "org-b", "s1": "org-a", "s2": "org-b"}
 	for _, force := range []bool{false, true} {
 		opts.Force = force
 		if st, err := Run(context.Background(), d, src, opts); err != nil || st.Errs != 0 {
@@ -91,5 +92,11 @@ func TestRun_IndexesUsageWithSubagentOrg(t *testing.T) {
 	wantDaily := []daily{{"org-b", 2, 25}, {"team", 2, 4.2}}
 	if len(got) != 2 || got[0] != wantDaily[0] || got[1] != wantDaily[1] {
 		t.Fatalf("usage_daily = %+v, want %+v", got, wantDaily)
+	}
+
+	// a dated id prices as its base model: 1M input at haiku-4-5's $1
+	var dated float64
+	if err := d.QueryRow(`SELECT cost_usd FROM usage_daily WHERE model = 'claude-haiku-4-5-20251001'`).Scan(&dated); err != nil || dated != 1 {
+		t.Fatalf("dated model cost = %v %v, want 1", dated, err)
 	}
 }

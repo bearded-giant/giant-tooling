@@ -248,6 +248,35 @@ var archiveMigrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: 9,
+		Name:    "usage_daily: a dated model id prices as its base model",
+		Apply: func(tx *sql.Tx) error {
+			stmts := []string{
+				`DROP VIEW IF EXISTS usage_daily`,
+				`CREATE VIEW usage_daily AS
+                    SELECT u.day, COALESCE(o.label, u.org) AS account, u.model,
+                        COUNT(*) AS messages,
+                        SUM(u.input) AS input, SUM(u.cache_5m) AS cache_5m, SUM(u.cache_1h) AS cache_1h,
+                        SUM(u.cache_read) AS cache_read, SUM(u.output) AS output,
+                        ROUND((SUM(u.input) * COALESCE(p.input, 0) + SUM(u.cache_5m) * COALESCE(p.cache_5m, 0)
+                            + SUM(u.cache_1h) * COALESCE(p.cache_1h, 0) + SUM(u.cache_read) * COALESCE(p.cache_read, 0)
+                            + SUM(u.output) * COALESCE(p.output, 0)) / 1000000.0, 2) AS cost_usd
+                    FROM usage u
+                    LEFT JOIN usage_orgs o ON o.org = u.org
+                    LEFT JOIN usage_prices p ON p.model = CASE
+                        WHEN u.model GLOB '*-[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]' THEN substr(u.model, 1, length(u.model) - 9)
+                        ELSE u.model END
+                    GROUP BY u.day, account, u.model`,
+			}
+			for _, s := range stmts {
+				if _, err := tx.Exec(s); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+	},
 }
 
 // liveMigrations is the canonical list for live.db.
