@@ -97,9 +97,17 @@ func walkWorkspace(db *sql.DB, archiveBase, ws string, st *Stats) {
 	sha := gitSha(worktreePath)
 	now := time.Now().UTC().Format(time.RFC3339)
 
-	_ = filepath.WalkDir(ws, func(p string, d fs.DirEntry, err error) error {
+	// WalkDir never descends a symlinked .giantmem; walk its target, key rows by the link path the hook writes
+	root := ws
+	if resolved, err := filepath.EvalSymlinks(ws); err == nil {
+		root = resolved
+	}
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
+		}
+		if rel, rerr := filepath.Rel(root, p); rerr == nil {
+			p = filepath.Join(ws, rel)
 		}
 		name := d.Name()
 		if d.IsDir() {
@@ -120,7 +128,7 @@ func walkWorkspace(db *sql.DB, archiveBase, ws string, st *Stats) {
 		if feature == "" {
 			feature = featureFromJSON
 		}
-		upsertFile(db, p, d, info.Project, worktreePath, feature, dirTypeFromPath(p), sha, now, st)
+		upsertFile(db, p, info.Project, worktreePath, feature, dirTypeFromPath(p), sha, now, st)
 		return nil
 	})
 
@@ -162,7 +170,7 @@ func walkExtraRoots(db *sql.DB, worktreePath, proj, sha, now string, st *Stats) 
 		if !matchesAny(patterns, filepath.ToSlash(rel), name) {
 			return nil
 		}
-		upsertFile(db, p, d, proj, worktreePath, "", "repo-doc", sha, now, st)
+		upsertFile(db, p, proj, worktreePath, "", "repo-doc", sha, now, st)
 		return nil
 	})
 }
@@ -202,8 +210,9 @@ func matchesAny(patterns []string, rel, base string) bool {
 	return false
 }
 
-func upsertFile(db *sql.DB, p string, d fs.DirEntry, proj, worktreePath, feature, dirType, sha, now string, st *Stats) {
-	fi, ierr := d.Info()
+func upsertFile(db *sql.DB, p, proj, worktreePath, feature, dirType, sha, now string, st *Stats) {
+	// Stat, not DirEntry.Info (lstat): a symlinked file's link size never matches its content, so it re-upserted every pass
+	fi, ierr := os.Stat(p)
 	if ierr != nil {
 		st.Errors++
 		return

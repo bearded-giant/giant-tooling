@@ -94,6 +94,48 @@ func TestRunOnWorkspace_Idempotent(t *testing.T) {
 	}
 }
 
+func TestRunOnWorkspace_SymlinkedFileIdempotent(t *testing.T) {
+	live, base := newLive(t)
+	ws := filepath.Join(t.TempDir(), "repo", ".giantmem")
+	writeFile(t, filepath.Join(ws, "features", "f", "proposal.md"), "a proposal body longer than the link")
+	if err := os.Symlink("proposal.md", filepath.Join(ws, "features", "f", "spec.md")); err != nil {
+		t.Fatal(err)
+	}
+
+	if st, _ := RunOnWorkspace(live, base, ws); st.Upserted != 2 {
+		t.Fatalf("first pass upserted = %d, want 2; stats=%+v", st.Upserted, st)
+	}
+	st2, _ := RunOnWorkspace(live, base, ws)
+	if st2.Upserted != 0 || st2.Skipped != 2 {
+		t.Errorf("second pass upserted=%d skipped=%d, want 0/2", st2.Upserted, st2.Skipped)
+	}
+}
+
+func TestRunOnWorkspace_SymlinkedWorkspaceKeysLinkPath(t *testing.T) {
+	live, base := newLive(t)
+	target := filepath.Join(t.TempDir(), "archive", "repo", "main")
+	writeFile(t, filepath.Join(target, "features", "f", "proposal.md"), "body")
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	ws := filepath.Join(repo, ".giantmem")
+	if err := os.Symlink(target, ws); err != nil {
+		t.Fatal(err)
+	}
+
+	if st, _ := RunOnWorkspace(live, base, ws); st.Upserted != 1 {
+		t.Fatalf("upserted = %d, want 1; stats=%+v", st.Upserted, st)
+	}
+	var path, feature string
+	if err := live.QueryRow("SELECT path, feature FROM live_docs").Scan(&path, &feature); err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(ws, "features", "f", "proposal.md"); path != want || feature != "f" {
+		t.Errorf("row = %s (feature %q), want %s (feature f)", path, feature, want)
+	}
+}
+
 func TestRunOnWorkspace_ExtraRootsMarker(t *testing.T) {
 	live, base := newLive(t)
 	repo := filepath.Join(t.TempDir(), "docrepo")
@@ -237,7 +279,7 @@ func TestUpsertFile_SkipsOversizedDumpKeepsDoc(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		upsertFile(live, filepath.Join(ws, e.Name()), e, "repo", filepath.Dir(filepath.Dir(ws)), "f", "features", "", "now", &st)
+		upsertFile(live, filepath.Join(ws, e.Name()), "repo", filepath.Dir(filepath.Dir(ws)), "f", "features", "", "now", &st)
 	}
 	if st.TooLarge != 1 {
 		t.Errorf("TooLarge = %d, want 1 (the 200K json)", st.TooLarge)
@@ -284,7 +326,7 @@ func TestUpsertFile_SkipsBinaryFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range entries {
-		upsertFile(live, filepath.Join(ws, e.Name()), e, "repo", filepath.Dir(filepath.Dir(ws)), "f", "features", "", "now", &st)
+		upsertFile(live, filepath.Join(ws, e.Name()), "repo", filepath.Dir(filepath.Dir(ws)), "f", "features", "", "now", &st)
 	}
 	if st.Binary != 1 || st.Upserted != 1 {
 		t.Errorf("Binary = %d, Upserted = %d, want 1 and 1", st.Binary, st.Upserted)
