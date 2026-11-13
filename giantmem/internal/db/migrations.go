@@ -555,6 +555,14 @@ var liveMigrations = []Migration{
 			return err
 		},
 	},
+	{
+		Version: 12,
+		Name:    "artifact_embedding_meta: chunk_hash for per-chunk vector reuse",
+		Apply: func(tx *sql.Tx) error {
+			_, err := tx.Exec(`ALTER TABLE artifact_embedding_meta ADD COLUMN chunk_hash TEXT`)
+			return err
+		},
+	},
 }
 
 // embeddingDimFromEnv returns the vec0 dimension as a string, honoring

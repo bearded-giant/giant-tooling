@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -390,6 +391,60 @@ func WriteEmbedding(db *sql.DB, artifactID, body string, vec []float32, model st
 		[]Chunk{{Ord: 0, Start: 0, End: len(body), Text: body}}, [][]float32{vec}, model)
 }
 
+// EmbedChunks returns one vector per chunk, reusing the artifact's stored vector
+// for any chunk whose text hash, model and dim still match; reused counts those.
+func EmbedChunks(db *sql.DB, e Embedder, artifactID string, chunks []Chunk) (vecs [][]float32, reused int, err error) {
+	rows, err := db.Query(
+		`SELECT m.chunk_hash, v.embedding FROM artifact_embedding_meta m
+         JOIN artifact_embeddings v ON v.rowid = m.rowid
+         WHERE m.artifact_id = ? AND m.model = ? AND m.dim = ? AND m.chunk_hash IS NOT NULL`,
+		artifactID, e.ModelName(), e.Dim())
+	if err != nil {
+		return nil, 0, err
+	}
+	prior := map[string][]float32{}
+	for rows.Next() {
+		var h string
+		var blob []byte
+		if err := rows.Scan(&h, &blob); err != nil {
+			rows.Close()
+			return nil, 0, err
+		}
+		if len(blob) == 4*e.Dim() {
+			prior[h] = vecFromBlob(blob)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, 0, err
+	}
+	rows.Close()
+
+	vecs = make([][]float32, 0, len(chunks))
+	for _, c := range chunks {
+		if v, ok := prior[BodyHash(c.Text)]; ok {
+			vecs = append(vecs, v)
+			reused++
+			continue
+		}
+		v, err := e.Embed(c.Text)
+		if err != nil {
+			return nil, reused, err
+		}
+		vecs = append(vecs, v)
+	}
+	return vecs, reused, nil
+}
+
+// vecFromBlob decodes sqlite-vec's float32 storage: little-endian, 4 bytes each.
+func vecFromBlob(b []byte) []float32 {
+	v := make([]float32, len(b)/4)
+	for i := range v {
+		v[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[4*i:]))
+	}
+	return v
+}
+
 // WriteChunkEmbeddings replaces an artifact's vectors with one row per chunk.
 // Skips when the body hash and dim already match. Returns changed=true when a
 // write occurred.
@@ -443,9 +498,9 @@ func WriteChunkEmbeddings(db *sql.DB, artifactID, body string, chunks []Chunk, v
 		}
 		if _, err := tx.Exec(
 			`INSERT INTO artifact_embedding_meta(artifact_id, ord, rowid, chunk_start, chunk_end, snippet,
-                 body_hash, dim, model, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			artifactID, c.Ord, rowID, c.Start, c.End, Snippet(c.Text), hash, dim, model, now,
+                 body_hash, dim, model, updated_at, chunk_hash)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			artifactID, c.Ord, rowID, c.Start, c.End, Snippet(c.Text), hash, dim, model, now, BodyHash(c.Text),
 		); err != nil {
 			return false, err
 		}

@@ -17,6 +17,7 @@ type Stats struct {
 	artifacts.TableStats
 	Embedded         int  `json:"embedded"`
 	EmbedSkipped     int  `json:"embed_skipped"`
+	EmbedReused      int  `json:"embed_reused"`
 	EmbeddingsPruned int  `json:"embeddings_pruned"`
 	Embeddings       bool `json:"embeddings_enabled"`
 }
@@ -52,9 +53,10 @@ func reconcileCached(live *sql.DB, archiveBase string, embedder search.Embedder,
 	}
 	st.Embeddings = true
 
-	emb, skip, err := embedChanged(live, embedder, cache)
+	emb, skip, reused, err := embedChanged(live, embedder, cache)
 	st.Embedded = emb
 	st.EmbedSkipped = skip
+	st.EmbedReused = reused
 	return st, err
 }
 
@@ -67,7 +69,7 @@ func embeddingsEnabled(e search.Embedder) bool {
 
 // embedChanged embeds only winners whose body hash differs from the stored
 // embedding meta (or that have none yet), reading content just for those.
-func embedChanged(live *sql.DB, embedder search.Embedder, cache *artifacts.Cache) (embedded, skipped int, err error) {
+func embedChanged(live *sql.DB, embedder search.Embedder, cache *artifacts.Cache) (embedded, skipped, reused int, err error) {
 	type row struct {
 		abs, hash, id, typ string
 		mtime              int64
@@ -95,20 +97,20 @@ func embedChanged(live *sql.DB, embedder search.Embedder, cache *artifacts.Cache
 	heads := make(map[string]head, len(winners))
 	mrows, err := live.Query(`SELECT artifact_id, body_hash, dim FROM artifact_embedding_meta WHERE ord = 0`)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	for mrows.Next() {
 		var id string
 		var h head
 		if err := mrows.Scan(&id, &h.hash, &h.dim); err != nil {
 			mrows.Close()
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 		heads[id] = h
 	}
 	if err := mrows.Err(); err != nil {
 		mrows.Close()
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	mrows.Close()
 
@@ -122,21 +124,18 @@ func embedChanged(live *sql.DB, embedder search.Embedder, cache *artifacts.Cache
 			if err == sql.ErrNoRows {
 				continue
 			}
-			return embedded, skipped, err
+			return embedded, skipped, reused, err
 		}
 		_, body, _ := artifacts.ParseFrontmatter(content)
 		chunks := search.ChunkBodyFor(w.typ, body)
-		vecs := make([][]float32, 0, len(chunks))
-		for _, c := range chunks {
-			vec, eerr := embedder.Embed(c.Text)
-			if eerr != nil {
-				return embedded, skipped, eerr
-			}
-			vecs = append(vecs, vec)
+		vecs, n, eerr := search.EmbedChunks(live, embedder, w.id, chunks)
+		reused += n
+		if eerr != nil {
+			return embedded, skipped, reused, eerr
 		}
 		changed, eerr := search.WriteChunkEmbeddings(live, w.id, body, chunks, vecs, embedder.ModelName())
 		if eerr != nil {
-			return embedded, skipped, eerr
+			return embedded, skipped, reused, eerr
 		}
 		if changed {
 			embedded++
@@ -144,5 +143,5 @@ func embedChanged(live *sql.DB, embedder search.Embedder, cache *artifacts.Cache
 			skipped++
 		}
 	}
-	return embedded, skipped, nil
+	return embedded, skipped, reused, nil
 }

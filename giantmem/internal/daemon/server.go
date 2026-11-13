@@ -283,8 +283,8 @@ func (s *Server) startReconciler(ctx context.Context) {
 				return
 			}
 			fmt.Fprintf(os.Stderr,
-				"giantmemd: reconcile (%s) scanned=%d upserted=%d removed=%d canonical=%d embedded=%d pruned=%d\n",
-				reason, st.Scanned, st.Upserted, st.Removed, st.Canonical, st.Embedded, st.EmbeddingsPruned)
+				"giantmemd: reconcile (%s) scanned=%d upserted=%d removed=%d canonical=%d embedded=%d reused=%d pruned=%d\n",
+				reason, st.Scanned, st.Upserted, st.Removed, st.Canonical, st.Embedded, st.EmbedReused, st.EmbeddingsPruned)
 		}
 
 		run("start")
