@@ -59,3 +59,45 @@ func TestGate_ResyncForcesPass(t *testing.T) {
 		}
 	}
 }
+
+// warm passes skip content reads for rows whose header key held, so an edit the
+// key cannot see stays cached until resync drops the cache.
+func TestGate_CacheHoldsUntilKeyMovesOrResync(t *testing.T) {
+	d, base := newLive(t)
+	p := "/r/.giantmem/features/foo/proposal.md"
+	insertDoc(t, d, p, "---\nstatus: ready\n---\nbody")
+	g := &Gate{Resync: time.Hour}
+	status := func() string {
+		t.Helper()
+		g.lastFP = ""
+		if _, ran, err := g.Run(d, base, nil); err != nil || !ran {
+			t.Fatalf("ran=%v err=%v", ran, err)
+		}
+		var s string
+		if err := d.QueryRow(`SELECT status FROM artifacts`).Scan(&s); err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	if s := status(); s != "ready" {
+		t.Fatalf("first pass status = %q", s)
+	}
+
+	insertDoc(t, d, p, "---\nstatus: draft\n---\nbody")
+	if s := status(); s != "ready" {
+		t.Fatalf("same-length edit with unchanged ingested_at should hit the cache, got %q", s)
+	}
+
+	g.lastRun = time.Time{}
+	if s := status(); s != "draft" {
+		t.Fatalf("resync should drop the cache, got %q", s)
+	}
+
+	if _, err := d.Exec(`UPDATE live_docs SET ingested_at='2026-06-02T00:00:00Z', content=? WHERE path=?`,
+		"---\nstatus: ready\n---\nbody", p); err != nil {
+		t.Fatal(err)
+	}
+	if s := status(); s != "ready" {
+		t.Fatalf("moved ingested_at should re-derive, got %q", s)
+	}
+}

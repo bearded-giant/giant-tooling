@@ -23,15 +23,18 @@ type Stats struct {
 
 // Reconcile is the full incremental engine: project live_docs into the
 // artifacts table (derive + upsert + delete orphans + canonical backfill), then
-// embed any changed bodies. Idempotent, but every pass re-reads all content
-// even when nothing changed; embedding is body-hash guarded. Safe to run
-// concurrently with peer live_docs writes (WAL + busy_timeout, short txns).
+// embed any changed bodies. Idempotent; embedding is body-hash guarded. Safe to
+// run concurrently with peer live_docs writes (WAL + busy_timeout, short txns).
 //
 // embedder may be nil or a stub; in either case the embedding pass is skipped so
 // the daemon never writes non-semantic vectors when no real backend is set.
 func Reconcile(live *sql.DB, archiveBase string, embedder search.Embedder) (Stats, error) {
+	return reconcileCached(live, archiveBase, embedder, &artifacts.Cache{})
+}
+
+func reconcileCached(live *sql.DB, archiveBase string, embedder search.Embedder, cache *artifacts.Cache) (Stats, error) {
 	var st Stats
-	ts, err := artifacts.ReconcileTable(live, archiveBase)
+	ts, err := artifacts.ReconcileTableCached(live, archiveBase, cache)
 	if err != nil {
 		return st, err
 	}
@@ -49,7 +52,7 @@ func Reconcile(live *sql.DB, archiveBase string, embedder search.Embedder) (Stat
 	}
 	st.Embeddings = true
 
-	emb, skip, err := embedChanged(live, embedder)
+	emb, skip, err := embedChanged(live, embedder, cache)
 	st.Embedded = emb
 	st.EmbedSkipped = skip
 	return st, err
@@ -62,16 +65,11 @@ func embeddingsEnabled(e search.Embedder) bool {
 	return !strings.HasPrefix(e.ModelName(), "stub:")
 }
 
-// embedChanged walks the .giantmem/ rows in live_docs and embeds only bodies
-// whose hash differs from the stored embedding meta (or that have none yet).
-func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int, err error) {
-	rows, err := live.Query(
-		`SELECT path, content, project, mtime FROM live_docs WHERE instr(path, ?) > 0`, "/.giantmem/")
-	if err != nil {
-		return 0, 0, err
-	}
+// embedChanged embeds only winners whose body hash differs from the stored
+// embedding meta (or that have none yet), reading content just for those.
+func embedChanged(live *sql.DB, embedder search.Embedder, cache *artifacts.Cache) (embedded, skipped int, err error) {
 	type row struct {
-		abs, body, id, typ string
+		abs, hash, id, typ string
 		mtime              int64
 	}
 	// Collapse branch/worktree siblings (same projectedID, different body) to one
@@ -79,46 +77,55 @@ func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int
 	// ReconcileTable's choice. Without this, siblings fight over the single
 	// embedding slot and re-embed every pass, spinning the daemon loop.
 	winners := map[string]row{}
-	for rows.Next() {
-		var abs, content, proj string
-		var mtime int64
-		if err := rows.Scan(&abs, &content, &proj, &mtime); err != nil {
-			rows.Close()
-			return embedded, skipped, err
-		}
-		rel, ok := artifacts.RelFromLivePath(abs)
-		if !ok {
+	for abs, c := range cache.Rows() {
+		if !c.OK {
 			continue
 		}
-		// repo must match ReconcileTable's derivation so the embedding id ==
-		// the artifacts-table id (projectedID is repo-qualified). branch/worktree
-		// do not affect the id, so empty is fine here.
-		a, ok := artifacts.DeriveFromLiveDoc(rel, content, proj, "", "")
-		if !ok {
-			continue
-		}
-		_, body, _ := artifacts.ParseFrontmatter(content)
-		r := row{abs: abs, body: body, id: a.ID, typ: a.Type, mtime: mtime}
-		if cur, ok := winners[a.ID]; !ok || r.mtime > cur.mtime || (r.mtime == cur.mtime && r.abs > cur.abs) {
-			winners[a.ID] = r
+		r := row{abs: abs, hash: c.BodyHash, id: c.A.ID, typ: c.A.Type, mtime: c.Mtime}
+		if cur, ok := winners[r.id]; !ok || r.mtime > cur.mtime || (r.mtime == cur.mtime && r.abs > cur.abs) {
+			winners[r.id] = r
 		}
 	}
-	if cerr := rows.Err(); cerr != nil {
-		rows.Close()
-		return embedded, skipped, cerr
+
+	// one query, not one per artifact: per-row lookups cost a lock round-trip each
+	type head struct {
+		hash string
+		dim  int
 	}
-	rows.Close()
+	heads := make(map[string]head, len(winners))
+	mrows, err := live.Query(`SELECT artifact_id, body_hash, dim FROM artifact_embedding_meta WHERE ord = 0`)
+	if err != nil {
+		return 0, 0, err
+	}
+	for mrows.Next() {
+		var id string
+		var h head
+		if err := mrows.Scan(&id, &h.hash, &h.dim); err != nil {
+			mrows.Close()
+			return 0, 0, err
+		}
+		heads[id] = h
+	}
+	if err := mrows.Err(); err != nil {
+		mrows.Close()
+		return 0, 0, err
+	}
+	mrows.Close()
 
 	for _, w := range winners {
-		meta, merr := search.LoadEmbeddingMeta(live, w.id)
-		if merr != nil {
-			return embedded, skipped, merr
-		}
-		if meta != nil && meta.BodyHash == search.BodyHash(w.body) && meta.Dim == embedder.Dim() {
+		if h, ok := heads[w.id]; ok && h.hash == w.hash && h.dim == embedder.Dim() {
 			skipped++
 			continue
 		}
-		chunks := search.ChunkBodyFor(w.typ, w.body)
+		var content string
+		if err := live.QueryRow(`SELECT content FROM live_docs WHERE path = ?`, w.abs).Scan(&content); err != nil {
+			if err == sql.ErrNoRows {
+				continue
+			}
+			return embedded, skipped, err
+		}
+		_, body, _ := artifacts.ParseFrontmatter(content)
+		chunks := search.ChunkBodyFor(w.typ, body)
 		vecs := make([][]float32, 0, len(chunks))
 		for _, c := range chunks {
 			vec, eerr := embedder.Embed(c.Text)
@@ -127,7 +134,7 @@ func embedChanged(live *sql.DB, embedder search.Embedder) (embedded, skipped int
 			}
 			vecs = append(vecs, vec)
 		}
-		changed, eerr := search.WriteChunkEmbeddings(live, w.id, w.body, chunks, vecs, embedder.ModelName())
+		changed, eerr := search.WriteChunkEmbeddings(live, w.id, body, chunks, vecs, embedder.ModelName())
 		if eerr != nil {
 			return embedded, skipped, eerr
 		}

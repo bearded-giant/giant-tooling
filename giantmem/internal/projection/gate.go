@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/search"
 )
 
@@ -13,6 +14,7 @@ type Gate struct {
 	Resync  time.Duration
 	lastFP  string
 	lastRun time.Time
+	cache   artifacts.Cache
 }
 
 // Fingerprint moves on any insert, delete, mtime or byte-length change to the
@@ -32,14 +34,18 @@ func Fingerprint(live *sql.DB) (string, error) {
 }
 
 // Run reconciles unless the fingerprint matches the last successful pass. A
-// same-second, same-length edit slips past the fingerprint, so Resync forces a
-// full pass anyway.
+// same-second, same-length edit slips past the fingerprint and the derive
+// cache key, so Resync forces a pass with the cache dropped.
 func (g *Gate) Run(live *sql.DB, archiveBase string, embedder search.Embedder) (Stats, bool, error) {
 	fp, ferr := Fingerprint(live)
-	if ferr == nil && fp == g.lastFP && time.Since(g.lastRun) < g.Resync {
+	stale := time.Since(g.lastRun) >= g.Resync
+	if ferr == nil && fp == g.lastFP && !stale {
 		return Stats{}, false, nil
 	}
-	st, err := Reconcile(live, archiveBase, embedder)
+	if stale {
+		g.cache = artifacts.Cache{}
+	}
+	st, err := reconcileCached(live, archiveBase, embedder, &g.cache)
 	if err != nil || ferr != nil {
 		g.lastFP = ""
 		return st, true, err

@@ -1,7 +1,10 @@
 package artifacts
 
 import (
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -96,25 +99,124 @@ type TableStats struct {
 	Canonical int `json:"canonical_backfilled"`
 }
 
+// Cache holds each live_docs row's derive result between passes. Zero value is
+// ready; one pass at a time.
+type Cache struct {
+	rows    map[string]CachedRow
+	written map[string]Artifact
+}
+
+// CachedRow is a live_docs row's derive result, keyed by live_docs.path.
+type CachedRow struct {
+	key      string
+	Mtime    int64
+	OK       bool
+	A        Artifact
+	BodyHash string
+}
+
+// Rows returns the rows the last pass saw.
+func (c *Cache) Rows() map[string]CachedRow { return c.rows }
+
+// BodyHash is sha256 hex of a frontmatter-stripped body; embedding meta compares against it.
+func BodyHash(body string) string {
+	sum := sha256.Sum256([]byte(body))
+	return hex.EncodeToString(sum[:])
+}
+
 // ReconcileTable projects every .giantmem/ row in live_docs into the artifacts
 // table. Pure derive (no FS): reuses live_docs.content. Idempotent. Also
 // backfills empty live_docs.canonical_project so repo-grouping works.
-//
-// Every pass re-reads and re-derives all rows, even when nothing changed.
-// Short batched transactions keep it friendly to concurrent peer writes (the
-// PostToolUse hook) under WAL + busy_timeout.
 func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
+	return ReconcileTableCached(live, archiveBase, &Cache{})
+}
+
+// ReconcileTableCached is ReconcileTable reading content only for rows whose
+// ingested_at, mtime, size, project or worktree moved since c last saw them.
+func ReconcileTableCached(live *sql.DB, archiveBase string, c *Cache) (TableStats, error) {
 	var st TableStats
 	if live == nil {
 		return st, nil
 	}
 
+	// octet_length reads the record header, so this scan never loads content
 	rows, err := live.Query(
-		`SELECT path, content, project, worktree_path, COALESCE(canonical_project,''), mtime
+		`SELECT path, project, worktree_path, COALESCE(canonical_project,''), mtime,
+                COALESCE(ingested_at,''), octet_length(content)
          FROM live_docs WHERE instr(path, ?) > 0`, giantmemMarker)
 	if err != nil {
 		return st, err
 	}
+	type rowMeta struct {
+		path, rel, project, worktree, canonical, key string
+		mtime                                        int64
+	}
+	var metas []rowMeta
+	for rows.Next() {
+		var m rowMeta
+		var ingested string
+		var size int64
+		if err := rows.Scan(&m.path, &m.project, &m.worktree, &m.canonical, &m.mtime, &ingested, &size); err != nil {
+			rows.Close()
+			return st, err
+		}
+		var ok bool
+		if m.rel, ok = RelFromLivePath(m.path); !ok {
+			continue
+		}
+		m.key = fmt.Sprintf("%s|%d|%d|%s|%s", ingested, m.mtime, size, m.project, m.worktree)
+		metas = append(metas, m)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return st, err
+	}
+	rows.Close()
+
+	next := make(map[string]CachedRow, len(metas))
+	var misses []rowMeta
+	for _, m := range metas {
+		if r, ok := c.rows[m.path]; ok && r.key == m.key {
+			next[m.path] = r
+		} else {
+			misses = append(misses, m)
+		}
+	}
+	if len(misses) > 0 {
+		rtx, err := live.Begin()
+		if err != nil {
+			return st, err
+		}
+		get, err := rtx.Prepare(`SELECT content FROM live_docs WHERE path = ?`)
+		if err != nil {
+			rtx.Rollback()
+			return st, err
+		}
+		for _, m := range misses {
+			var content string
+			if err := get.QueryRow(m.path).Scan(&content); err != nil {
+				if err == sql.ErrNoRows {
+					continue
+				}
+				get.Close()
+				rtx.Rollback()
+				return st, err
+			}
+			r := CachedRow{key: m.key, Mtime: m.mtime}
+			r.A, r.OK = DeriveFromLiveDoc(m.rel, content, m.project, "", m.worktree)
+			if r.OK {
+				if r.A.Updated == "" && m.mtime > 0 {
+					r.A.Updated = time.Unix(m.mtime, 0).UTC().Format("2006-01-02")
+				}
+				_, body, _ := ParseFrontmatter(content)
+				r.BodyHash = BodyHash(body)
+			}
+			next[m.path] = r
+		}
+		get.Close()
+		rtx.Rollback()
+	}
+	c.rows = next
 
 	type pending struct {
 		a         Artifact
@@ -124,32 +226,17 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 		mtime     int64
 	}
 	var items []pending
-	for rows.Next() {
-		var absPath, content, proj, worktree, canonical string
-		var mtime int64
-		if err := rows.Scan(&absPath, &content, &proj, &worktree, &canonical, &mtime); err != nil {
-			rows.Close()
-			return st, err
-		}
-		rel, ok := RelFromLivePath(absPath)
+	for _, m := range metas {
+		r, ok := next[m.path]
 		if !ok {
 			continue
 		}
 		st.Scanned++
-		a, ok := DeriveFromLiveDoc(rel, content, proj, "", worktree)
-		if !ok {
+		if !r.OK {
 			continue
 		}
-		if a.Updated == "" && mtime > 0 {
-			a.Updated = time.Unix(mtime, 0).UTC().Format("2006-01-02")
-		}
-		items = append(items, pending{a: a, path: absPath, canonical: canonical, project: proj, mtime: mtime})
+		items = append(items, pending{a: r.A, path: m.path, canonical: m.canonical, project: m.project, mtime: m.mtime})
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return st, err
-	}
-	rows.Close()
 
 	// Branch/worktree siblings derive the SAME projectedID but carry different
 	// bodies/worktrees. Upserting every sibling each pass makes them overwrite
@@ -174,16 +261,32 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 
 	now := time.Now().UTC().Format(time.RFC3339)
 	derived := make(map[string]struct{}, len(winners))
+	// one txn: ~12k autocommit no-op upserts spent most of a pass in lock syscalls
+	tx, err := live.Begin()
+	if err != nil {
+		return st, err
+	}
+	defer tx.Rollback()
+	written := make(map[string]Artifact, len(winners))
 	for _, it := range winners {
-		res, err := upsertArtifact(live, it.a, now)
+		derived[it.a.ID] = struct{}{}
+		written[it.a.ID] = it.a
+		// this engine is the only artifacts writer, so an unchanged winner is already on disk
+		if prev, ok := c.written[it.a.ID]; ok && prev == it.a {
+			continue
+		}
+		res, err := upsertArtifact(tx, it.a, now)
 		if err != nil {
 			return st, err
 		}
-		derived[it.a.ID] = struct{}{}
 		if n, _ := res.RowsAffected(); n > 0 {
 			st.Upserted++
 		}
 	}
+	if err := tx.Commit(); err != nil {
+		return st, err
+	}
+	c.written = written
 
 	// canonical_project is a per-path live_docs column, independent of the id
 	// collapse — backfill every source row, not just winners. The WHERE guard
@@ -216,7 +319,9 @@ func ReconcileTable(live *sql.DB, archiveBase string) (TableStats, error) {
 	return st, nil
 }
 
-func upsertArtifact(live *sql.DB, a Artifact, now string) (sql.Result, error) {
+func upsertArtifact(live interface {
+	Exec(string, ...any) (sql.Result, error)
+}, a Artifact, now string) (sql.Result, error) {
 	updated := a.Updated
 	hasFront := 0
 	if a.HasFront {

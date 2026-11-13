@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
 )
 
 // DefaultEmbeddingDim is bge-base-en-v1.5 width. Tunable via GIANTMEM_EMBED_DIM.
@@ -361,10 +362,7 @@ type EmbeddingMeta struct {
 }
 
 // BodyHash returns sha256 hex of body (stripped of frontmatter by the caller).
-func BodyHash(body string) string {
-	sum := sha256.Sum256([]byte(body))
-	return hex.EncodeToString(sum[:])
-}
+func BodyHash(body string) string { return artifacts.BodyHash(body) }
 
 // LoadEmbeddingMeta returns the head-chunk (ord 0) meta row for artifactID,
 // or (nil, nil) when no embedding exists. Its BodyHash and Dim stand for the
