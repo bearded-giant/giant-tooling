@@ -535,7 +535,8 @@ Composes with `--tool` via AND — line must satisfy both filters. Useful for na
 |---------|--------------|
 | `giantmem status` | human-readable snapshot for the current dir |
 | `giantmem status --json` | JSON for scripts |
-| `giantmem status --json --stale-days 30 --write-cache <path>` | atomically write JSON to a path; used by the statusline (cached 30s, fired in background) |
+| `giantmem status --json --write-cache <path>` | atomically write JSON to a path; used by the statusline (cached 30s, fired in background) |
+| `giantmem status --stale-days 30` | also count workspaces with no `.md` edit in 30 days (same `~/dev` depth-4 scope backfill indexes) |
 
 The Claude Code statusline (`~/.claude/hooks/statusline.js`) consumes the cached JSON to render: active feature name and live-docs-today count.
 

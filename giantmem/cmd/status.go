@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/bearded-giant/giant-tooling/giantmem/internal/artifacts"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/db"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/output"
 	"github.com/bearded-giant/giant-tooling/giantmem/internal/project"
@@ -117,31 +118,22 @@ func buildStatus(cwd string) statusPayload {
 	}
 
 	if statusStaleD > 0 {
-		home, _ := os.UserHomeDir()
-		root := filepath.Join(home, "dev")
-		s.StaleWorkspaces = countStaleWorkspaces(root, statusStaleD)
+		s.StaleWorkspaces = countStaleWorkspaces(statusStaleD)
 	}
 
 	return s
 }
 
-func countStaleWorkspaces(root string, days int) int {
+func countStaleWorkspaces(days int) int {
 	cutoff := time.Now().AddDate(0, 0, -days)
 	count := 0
-	filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
-			return nil
-		}
-		name := d.Name()
-		if name == "node_modules" || name == ".git" || name == ".venv" || name == "venv" {
-			return filepath.SkipDir
-		}
-		if name != ".giantmem" {
-			return nil
+	for _, ws := range artifacts.DiscoverWorkspaces(0) {
+		if resolved, err := filepath.EvalSymlinks(ws); err == nil {
+			ws = resolved
 		}
 		var newest time.Time
-		filepath.WalkDir(p, func(p2 string, d2 os.DirEntry, _ error) error {
-			if d2.IsDir() {
+		filepath.WalkDir(ws, func(p2 string, d2 os.DirEntry, err error) error {
+			if err != nil || d2.IsDir() {
 				return nil
 			}
 			if filepath.Ext(p2) != ".md" {
@@ -159,8 +151,7 @@ func countStaleWorkspaces(root string, days int) int {
 		if !newest.IsZero() && newest.Before(cutoff) {
 			count++
 		}
-		return filepath.SkipDir
-	})
+	}
 	return count
 }
 
@@ -184,7 +175,7 @@ func printStatus(s statusPayload) {
 
 func init() {
 	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "JSON output (for statuslines)")
-	statusCmd.Flags().IntVar(&statusStaleD, "stale-days", 0, "include stale workspace count (0 disables; statuslines should set 30)")
+	statusCmd.Flags().IntVar(&statusStaleD, "stale-days", 0, "include stale workspace count (0 disables)")
 	statusCmd.Flags().StringVar(&statusRoot, "root", "", "use this dir instead of cwd for project detection")
 	statusCmd.Flags().StringVar(&statusProject, "project", "", "override project filter")
 	statusCmd.Flags().StringVar(&statusWriteFile, "write-cache", "", "write JSON to this file (used by statusline)")
