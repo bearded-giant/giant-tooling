@@ -57,3 +57,17 @@ func TestWalkFindsSymlinkedWorkspace(t *testing.T) {
 	}
 	t.Fatalf("crawl missed %s, found %v", link, out)
 }
+
+func TestWalkSkipsDotDirMirrors(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"repo/.giantmem", "repo/.mdlive/history/.giantmem", "wt/.bare/x/.giantmem"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var out []string
+	walkForWorkspaces(root, 4, map[string]bool{}, &out)
+	if len(out) != 1 || out[0] != filepath.Join(root, "repo", ".giantmem") {
+		t.Fatalf("want only repo/.giantmem, got %v", out)
+	}
+}

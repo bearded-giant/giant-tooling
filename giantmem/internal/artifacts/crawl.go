@@ -91,7 +91,8 @@ func walkForWorkspaces(root string, maxDepth int, seen map[string]bool, out *[]s
 			return fs.SkipDir
 		}
 		base := d.Name()
-		if base == ".git" || base == "node_modules" || base == "venv" || base == ".venv" || base == "__pycache__" {
+		// dot-dirs hold tool mirrors (.mdlive/history/.giantmem), bare repos and caches, never workspaces
+		if (strings.HasPrefix(base, ".") && base != ".giantmem" && p != absRoot) || base == "node_modules" || base == "venv" || base == "__pycache__" {
 			return fs.SkipDir
 		}
 		if base == ".giantmem" {
