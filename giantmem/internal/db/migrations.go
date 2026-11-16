@@ -277,6 +277,15 @@ var archiveMigrations = []Migration{
 			return nil
 		},
 	},
+	{
+		Version: 10,
+		Name:    "documents: session index for the mr link join",
+		Apply: func(tx *sql.Tx) error {
+			// without it mrs.Find scans documents once per mr link (~10s), past session_prime's 8s timeout
+			_, err := tx.Exec(`CREATE INDEX IF NOT EXISTS idx_documents_session ON documents(session_id, source_type)`)
+			return err
+		},
+	},
 }
 
 // liveMigrations is the canonical list for live.db.

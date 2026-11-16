@@ -2,6 +2,7 @@ package db
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -148,5 +149,35 @@ func TestMigrateArchive_V5ToolUsesSearchable(t *testing.T) {
 	}
 	if count() != 0 {
 		t.Fatal("deleted tool use still searchable")
+	}
+}
+
+func TestMigrateArchive_MRLinkJoinUsesSessionIndex(t *testing.T) {
+	d, err := Open(filepath.Join(t.TempDir(), "archives.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+	rows, err := d.Query(`EXPLAIN QUERY PLAN
+        SELECT l.target FROM session_links l
+          LEFT JOIN documents d ON d.session_id = l.session_id AND d.source_type = 'session'
+         WHERE l.kind = 'mr' AND l.role IS NOT NULL`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var plan []string
+	for rows.Next() {
+		var id, parent, notused int
+		var detail string
+		if err := rows.Scan(&id, &parent, &notused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		plan = append(plan, detail)
+	}
+	for _, step := range plan {
+		if strings.HasPrefix(step, "SCAN d") {
+			t.Fatalf("documents scanned per mr link: %v", plan)
+		}
 	}
 }
