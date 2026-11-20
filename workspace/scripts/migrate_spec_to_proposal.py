@@ -125,6 +125,12 @@ def detect_repo(workspace_dir: Path) -> tuple[str, str]:
     repo_name = repo_root.name
     branch = "unknown"
     try:
+        # bare-with-worktrees: the worktree dir is the branch, the repo is the container minus -wt
+        c = subprocess.run(["git", "-C", str(repo_root), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                           capture_output=True, text=True, check=False)
+        common = Path(c.stdout.strip())
+        if c.returncode == 0 and common.name == ".bare":
+            repo_name = common.parent.name.removesuffix("-wt")
         r = subprocess.run(["git", "-C", str(repo_root), "rev-parse", "--abbrev-ref", "HEAD"],
                            capture_output=True, text=True, check=False)
         if r.returncode == 0:

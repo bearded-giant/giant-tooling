@@ -45,6 +45,12 @@ func DetectRepoBranch(workspace string) (string, string) {
 		repoRoot = filepath.Dir(workspace)
 	}
 	repo := filepath.Base(repoRoot)
+	// bare-with-worktrees: the worktree dir is the branch, the repo is the container (same rule as workspaces.projectOf)
+	if out, err := exec.Command("git", "-C", repoRoot, "rev-parse", "--path-format=absolute", "--git-common-dir").Output(); err == nil {
+		if common := strings.TrimSpace(string(out)); filepath.Base(common) == ".bare" {
+			repo = strings.TrimSuffix(filepath.Base(filepath.Dir(common)), "-wt")
+		}
+	}
 	branch := "unknown"
 	cmd := exec.Command("git", "-C", repoRoot, "rev-parse", "--abbrev-ref", "HEAD")
 	if out, err := cmd.Output(); err == nil {

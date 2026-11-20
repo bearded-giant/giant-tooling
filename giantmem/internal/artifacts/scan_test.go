@@ -2,6 +2,7 @@ package artifacts
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 )
@@ -69,5 +70,33 @@ func TestWalkSkipsDotDirMirrors(t *testing.T) {
 	walkForWorkspaces(root, 4, map[string]bool{}, &out)
 	if len(out) != 1 || out[0] != filepath.Join(root, "repo", ".giantmem") {
 		t.Fatalf("want only repo/.giantmem, got %v", out)
+	}
+}
+
+func gitRun(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "init.defaultBranch=main"}, args...)...)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+}
+
+func TestDetectRepoBranchBareWorktreeUsesContainerName(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "src")
+	gitRun(t, root, "init", "-q", src)
+	gitRun(t, src, "commit", "-q", "--allow-empty", "-m", "init")
+	base := filepath.Join(root, "proj-wt")
+	gitRun(t, root, "clone", "-q", "--bare", src, filepath.Join(base, ".bare"))
+	gitRun(t, filepath.Join(base, ".bare"), "worktree", "add", "-q", "-b", "feat-x", "../feat-x", "main")
+
+	repo, branch := DetectRepoBranch(filepath.Join(base, "feat-x", ".giantmem"))
+	if repo != "proj" || branch != "feat-x" {
+		t.Fatalf("got (%q, %q), want (proj, feat-x)", repo, branch)
+	}
+
+	repo, branch = DetectRepoBranch(filepath.Join(src, ".giantmem"))
+	if repo != "src" || branch != "main" {
+		t.Fatalf("plain repo: got (%q, %q), want (src, main)", repo, branch)
 	}
 }
