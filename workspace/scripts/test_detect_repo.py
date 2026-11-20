@@ -31,7 +31,7 @@ def layout(tmp_path):
 @pytest.mark.parametrize("mod", MODULES, ids=lambda m: m.__name__)
 def test_bare_worktree_repo_is_container(layout, mod):
     _, wt = layout
-    assert mod.detect_repo(wt / ".giantmem") == ("proj", "feat-x")
+    assert mod.detect_repo(wt / ".giantmem") == ("proj-wt", "feat-x")
 
 
 @pytest.mark.parametrize("mod", MODULES, ids=lambda m: m.__name__)

@@ -91,8 +91,8 @@ func TestDetectRepoBranchBareWorktreeUsesContainerName(t *testing.T) {
 	gitRun(t, filepath.Join(base, ".bare"), "worktree", "add", "-q", "-b", "feat-x", "../feat-x", "main")
 
 	repo, branch := DetectRepoBranch(filepath.Join(base, "feat-x", ".giantmem"))
-	if repo != "proj" || branch != "feat-x" {
-		t.Fatalf("got (%q, %q), want (proj, feat-x)", repo, branch)
+	if repo != "proj-wt" || branch != "feat-x" {
+		t.Fatalf("got (%q, %q), want (proj-wt, feat-x)", repo, branch)
 	}
 
 	repo, branch = DetectRepoBranch(filepath.Join(src, ".giantmem"))
