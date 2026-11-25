@@ -105,6 +105,7 @@ The whole point of session search: stop hunting through `~/.claude/projects/**` 
 | `giantmem session stats -p remi --sessions` | one row per session (`--idle 30m` changes the cap, `--json`) |
 | `giantmem session prune-orphans` | list `~/.claude/projects` dirs whose every recorded cwd is gone (merged feature, pruned worktree, deleted/renamed repo) |
 | `giantmem session prune-orphans --delete` | remove them (y/N prompt; add `--yes` to skip). A dir keeps if any one session points at a live cwd; dirs with no recorded cwd are never touched |
+| `giantmem session prune-orphans --under <path> --delete --yes` | the same, limited to dirs whose every recorded cwd is that path or below it; the worktree remove function runs it for the worktree it removed. Files under a dir's `memory/` are kept, the dir is emptied around them |
 
 `<id-prefix>` is any unique prefix of the session UUID (e.g. `40503b40`). Ambiguous prefixes print all candidates and exit.
 

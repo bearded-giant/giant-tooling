@@ -596,6 +596,7 @@ var (
 	pruneOrphansDelete bool
 	pruneOrphansYes    bool
 	pruneOrphansJSON   bool
+	pruneOrphansUnder  string
 )
 
 type orphanRow struct {
@@ -618,32 +619,18 @@ Session prose stays searchable in archives.db; only 'claude --resume' and
 'session export/diff' for the removed dirs are lost.
 
 Lists by default. Pass --delete to remove, with a y/N prompt unless --yes.
-Dirs with no recorded cwd are reported as unverifiable and never deleted.`,
+Dirs with no recorded cwd are reported as unverifiable and never deleted.
+
+--under <path> limits the run to dirs whose every recorded cwd is that path or
+below it; the worktree remove function passes the worktree it just removed.
+Files under a dir's memory/ are never deleted: such a dir is emptied around them.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		home, _ := os.UserHomeDir()
 		root := filepath.Join(home, ".claude", "projects")
-		entries, err := os.ReadDir(root)
+		orphans, unknown, err := findOrphans(root, pruneOrphansUnder)
 		if err != nil {
 			return err
 		}
-		var orphans, unknown []orphanRow
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			dir := filepath.Join(root, e.Name())
-			cwds := projectCwds(dir)
-			row := orphanRow{Dir: e.Name(), Cwds: cwds, Files: len(jsonlFiles(dir)), Bytes: dirSizeBytes(dir)}
-			switch {
-			case len(cwds) == 0:
-				unknown = append(unknown, row)
-			case anyDirExists(cwds):
-				// at least one live cwd — keep
-			default:
-				orphans = append(orphans, row)
-			}
-		}
-		sort.Slice(orphans, func(i, j int) bool { return orphans[i].Bytes > orphans[j].Bytes })
 
 		if pruneOrphansJSON {
 			return output.JSON(map[string]any{"orphans": orphans, "unverifiable": unknown})
@@ -679,7 +666,7 @@ Dirs with no recorded cwd are reported as unverifiable and never deleted.`,
 		}
 		var freed int64
 		for _, r := range orphans {
-			if err := os.RemoveAll(filepath.Join(root, r.Dir)); err != nil {
+			if err := removeProjectDir(filepath.Join(root, r.Dir)); err != nil {
 				fmt.Fprintf(os.Stderr, "  failed %s: %v\n", r.Dir, err)
 				continue
 			}
@@ -689,6 +676,69 @@ Dirs with no recorded cwd are reported as unverifiable and never deleted.`,
 		fmt.Printf("freed %d MB\n", freed/(1024*1024))
 		return nil
 	},
+}
+
+func findOrphans(root, under string) ([]orphanRow, []orphanRow, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return nil, nil, err
+	}
+	if under != "" {
+		if under, err = filepath.Abs(under); err != nil {
+			return nil, nil, err
+		}
+	}
+	var orphans, unknown []orphanRow
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		dir := filepath.Join(root, e.Name())
+		cwds := projectCwds(dir)
+		if under != "" && !allUnder(cwds, under) {
+			continue
+		}
+		row := orphanRow{Dir: e.Name(), Cwds: cwds, Files: len(jsonlFiles(dir)), Bytes: dirSizeBytes(dir)}
+		switch {
+		case len(cwds) == 0:
+			unknown = append(unknown, row)
+		case anyDirExists(cwds):
+			// at least one live cwd — keep
+		default:
+			orphans = append(orphans, row)
+		}
+	}
+	sort.Slice(orphans, func(i, j int) bool { return orphans[i].Bytes > orphans[j].Bytes })
+	return orphans, unknown, nil
+}
+
+func allUnder(cwds []string, under string) bool {
+	for _, c := range cwds {
+		if c != under && !strings.HasPrefix(c, under+string(filepath.Separator)) {
+			return false
+		}
+	}
+	return len(cwds) > 0
+}
+
+// memory/ is harness memory, not session history: it outlives the sessions
+func removeProjectDir(dir string) error {
+	if kept, _ := os.ReadDir(filepath.Join(dir, "memory")); len(kept) == 0 {
+		return os.RemoveAll(dir)
+	}
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	for _, e := range ents {
+		if e.Name() == "memory" {
+			continue
+		}
+		if err := os.RemoveAll(filepath.Join(dir, e.Name())); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func jsonlFiles(dir string) []string {
@@ -783,6 +833,7 @@ func init() {
 	sessPruneOrphansCmd.Flags().BoolVar(&pruneOrphansDelete, "delete", false, "remove orphaned dirs (default: list only)")
 	sessPruneOrphansCmd.Flags().BoolVar(&pruneOrphansYes, "yes", false, "skip the confirmation prompt with --delete")
 	sessPruneOrphansCmd.Flags().BoolVar(&pruneOrphansJSON, "json", false, "JSON output")
+	sessPruneOrphansCmd.Flags().StringVar(&pruneOrphansUnder, "under", "", "only dirs whose every recorded cwd is this path or below it")
 
 	sessionCmd.AddCommand(sessListCmd)
 	sessionCmd.AddCommand(sessFindCmd)
