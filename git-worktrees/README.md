@@ -107,7 +107,7 @@ After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions ex
 | `{prefix}b` | list branches |
 | `{prefix}s` | status across worktrees |
 | `{prefix}a <branch> [base] [--push]` | add worktree explicitly (local-only unless `--push`/`-p`) |
-| `{prefix}r <branch>` | remove worktree (sweeps `.giantmem/` into `live.db` first; afterwards ingests session transcripts and deletes the worktree's `~/.claude/projects` dirs with `giantmem session prune-orphans --under`) |
+| `{prefix}r <branch>` | remove worktree (sweeps `.giantmem/` into `live.db` first; afterwards ingests session transcripts and deletes the worktree's `~/.claude/projects` dirs with `giantmem session prune-orphans --under`; `WT_KEEP_CLAUDE_SESSIONS=1` skips that, for a machine that only mirrors `~/.claude/projects`) |
 | `{prefix}rn <old> <new>` | rename worktree |
 | `{prefix}p` / `{prefix}pr` | pull / pull --rebase |
 | `{prefix}f` | fetch |

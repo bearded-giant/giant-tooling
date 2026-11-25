@@ -845,8 +845,8 @@ __wt_remove() {
         echo "Removed worktree '$branch_name'"
         git worktree prune
 
-        # its claude sessions can never be resumed again; ingest first so their text stays searchable
-        if command -v giantmem >/dev/null 2>&1; then
+        # ingest first so the text stays searchable; WT_KEEP_CLAUDE_SESSIONS=1 on a machine that only mirrors ~/.claude/projects, where a delete syncs back to the owner
+        if [ -z "${WT_KEEP_CLAUDE_SESSIONS:-}" ] && command -v giantmem >/dev/null 2>&1; then
             if giantmem db ingest --sessions-only >/dev/null 2>&1; then
                 giantmem session prune-orphans --under "$worktree_dir" --delete --yes 2>/dev/null | tail -1
             else
