@@ -19,7 +19,7 @@ wt_adopt /path/to/existing/repo      # convert an existing clone in place
 {prefix} <branch>                    # switch to or create a worktree (local branch only)
 {prefix} <branch> --push             # ...and push the new branch to origin
 {prefix}l                            # list worktrees
-{prefix}r <branch>                   # remove (sweeps .giantmem into live.db first)
+{prefix}r <branch>                   # remove (sweeps .giantmem into live.db first, prunes its claude session dirs after)
 ```
 
 After step 2, `wt_init`, `wt_adopt`, and `wt_projects` exist in every shell. Run `wt_init` once per project. The wizard writes a `wt-{name}.sh` config file beside `worktree-core.sh`. To keep configs in a separate (e.g. private) dir, see [Install](#install) below.
@@ -107,7 +107,7 @@ After `wt_register {prefix}` runs (from a sourced `wt-*.sh`), these functions ex
 | `{prefix}b` | list branches |
 | `{prefix}s` | status across worktrees |
 | `{prefix}a <branch> [base] [--push]` | add worktree explicitly (local-only unless `--push`/`-p`) |
-| `{prefix}r <branch>` | remove worktree (sweeps `.giantmem/` into `live.db` first) |
+| `{prefix}r <branch>` | remove worktree (sweeps `.giantmem/` into `live.db` first; afterwards ingests session transcripts and deletes the worktree's `~/.claude/projects` dirs with `giantmem session prune-orphans --under`) |
 | `{prefix}rn <old> <new>` | rename worktree |
 | `{prefix}p` / `{prefix}pr` | pull / pull --rebase |
 | `{prefix}f` | fetch |

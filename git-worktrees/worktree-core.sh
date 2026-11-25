@@ -788,7 +788,7 @@ __wt_add() {
 }
 
 # ---------------------------------------------------------------------------
-# remove worktree (sweeps .giantmem into live.db before delete)
+# remove worktree (sweeps .giantmem into live.db before delete, prunes its claude session dirs after)
 # ---------------------------------------------------------------------------
 
 __wt_remove() {
@@ -844,6 +844,15 @@ __wt_remove() {
     if git worktree remove $force "../$branch_name" 2>&1; then
         echo "Removed worktree '$branch_name'"
         git worktree prune
+
+        # its claude sessions can never be resumed again; ingest first so their text stays searchable
+        if command -v giantmem >/dev/null 2>&1; then
+            if giantmem db ingest --sessions-only >/dev/null 2>&1; then
+                giantmem session prune-orphans --under "$worktree_dir" --delete --yes 2>/dev/null | tail -1
+            else
+                echo "WARN: session ingest failed; claude session history for '$branch_name' kept in ~/.claude/projects"
+            fi
+        fi
 
         if [ -f "$last_file" ]; then
             local last_branch
